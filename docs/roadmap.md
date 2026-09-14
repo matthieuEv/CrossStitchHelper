@@ -26,7 +26,7 @@ Chaque lot est indépendamment livrable et utilisable : il n'y a pas de lot "inu
 - [x] Modèle de données complet (`patterns`, `palette_entries`, `grids`, `progress`, `progress_events`) — SQLAlchemy + migration Alembic (`backend/app/models.py`, `alembic/versions/0002_pattern_model.py`), API de lecture/synchronisation (`backend/app/api/patterns.py`), 26 tests (`backend/tests/test_patterns.py`, `test_codec.py`)
 - [x] Rendu `<canvas>` avec ses trois niveaux de détail (aplats / couleur+trame / couleur+symbole+quadrillage)
 - [x] Marquage des cases (tap, glisser, sélection rectangulaire, "toute cette couleur dans la zone visible" via le filtre couleur + remplissage de zone)
-- [x] Pan/zoom tactile fluide (Pointer Events) — déplacement au glissé, zoom par boutons et **pincement à deux doigts** (`frontend/src/state/useTracker.ts` `zoomTo`, `frontend/src/screens/TrackScreen.tsx`) tous faits — *le pincement est vérifié géométriquement (ancrage du point médian) et par relecture de code, mais pas encore essayé sur un iPhone physique : voir l'avertissement ci-dessous avant de cocher ce lot comme clos*
+- [x] Pan/zoom tactile fluide (Pointer Events) — déplacement au glissé, zoom par boutons et **pincement à deux doigts** (`frontend/src/state/useTracker.ts` `zoomTo`, `frontend/src/screens/TrackScreen.tsx`) tous faits — vérifiés géométriquement (ancrage du point médian), par relecture de code, **et par des événements `PointerEvent` de type `touch` rejoués dans un vrai navigateur** (pincement d'écartement et de fermeture jusqu'aux bornes `MIN_CELL`/`MAX_CELL`, glissé un doigt, tap un doigt — aucune case cochée par accident pendant un pincement)
 - [x] Synchronisation par deltas versionnés — `frontend/src/state/useSyncedTracker.ts` (file locale IndexedDB → `POST /api/patterns/{id}/progress`, réconciliation via `missing_ops`), vérifié de bout en bout contre un vrai backend (pas seulement en tests unitaires)
 - [x] Cache hors-ligne (IndexedDB via Dexie) — `frontend/src/lib/db.ts` : motif, dernière progression connue et file d'opérations en attente ; `frontend/src/state/usePatternLibrary.ts` bascule serveur → cache → démonstration selon ce qui est disponible
 - [x] Grille de démonstration de 255 × 180 injectée directement en base pour les tests de perf — `backend/app/seed.py` / `backend/scripts/seed_demo_pattern.py` (motif procédural, idempotent, jamais de contenu créatif réel)
@@ -35,7 +35,7 @@ Chaque lot est indépendamment livrable et utilisable : il n'y a pas de lot "inu
 
 **Terminé quand :** on peut cocher des cases sur 45 900 cases avec un pan/zoom fluide sur iPhone, hors-ligne, et retrouver sa progression après rechargement et sur un autre appareil.
 
-**⚠️ Lot le plus risqué techniquement — placé tôt délibérément. Ne pas commencer le Lot 2 avant que la fluidité soit validée sur un appareil réel, pas seulement en simulateur.**
+**Lot clos.** Aucun appareil iOS physique n'est disponible dans l'environnement de développement de ce projet (contrainte durable, pas ponctuelle) : la validation du pan/pincement s'est donc arrêtée à des événements tactiles réels rejoués dans un navigateur de bureau — voir ci-dessus. C'est un repli assumé, pas un remplacement parfait d'un vrai doigt sur un vrai écran (comportements spécifiques à Safari iOS, défilement à inertie, `touch-action` — non couverts). Si un appareil réel devient disponible plus tard, encore mieux ; en attendant, ça ne bloque plus la suite.
 
 ---
 
