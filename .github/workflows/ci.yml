@@ -46,7 +46,7 @@ jobs:
         run: npm run build
 
   image:
-    name: Image Docker
+    name: Image Docker + e2e
     runs-on: ubuntu-latest
     # L'image n'a de sens que si les deux moitiés passent.
     needs: [backend, frontend]
@@ -54,7 +54,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Construire l'image
         run: docker build -t crossstitchhelper:ci .
-      - name: Vérifier que l'instance démarre et répond
+      - name: Démarrer l'instance et attendre qu'elle réponde
         run: |
           docker run -d --name csh -p 8000:8000 crossstitchhelper:ci
           for attempt in $(seq 1 30); do
@@ -69,4 +69,30 @@ jobs:
           grep -q '"status":"ok"' /tmp/health.json
           # Le frontend construit doit être servi par le même processus.
           curl -fsS http://127.0.0.1:8000/ | grep -qi "<div id=\"root\">"
-          docker rm -f csh
+      - name: Semer le motif de démonstration
+        # Les tests e2e (Lot 1) ont besoin d'au moins un motif en base pour
+        # vérifier la persistance de la progression.
+        run: docker exec csh python scripts/seed_demo_pattern.py
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Installer les dépendances e2e
+        working-directory: frontend
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+      - name: Tests e2e (contre l'image Docker réelle)
+        working-directory: frontend
+        run: npm run test:e2e
+      - name: Rapport e2e
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: frontend/playwright-report/
+          retention-days: 7
+      - name: Nettoyer le conteneur
+        if: always()
+        run: docker rm -f csh
