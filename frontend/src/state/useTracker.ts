@@ -47,6 +47,18 @@ export interface Tracker {
   setOffset: (x0: number, y0: number) => void;
   zoomIn: () => void;
   zoomOut: () => void;
+  /**
+   * Zoome vers une taille de case cible en gardant un point de l'écran ancré
+   * sur la même case du motif (voir l'implémentation pour le détail du calcul).
+   * Utilisé par le pincement à deux doigts : le point médian du geste doit
+   * rester sous les doigts, pas sauter vers le coin de l'écran.
+   */
+  zoomTo: (
+    nextCell: number,
+    anchorScreenX: number,
+    anchorScreenY: number,
+    canvasRect: Pick<DOMRect, "left" | "top">,
+  ) => void;
 
   tool: Tool;
   setTool: (tool: Tool) => void;
@@ -66,12 +78,42 @@ export interface Tracker {
   fillSelection: (value: 0 | 1) => void;
   undo: () => void;
   canUndo: boolean;
+
+  /**
+   * Applique des changements venus d'ailleurs (synchronisation serveur,
+   * Lot 1) : met à jour `done` et déclenche un rendu, mais sans repasser par
+   * `onChange` (ce ne sont pas de nouvelles intentions locales à
+   * resynchroniser) ni par la pile d'annulation (annuler ne doit défaire que
+   * les propres gestes de cet appareil).
+   */
+  applyRemote: (changes: CellChange[]) => void;
 }
 
-export function useTracker(pattern: Pattern, initialProgress: Progress): Tracker {
+export interface CellChange {
+  index: number;
+  stitched: 0 | 1;
+}
+
+/**
+ * `onChange` est appelé de façon synchrone avec les cases réellement
+ * modifiées (jamais un tableau complet) : c'est ce qui permet à un appelant
+ * (la synchronisation serveur, Lot 1) d'envoyer des deltas précis sans avoir
+ * à comparer deux copies de 45 Ko à chaque case cochée.
+ */
+export function useTracker(
+  pattern: Pattern,
+  initialProgress: Progress,
+  onChange?: (changes: CellChange[]) => void,
+): Tracker {
   const doneRef = useRef<Progress>(initialProgress);
   const historyRef = useRef<Progress[]>([]);
   const [version, setVersion] = useState(0);
+
+  // Ref plutôt que dépendance directe : `onChange` peut changer d'identité à
+  // chaque rendu côté appelant sans que cela invalide les callbacks mémoïsés
+  // ci-dessous.
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
 
   const [cell, setCell] = useState(16);
   const [offset, setOffsetState] = useState({ x0: 30, y0: 24 });
@@ -111,8 +153,10 @@ export function useTracker(pattern: Pattern, initialProgress: Progress): Tracker
       if ((pattern.cells[index] ?? 0) === 0) return;
 
       snapshot();
-      doneRef.current[index] = doneRef.current[index] === 1 ? 0 : 1;
+      const next = doneRef.current[index] === 1 ? 0 : 1;
+      doneRef.current[index] = next;
       setVersion((value) => value + 1);
+      onChangeRef.current?.([{ index, stitched: next }]);
     },
     [pattern, snapshot],
   );
@@ -126,6 +170,7 @@ export function useTracker(pattern: Pattern, initialProgress: Progress): Tracker
       const minY = Math.max(0, Math.min(selection.y0, selection.y1));
       const maxY = Math.min(pattern.height - 1, Math.max(selection.y0, selection.y1));
 
+      const changes: CellChange[] = [];
       for (let y = minY; y <= maxY; y++) {
         for (let x = minX; x <= maxX; x++) {
           const index = y * pattern.width + x;
@@ -134,10 +179,13 @@ export function useTracker(pattern: Pattern, initialProgress: Progress): Tracker
           // Avec un filtre actif, on ne remplit que la couleur filtrée : c'est
           // le geste « termine cette couleur dans la zone visible ».
           if (highlight !== 0 && colour !== highlight) continue;
+          if (doneRef.current[index] === value) continue;
           doneRef.current[index] = value;
+          changes.push({ index, stitched: value });
         }
       }
       setVersion((current) => current + 1);
+      if (changes.length > 0) onChangeRef.current?.(changes);
     },
     [selection, pattern, highlight, snapshot],
   );
@@ -148,7 +196,23 @@ export function useTracker(pattern: Pattern, initialProgress: Progress): Tracker
     // On réécrit dans le même tableau plutôt que d'en changer la référence :
     // la bibliothèque et les statistiques pointent dessus et doivent continuer
     // à voir la progression réelle après une annulation.
+    const changes: CellChange[] = [];
+    if (onChangeRef.current !== undefined) {
+      for (let index = 0; index < previous.length; index++) {
+        const value = previous[index] as 0 | 1;
+        if (doneRef.current[index] !== value) changes.push({ index, stitched: value });
+      }
+    }
     doneRef.current.set(previous);
+    setVersion((value) => value + 1);
+    if (changes.length > 0) onChangeRef.current?.(changes);
+  }, []);
+
+  const applyRemote = useCallback((changes: CellChange[]) => {
+    if (changes.length === 0) return;
+    for (const change of changes) {
+      doneRef.current[change.index] = change.stitched;
+    }
     setVersion((value) => value + 1);
   }, []);
 
@@ -173,6 +237,30 @@ export function useTracker(pattern: Pattern, initialProgress: Progress): Tracker
     [],
   );
 
+  const zoomTo = useCallback(
+    (
+      nextCell: number,
+      anchorScreenX: number,
+      anchorScreenY: number,
+      canvasRect: Pick<DOMRect, "left" | "top">,
+    ) => {
+      const clampedCell = Math.max(MIN_CELL, Math.min(MAX_CELL, nextCell));
+      // Case du motif actuellement sous le point d'ancrage (le point médian du
+      // pincement), avant que la taille de case ne change.
+      const anchorCellX = offset.x0 + (anchorScreenX - canvasRect.left) / cell;
+      const anchorCellY = offset.y0 + (anchorScreenY - canvasRect.top) / cell;
+      setCell(clampedCell);
+      // On replace l'origine de la vue pour que cette même case du motif se
+      // retrouve toujours sous le point d'ancrage une fois la taille changée —
+      // c'est ce qui fait « zoomer sous les doigts » plutôt que vers un coin.
+      setOffset(
+        anchorCellX - (anchorScreenX - canvasRect.left) / clampedCell,
+        anchorCellY - (anchorScreenY - canvasRect.top) / clampedCell,
+      );
+    },
+    [cell, offset, setOffset],
+  );
+
   const toggleHighlight = useCallback(
     (index: number) => setHighlight((current) => (current === index ? 0 : index)),
     [],
@@ -191,6 +279,7 @@ export function useTracker(pattern: Pattern, initialProgress: Progress): Tracker
     setOffset,
     zoomIn,
     zoomOut,
+    zoomTo,
     tool,
     setTool,
     highlight,
@@ -204,5 +293,6 @@ export function useTracker(pattern: Pattern, initialProgress: Progress): Tracker
     fillSelection,
     undo,
     canUndo: historyRef.current.length > 0,
+    applyRemote,
   };
 }

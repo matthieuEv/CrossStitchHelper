@@ -145,15 +145,18 @@ cd frontend && npm run typecheck && npm run build
 
 ## État d'avancement
 
-**Lot 0 (socle technique) et interface complète.** L'application se construit,
-se lance, s'installe sur l'écran d'accueil et fonctionne hors ligne ; les cinq
-écrans sont implémentés et le suivi est pleinement interactif.
+**Lots 0 et 1 (socle technique, rendu et suivi persistant).** L'application se
+construit, se lance, s'installe sur l'écran d'accueil et fonctionne hors
+ligne ; les cinq écrans sont implémentés et le suivi est pleinement
+interactif. La progression est désormais persistée en base et synchronisée
+entre appareils par deltas versionnés, avec repli hors-ligne sur IndexedDB — il
+reste à valider le pan/zoom (glissé et pincement) sur un iPhone physique avant
+de considérer ce lot entièrement clos.
 
 L'import de fichiers n'est pas encore branché : l'assistant se parcourt mais
-n'extrait rien, et l'application affiche un motif de démonstration. La
-progression est pour l'instant conservée en mémoire dans l'onglet. Voir
-`docs/roadmap.md` — persistance au Lot 1, import manuel au Lot 2, extraction
-automatique à partir du Lot 4.
+n'extrait rien, et l'application affiche un motif de démonstration tant
+qu'aucun motif réel n'existe. Voir `docs/roadmap.md` — import manuel au Lot 2,
+extraction automatique à partir du Lot 4.
 
 ## Licence
 

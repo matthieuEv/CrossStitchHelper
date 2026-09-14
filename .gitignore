@@ -19,6 +19,10 @@ node_modules/
 dist/
 .vite/
 coverage/
+test-results/
+playwright-report/
+blob-report/
+playwright/.cache/
 
 # Env / secrets
 .env

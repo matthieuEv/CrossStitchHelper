@@ -12,7 +12,8 @@ import { LibraryScreen, type LibraryEntry } from "./screens/LibraryScreen";
 import { SettingsScreen } from "./screens/SettingsScreen";
 import { StatsScreen, type ActivityDay, type ActivitySession } from "./screens/StatsScreen";
 import { TrackScreen } from "./screens/TrackScreen";
-import { useTracker, type Tracker } from "./state/useTracker";
+import { usePatternLibrary } from "./state/usePatternLibrary";
+import { useSyncedTracker, type SyncedTracker } from "./state/useSyncedTracker";
 
 const FALLBACK_VERSION = "0.1.0";
 
@@ -40,15 +41,26 @@ const DEMO_SESSIONS: readonly ActivitySession[] = [
  * Monté avec une `key` égale à l'identifiant du motif : changer de motif
  * réinitialise proprement la progression, la pile d'annulation et la vue, sans
  * qu'aucun écran ait à s'en préoccuper.
+ *
+ * `useSyncedTracker` (plutôt que `useTracker` directement) ajoute la
+ * synchronisation serveur par deltas versionnés (Lot 1) : pour un motif de
+ * démonstration purement local, les tentatives de synchronisation échouent
+ * silencieusement (le motif n'existe pas côté serveur), ce qui dégrade
+ * proprement vers le comportement local d'avant le Lot 1.
  */
 function PatternSession({
   entry,
   children,
 }: {
   entry: LibraryEntry;
-  children: (tracker: Tracker) => ReactNode;
+  children: (tracker: SyncedTracker) => ReactNode;
 }) {
-  const tracker = useTracker(entry.pattern, entry.progress);
+  const tracker = useSyncedTracker(
+    entry.pattern.id,
+    entry.pattern,
+    entry.progress,
+    entry.version ?? 0,
+  );
   return <>{children(tracker)}</>;
 }
 
@@ -58,9 +70,12 @@ export function App() {
   const { screen, navigate } = useRouter();
   const { state: serverState, health } = useServerHealth();
 
-  // Bibliothèque de démonstration. Construite une seule fois : la génération
-  // rasterise du texte sur un canvas, ce n'est pas gratuit.
-  const entries = useMemo<LibraryEntry[]>(() => {
+  // Bibliothèque de démonstration, utilisée tant que le serveur n'a rendu
+  // aucun motif (chargement en cours, serveur injoignable et rien en cache,
+  // ou instance backend absente en développement). Construite une seule
+  // fois : la génération rasterise du texte sur un canvas, ce n'est pas
+  // gratuit.
+  const demoEntries = useMemo<LibraryEntry[]>(() => {
     const pattern = createDemoPattern();
     const main: LibraryEntry = {
       pattern,
@@ -69,6 +84,9 @@ export function App() {
     };
     return [main, ...createDemoVariants()];
   }, []);
+
+  const library = usePatternLibrary();
+  const entries: LibraryEntry[] = library.entries ?? demoEntries;
 
   const [activeId, setActiveId] = useState<string>(() => entries[0]?.pattern.id ?? "");
   const activeEntry = entries.find((entry) => entry.pattern.id === activeId) ?? entries[0];
