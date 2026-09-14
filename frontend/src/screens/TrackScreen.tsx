@@ -53,6 +53,20 @@ export function TrackScreen({ tracker, wide, onBack }: TrackScreenProps) {
     cell: CellPosition | null;
   }>({ active: false, panning: false, startX: 0, startY: 0, lastX: 0, lastY: 0, cell: null });
 
+  /** Dernière position connue (coordonnées client) de chaque contact actif. */
+  const pointersRef = useRef<Map<number, { x: number; y: number }>>(new Map());
+  /**
+   * État du pincement à deux doigts, actif entre le moment où le deuxième
+   * contact descend et celui où l'un des deux se relâche. `ids` fixe les deux
+   * pointeurs suivis pour tout le geste : un éventuel troisième contact est
+   * ignoré plutôt que de perturber le calcul.
+   */
+  const pinchRef = useRef<{
+    ids: [number, number];
+    initialDistance: number;
+    initialCell: number;
+  } | null>(null);
+
   const { pattern, view, tool, highlight, cursor, selection, totals, counts, version } = tracker;
 
   // Redessine la grille puis les repères. Les dépendances couvrent tout ce qui
@@ -88,9 +102,33 @@ export function TrackScreen({ tracker, wide, onBack }: TrackScreenProps) {
   );
 
   const onPointerDown = (event: ReactPointerEvent<HTMLCanvasElement>): void => {
-    const cell = cellAt(event);
     event.currentTarget.setPointerCapture(event.pointerId);
+    pointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
 
+    if (pointersRef.current.size >= 2 && pinchRef.current === null) {
+      // Deuxième contact : on bascule en pincement, quel que soit l'outil actif
+      // — c'est un geste de navigation, pas un outil, il doit marcher avec
+      // « cocher », « déplacer » et « sélectionner ».
+      const ids = [...pointersRef.current.keys()].slice(0, 2) as [number, number];
+      const p1 = pointersRef.current.get(ids[0])!;
+      const p2 = pointersRef.current.get(ids[1])!;
+      pinchRef.current = {
+        ids,
+        initialDistance: Math.hypot(p2.x - p1.x, p2.y - p1.y),
+        initialCell: view.cell,
+      };
+      // Annule tout état de cocher/sélection en cours issu du premier contact :
+      // un pincement ne doit jamais se terminer par une case cochée ou une
+      // sélection tracée par accident.
+      dragRef.current = { ...dragRef.current, active: false, panning: false, cell: null };
+      if (tool === "select") tracker.setSelection(null);
+      tracker.setCursor(null);
+      return;
+    }
+
+    if (pointersRef.current.size > 2) return; // Troisième contact : ignoré.
+
+    const cell = cellAt(event);
     dragRef.current = {
       active: true,
       panning: false,
@@ -110,6 +148,30 @@ export function TrackScreen({ tracker, wide, onBack }: TrackScreenProps) {
   };
 
   const onPointerMove = (event: ReactPointerEvent<HTMLCanvasElement>): void => {
+    if (pointersRef.current.has(event.pointerId)) {
+      pointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    }
+
+    if (pinchRef.current !== null) {
+      const [id1, id2] = pinchRef.current.ids;
+      const p1 = pointersRef.current.get(id1);
+      const p2 = pointersRef.current.get(id2);
+      // Les deux contacts suivis doivent encore être actifs ; sinon on attend
+      // le pointerup qui mettra fin au pincement.
+      if (p1 !== undefined && p2 !== undefined) {
+        const distance = Math.hypot(p2.x - p1.x, p2.y - p1.y);
+        const scale =
+          pinchRef.current.initialDistance > 0 ? distance / pinchRef.current.initialDistance : 1;
+        const nextCell = pinchRef.current.initialCell * scale;
+        const midX = (p1.x + p2.x) / 2;
+        const midY = (p1.y + p2.y) / 2;
+        // Le point médian du pincement doit rester sur la même case du motif :
+        // on zoome « sous les doigts », pas vers un coin de l'écran.
+        tracker.zoomTo(nextCell, midX, midY, event.currentTarget.getBoundingClientRect());
+      }
+      return;
+    }
+
     const drag = dragRef.current;
     const cell = cellAt(event);
 
@@ -153,7 +215,20 @@ export function TrackScreen({ tracker, wide, onBack }: TrackScreenProps) {
     pan();
   };
 
-  const onPointerUp = (): void => {
+  const onPointerUp = (event: ReactPointerEvent<HTMLCanvasElement>): void => {
+    pointersRef.current.delete(event.pointerId);
+
+    if (pinchRef.current !== null) {
+      if (pointersRef.current.size < 2) {
+        // Le pincement s'arrête dès qu'un des deux contacts suivis se relâche.
+        // Le contact restant, s'il y en a un, ne reprend pas un pan fluide —
+        // un léger saut au prochain geste est accepté.
+        pinchRef.current = null;
+      }
+      dragRef.current = { ...dragRef.current, active: false, panning: false, cell: null };
+      return;
+    }
+
     const drag = dragRef.current;
     // La case n'est cochée qu'au relâchement : c'est ce qui permet de commencer
     // un glissé depuis n'importe quelle case sans la marquer au passage.

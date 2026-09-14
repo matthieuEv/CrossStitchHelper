@@ -47,6 +47,18 @@ export interface Tracker {
   setOffset: (x0: number, y0: number) => void;
   zoomIn: () => void;
   zoomOut: () => void;
+  /**
+   * Zoome vers une taille de case cible en gardant un point de l'écran ancré
+   * sur la même case du motif (voir l'implémentation pour le détail du calcul).
+   * Utilisé par le pincement à deux doigts : le point médian du geste doit
+   * rester sous les doigts, pas sauter vers le coin de l'écran.
+   */
+  zoomTo: (
+    nextCell: number,
+    anchorScreenX: number,
+    anchorScreenY: number,
+    canvasRect: Pick<DOMRect, "left" | "top">,
+  ) => void;
 
   tool: Tool;
   setTool: (tool: Tool) => void;
@@ -225,6 +237,30 @@ export function useTracker(
     [],
   );
 
+  const zoomTo = useCallback(
+    (
+      nextCell: number,
+      anchorScreenX: number,
+      anchorScreenY: number,
+      canvasRect: Pick<DOMRect, "left" | "top">,
+    ) => {
+      const clampedCell = Math.max(MIN_CELL, Math.min(MAX_CELL, nextCell));
+      // Case du motif actuellement sous le point d'ancrage (le point médian du
+      // pincement), avant que la taille de case ne change.
+      const anchorCellX = offset.x0 + (anchorScreenX - canvasRect.left) / cell;
+      const anchorCellY = offset.y0 + (anchorScreenY - canvasRect.top) / cell;
+      setCell(clampedCell);
+      // On replace l'origine de la vue pour que cette même case du motif se
+      // retrouve toujours sous le point d'ancrage une fois la taille changée —
+      // c'est ce qui fait « zoomer sous les doigts » plutôt que vers un coin.
+      setOffset(
+        anchorCellX - (anchorScreenX - canvasRect.left) / clampedCell,
+        anchorCellY - (anchorScreenY - canvasRect.top) / clampedCell,
+      );
+    },
+    [cell, offset, setOffset],
+  );
+
   const toggleHighlight = useCallback(
     (index: number) => setHighlight((current) => (current === index ? 0 : index)),
     [],
@@ -243,6 +279,7 @@ export function useTracker(
     setOffset,
     zoomIn,
     zoomOut,
+    zoomTo,
     tool,
     setTool,
     highlight,
