@@ -144,13 +144,18 @@ class ImportPaletteEntry(BaseModel):
 
 
 class ImportFillZone(BaseModel):
-    """Une zone peinte d'un même index de palette — voir `app.imports_engine.apply_fills`."""
+    """Une zone peinte d'un même index de palette — voir `app.imports_engine.apply_fills`.
+
+    ``palette_index`` à 0 efface la zone (la ramène à « case vide »), même
+    convention que le blob de grille (§6.3) : c'est ce qui permet de corriger
+    une zone mal peinte sans avoir à retirer l'entrée de la liste.
+    """
 
     x0: int = Field(ge=0)
     y0: int = Field(ge=0)
     x1: int = Field(ge=0)
     y1: int = Field(ge=0)
-    palette_index: int = Field(ge=1)
+    palette_index: int = Field(ge=0)
 
 
 class ImportConfig(BaseModel):
