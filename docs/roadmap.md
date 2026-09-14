@@ -41,13 +41,15 @@ Chaque lot est indépendamment livrable et utilisable : il n'y a pas de lot "inu
 
 ## Lot 2 — Import assisté universel (type D)
 
-- [ ] Assistant : dépôt de fichier (PDF ou photo) — *l'écran existe et se parcourt, mais aucun fichier n'est encore lu*
-- [ ] Aperçu de la page et recadrage manuel de la grille — *les poignées de recadrage fonctionnent sur un aperçu de démonstration*
-- [ ] Calibrage manuel des dimensions (colonnes/lignes)
-- [ ] Saisie manuelle de la palette et remplissage des couleurs par zone — *l'éditeur de légende existe (téléphone et tablette)*
-- [ ] Export `.cshp` (format ouvert documenté)
+- [x] Assistant : dépôt de fichier (PDF ou photo) — sélection ou appareil photo mobile, envoyé à `POST /api/imports` (`backend/app/api/imports.py`)
+- [x] Aperçu de la page et recadrage manuel de la grille — aperçu raster réel (PyMuPDF pour un PDF, redimensionnement Pillow pour une photo), poignées de cadrage inchangées
+- [x] Calibrage manuel des dimensions (colonnes/lignes)
+- [x] Saisie manuelle de la palette et remplissage des couleurs par zone — éditeur de palette + `frontend/src/components/ImportGridPainter.tsx` (sélection rectangulaire puis peinture, réutilise le rendu canvas du suivi)
+- [x] Export `.cshp` (format ouvert documenté) — `GET /api/patterns/{id}/export`, archive ZIP autonome (`backend/app/export_cshp.py`), lien direct depuis l'écran Statistiques
 
-**Terminé quand :** n'importe quel PDF ou photo peut être transformé en motif suivable, entièrement à la main. À ce stade, l'application est déjà une alternative crédible à Pattern Keeper.
+> Aucun moteur de détection automatique ici (ni type de grille, ni dimensions, ni couleurs, ni symboles) — c'est tout le sujet des Lots 4 à 7. L'assistant du Lot 2 pré-remplit ce qu'il peut techniquement (l'aperçu de la page), l'utilisateur fait le reste à la main, comme n'importe quel éditeur de grille papier assisté par ordinateur.
+
+**Terminé quand :** n'importe quel PDF ou photo peut être transformé en motif suivable, entièrement à la main. À ce stade, l'application est déjà une alternative crédible à Pattern Keeper. **Fait** — vérifié de bout en bout (dépôt réel → cadrage → dimensions → palette → peinture par zone → motif suivable et synchronisé) par `frontend/e2e/lot2-manual-import.spec.ts` contre un vrai backend, pas seulement en tests unitaires.
 
 ---
 
