@@ -9,6 +9,8 @@ export interface LibraryEntry {
   pattern: Pattern;
   progress: Progress;
   hoursAgo: number;
+  /** Version de progression connue du serveur ; absente pour un motif purement local. */
+  version?: number;
 }
 
 interface LibraryScreenProps {
