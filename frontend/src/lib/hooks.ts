@@ -36,7 +36,7 @@ export function useWideLayout(): boolean {
  * couvre pas ces cas.
  */
 export function useElementSize<T extends HTMLElement>(): [
-  React.RefObject<T>,
+  React.RefObject<T | null>,
   { width: number; height: number },
 ] {
   const ref = useRef<T>(null);
