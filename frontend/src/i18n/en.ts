@@ -87,6 +87,7 @@ export const en: Record<TranslationKey, string> = {
   "track.remainingLabel": "left",
 
   "stats.title": "Statistics",
+  "stats.export": "Export (.cshp)",
   "stats.progress": "Progress",
   "stats.doneOf": "{done} stitches done out of {total}",
   "stats.remaining": "Stitches left",

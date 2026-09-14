@@ -95,6 +95,7 @@ export const fr = {
   "track.remainingLabel": "restants",
 
   "stats.title": "Statistiques",
+  "stats.export": "Exporter (.cshp)",
   "stats.progress": "Progression",
   "stats.doneOf": "{done} points brodés sur {total}",
   "stats.remaining": "Points restants",

@@ -1,4 +1,5 @@
 import { useT } from "../i18n";
+import { patternExportUrl } from "../lib/api";
 import { useNumberFormat } from "../lib/format";
 import { STITCHES_PER_SKEIN, type ColorCount, type PatternTotals } from "../pattern/counts";
 import type { Pattern } from "../pattern/types";
@@ -37,9 +38,27 @@ export function StatsScreen({ pattern, counts, totals, activity, sessions }: Sta
 
   return (
     <div className="screen">
-      <h2 style={{ margin: "0 0 4px" }}>{t("stats.title")}</h2>
-      <div className="text-muted" style={{ fontSize: 13, marginBottom: 18 }}>
-        {pattern.name} · {pattern.width} × {pattern.height}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "flex-start",
+          justifyContent: "space-between",
+          gap: 12,
+        }}
+      >
+        <div>
+          <h2 style={{ margin: "0 0 4px" }}>{t("stats.title")}</h2>
+          <div className="text-muted" style={{ fontSize: 13, marginBottom: 18 }}>
+            {pattern.name} · {pattern.width} × {pattern.height}
+          </div>
+        </div>
+        <a
+          className="btn btn-secondary"
+          style={{ minHeight: 40, padding: "0 14px", flex: "none" }}
+          href={patternExportUrl(pattern.id)}
+        >
+          {t("stats.export")}
+        </a>
       </div>
 
       <div

@@ -160,6 +160,11 @@ export function fetchProgress(id: string, signal?: AbortSignal): Promise<ApiProg
   return request<ApiProgress>(`/patterns/${id}/progress`, withSignal(signal));
 }
 
+/** Format ouvert et documenté (cahier des charges §6.4) — un lien direct suffit. */
+export function patternExportUrl(id: string): string {
+  return `/api/patterns/${id}/export`;
+}
+
 export function syncProgress(
   id: string,
   baseVersion: number,
