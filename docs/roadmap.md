@@ -17,7 +17,7 @@ Chaque lot est indépendamment livrable et utilisable : il n'y a pas de lot "inu
 
 **Terminé quand :** `docker compose up` donne une application installable sur l'écran d'accueil d'un iPhone, avec une page d'accueil vide et une API qui répond.
 
-> `npm install && npm run build` (frontend) et `pip install -e ".[dev]" && pytest` (backend) ont désormais tourné pour de vrai — un bug de typage réel a été trouvé et corrigé au passage (voir l'historique), et le `package-lock.json` produit est committé. **`docker compose up --build` reste à vérifier** : aucun environnement Docker n'était disponible pour l'exécuter jusqu'ici.
+> `npm install && npm run build` (frontend) et `pip install -e ".[dev]" && pytest` (backend) ont désormais tourné pour de vrai — un bug de typage réel a été trouvé et corrigé au passage (voir l'historique), et le `package-lock.json` produit est committé. `docker compose up --build` a aussi été vérifié pour de vrai : construction, `/api/health` répond `ok`, le frontend construit est servi à la racine, les icônes et le manifeste PWA répondent, et la progression survit à un `docker compose down` suivi d'un `up` (le volume `./data` fait bien tout le travail de sauvegarde qu'il prétend faire).
 
 ---
 

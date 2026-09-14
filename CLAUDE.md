@@ -68,7 +68,7 @@ Deux manques à connaître avant de coder :
 1. **Rien n'est persisté.** La progression vit en mémoire dans l'onglet et disparaît au rechargement. Le modèle de données (`patterns`, `grids`, `progress`, `progress_events`) est le cœur du Lot 1 ; `backend/app/models.py` ne contient pour l'instant qu'une table de métadonnées.
 2. **L'import ne lit aucun fichier.** L'assistant se parcourt mais travaille sur le motif de démonstration de `frontend/src/demo/`. Ce répertoire disparaîtra quand l'extraction réelle existera.
 
-La chaîne d'installation (`npm install`, `pip install`, `docker compose up --build`) n'a jamais été exécutée : elle a été écrite dans un environnement sans accès à npm ni à PyPI. À lancer une première fois avant de s'appuyer dessus, et à committer le `package-lock.json` obtenu.
+La chaîne d'installation (`npm install`, `pip install`, `docker compose up --build`) a maintenant tourné pour de vrai — voir `docs/roadmap.md` pour le détail de ce qui a été vérifié.
 
 Voir `docs/roadmap.md` pour la suite.
 
