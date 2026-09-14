@@ -63,10 +63,9 @@ Avant de considérer une évolution du moteur d'extraction comme terminée, exé
 
 **Lot 0 terminé, interface complète.** Le backend FastAPI + SQLite + Alembic, le frontend PWA React/TypeScript, l'image Docker unique, la CI et le README d'auto-hébergement sont en place. Les cinq écrans des maquettes sont implémentés et le suivi est réellement interactif (cochage, déplacement, zoom, filtre par couleur, sélection de zone, annulation).
 
-Deux manques à connaître avant de coder :
+**Lot 1 (persistance et suivi) fait, sauf la validation sur appareil réel.** Le modèle de données complet (`patterns`, `palette_entries`, `grids`, `progress`, `progress_events`) est en place (`backend/app/models.py`, migration `0002_pattern_model`), avec une API de lecture et de synchronisation par deltas versionnés (`backend/app/api/patterns.py`, 26 tests). Côté client, `useSyncedTracker` fait vivre le cochage dans IndexedDB (Dexie, `frontend/src/lib/db.ts`) et le synchronise avec le serveur ; `usePatternLibrary` bascule serveur → cache local → motif de démonstration client selon ce qui répond. Le pincement à deux doigts existe (`useTracker.zoomTo`). Ce qui reste : **essayer le pan/zoom (glissé et pincement) sur un iPhone physique**, pas seulement en simulateur — c'est la condition explicite du roadmap avant de considérer ce lot clos et de commencer le Lot 2.
 
-1. **Rien n'est persisté.** La progression vit en mémoire dans l'onglet et disparaît au rechargement. Le modèle de données (`patterns`, `grids`, `progress`, `progress_events`) est le cœur du Lot 1 ; `backend/app/models.py` ne contient pour l'instant qu'une table de métadonnées.
-2. **L'import ne lit aucun fichier.** L'assistant se parcourt mais travaille sur le motif de démonstration de `frontend/src/demo/`. Ce répertoire disparaîtra quand l'extraction réelle existera.
+**L'import ne lit toujours aucun fichier** (Lot 2). L'assistant se parcourt mais travaille sur un aperçu de démonstration. `frontend/src/demo/` reste utile au-delà de ça : c'est le repli hors-ligne de premier lancement quand ni le serveur ni le cache IndexedDB n'ont encore de motif.
 
 La chaîne d'installation (`npm install`, `pip install`, `docker compose up --build`) a maintenant tourné pour de vrai — voir `docs/roadmap.md` pour le détail de ce qui a été vérifié.
 

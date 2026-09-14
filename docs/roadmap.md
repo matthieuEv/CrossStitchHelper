@@ -23,15 +23,15 @@ Chaque lot est indépendamment livrable et utilisable : il n'y a pas de lot "inu
 
 ## Lot 1 — Noyau de rendu et de suivi
 
-- [ ] Modèle de données complet (`patterns`, `palette_entries`, `grids`, `progress`, `progress_events`)
+- [x] Modèle de données complet (`patterns`, `palette_entries`, `grids`, `progress`, `progress_events`) — SQLAlchemy + migration Alembic (`backend/app/models.py`, `alembic/versions/0002_pattern_model.py`), API de lecture/synchronisation (`backend/app/api/patterns.py`), 26 tests (`backend/tests/test_patterns.py`, `test_codec.py`)
 - [x] Rendu `<canvas>` avec ses trois niveaux de détail (aplats / couleur+trame / couleur+symbole+quadrillage)
 - [x] Marquage des cases (tap, glisser, sélection rectangulaire, "toute cette couleur dans la zone visible" via le filtre couleur + remplissage de zone)
-- [ ] Pan/zoom tactile fluide (Pointer Events) — *déplacement au glissé et zoom par boutons faits ; **le pincement à deux doigts reste à implémenter***
-- [ ] Synchronisation par deltas versionnés
-- [ ] Cache hors-ligne (IndexedDB via Dexie)
-- [ ] Grille de démonstration de 255 × 180 injectée directement en base pour les tests de perf — *le motif de démonstration actuel fait 140 × 100 et vit côté client (`frontend/src/demo/`)*
+- [x] Pan/zoom tactile fluide (Pointer Events) — déplacement au glissé, zoom par boutons et **pincement à deux doigts** (`frontend/src/state/useTracker.ts` `zoomTo`, `frontend/src/screens/TrackScreen.tsx`) tous faits — *le pincement est vérifié géométriquement (ancrage du point médian) et par relecture de code, mais pas encore essayé sur un iPhone physique : voir l'avertissement ci-dessous avant de cocher ce lot comme clos*
+- [x] Synchronisation par deltas versionnés — `frontend/src/state/useSyncedTracker.ts` (file locale IndexedDB → `POST /api/patterns/{id}/progress`, réconciliation via `missing_ops`), vérifié de bout en bout contre un vrai backend (pas seulement en tests unitaires)
+- [x] Cache hors-ligne (IndexedDB via Dexie) — `frontend/src/lib/db.ts` : motif, dernière progression connue et file d'opérations en attente ; `frontend/src/state/usePatternLibrary.ts` bascule serveur → cache → démonstration selon ce qui est disponible
+- [x] Grille de démonstration de 255 × 180 injectée directement en base pour les tests de perf — `backend/app/seed.py` / `backend/scripts/seed_demo_pattern.py` (motif procédural, idempotent, jamais de contenu créatif réel)
 
-> L'interface complète des cinq écrans est en place depuis le Lot 0 (portage des maquettes). Ce qui manque ici est la **persistance** : aujourd'hui la progression vit en mémoire dans l'onglet et disparaît au rechargement.
+> L'interface complète des cinq écrans est en place depuis le Lot 0 (portage des maquettes). La persistance existe désormais : le motif, sa grille et la progression vivent en base SQLite, synchronisés par deltas versionnés avec repli hors-ligne sur IndexedDB. Le motif de démonstration client (`frontend/src/demo/`) reste comme dernier repli si ni le serveur ni le cache local ne répondent (premier lancement hors-ligne, ou absence de backend en développement).
 
 **Terminé quand :** on peut cocher des cases sur 45 900 cases avec un pan/zoom fluide sur iPhone, hors-ligne, et retrouver sa progression après rechargement et sur un autre appareil.
 

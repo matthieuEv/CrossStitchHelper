@@ -26,11 +26,13 @@ npm run build   # produit dist/, servi tel quel par le backend en production
 | `src/index.css` | Système de design : jetons, thème clair/sombre, classes de composants. |
 | `src/i18n/` | Traductions FR/EN. `fr.ts` définit les clés, `en.ts` est typé d'après lui. |
 | `src/pattern/` | Noyau motif : types, comptages, rendu canvas. Sans dépendance à React. |
-| `src/state/useTracker.ts` | État de suivi : progression, vue, outil, annulation. |
+| `src/state/useTracker.ts` | État de suivi local : progression, vue, outil, annulation. |
+| `src/state/useSyncedTracker.ts` | Ajoute la synchronisation serveur par deltas versionnés par-dessus `useTracker` (file IndexedDB, repli hors-ligne). |
+| `src/state/usePatternLibrary.ts` | Charge la bibliothèque : serveur → cache IndexedDB → motif de démonstration, selon ce qui répond. |
 | `src/screens/` | Les cinq écrans. |
 | `src/components/` | Coquille de navigation, liste des couleurs, vignettes, icônes. |
-| `src/demo/` | Motifs de démonstration. À supprimer quand l'import réel existera. |
-| `src/lib/` | Thème, routage, client d'API, formatage, verrou d'écran. |
+| `src/demo/` | Motif de démonstration purement client. Reste utile même après l'arrivée de l'import réel : c'est le repli de premier lancement quand ni le serveur ni le cache local n'ont encore de motif. |
+| `src/lib/` | Thème, routage, client d'API, codec grille/bitmap, cache IndexedDB (Dexie), formatage, verrou d'écran. |
 
 ## Règles à respecter
 
