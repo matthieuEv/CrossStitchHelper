@@ -33,11 +33,15 @@ pytest         # tests
 | --- | --- |
 | `app/config.py` | Réglages, tous surchargeables par variables `CSH_*`. |
 | `app/db.py` | Moteur SQLAlchemy et réglages SQLite (WAL, clés étrangères). |
-| `app/models.py` | Modèles. Minimal au Lot 0 ; le modèle métier arrive au Lot 1. |
+| `app/models.py` | Modèles : `patterns`, `palette_entries`, `grids`, `progress`, `progress_events` (Lot 1). |
+| `app/codec.py` | Encodage compact de la grille (`Uint16Array`) et du bitmap de progression (1 bit/case). |
+| `app/schemas.py` | Schémas Pydantic de l'API. |
+| `app/seed.py` | Motif de démonstration 255×180, purement synthétique, pour les tests de perf du rendu. |
 | `app/migrations.py` | Application des migrations au démarrage du conteneur. |
 | `app/main.py` | Application FastAPI, service du frontend construit, repli SPA. |
 | `app/api/` | Routes HTTP. |
 | `alembic/` | Migrations de schéma. |
+| `scripts/seed_demo_pattern.py` | Injecte le motif de démonstration en base (`python scripts/seed_demo_pattern.py`). |
 
 ## Ajouter une migration
 
