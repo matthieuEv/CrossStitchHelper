@@ -1,11 +1,29 @@
-import { useCallback, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import {
+  useCallback,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type PointerEvent as ReactPointerEvent,
+} from "react";
 
+import { ImportGridPainter } from "../components/ImportGridPainter";
 import { CameraIcon, UploadIcon } from "../components/Icons";
 import { PatternThumbnail } from "../components/PatternThumbnail";
 import { useT } from "../i18n";
-import { useNumberFormat } from "../lib/format";
-import { countByColor, summarise } from "../pattern/counts";
-import type { Pattern } from "../pattern/types";
+import {
+  ApiError,
+  commitImport,
+  createImport,
+  extractImport,
+  importPagePreviewUrl,
+  patchImportConfig,
+  type ApiImportConfig,
+  type ApiImportFillZone,
+  type ApiImportJob,
+  type ApiImportPaletteEntry,
+} from "../lib/api";
+import { patternFromImportPreview } from "../lib/mappers";
+import { useImportPainter } from "../state/useImportPainter";
 
 type Edge = "left" | "top" | "right" | "bottom";
 interface Crop {
@@ -16,31 +34,41 @@ interface Crop {
 }
 
 const STEP_COUNT = 4;
-/** Marge maximale qu'une poignée peut prendre, pour garder un cadre utilisable. */
-const MAX_INSET = 42;
+const MAX_INSET = 45;
+const DEFAULT_CROP: Crop = { left: 4, top: 4, right: 4, bottom: 4 };
 
-interface ImportScreenProps {
-  /** Motif servant d'aperçu tant que l'extraction réelle n'existe pas. */
-  preview: Pattern;
-  wide: boolean;
-  onCancel: () => void;
-  onFinish: () => void;
+/** Palette de départ, purement pour ne pas ouvrir l'étape peinture à vide. */
+function nextPaletteEntry(existing: readonly ApiImportPaletteEntry[]): ApiImportPaletteEntry {
+  const hues = ["#8a5b9b", "#b35b6b", "#5b8f6f", "#5b7bb3", "#b38a5b", "#5b5b5b"];
+  const hex = hues[existing.length % hues.length] ?? "#5b5b5b";
+  return { code: "", name: "", rgb_hex: hex, symbol_key: String((existing.length % 9) + 1) };
 }
 
-export function ImportScreen({ preview, wide, onCancel, onFinish }: ImportScreenProps) {
+interface ImportScreenProps {
+  onCancel: () => void;
+  onFinish: (patternId: string) => void;
+}
+
+export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
   const t = useT();
-  const formatNumber = useNumberFormat();
 
   const [step, setStep] = useState(1);
-  const [crop, setCrop] = useState<Crop>({ left: 9, top: 8, right: 8, bottom: 11 });
-  const [legend, setLegend] = useState(() =>
-    preview.palette.map((entry, index) => ({
-      ...entry,
-      // Deux entrées marquées douteuses : la maquette montrait ce que
-      // l'assistant doit faire quand le moteur n'est pas sûr de sa lecture.
-      uncertain: index === 4 || index === 11,
-    })),
-  );
+  const [job, setJob] = useState<ApiImportJob | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+
+  const [crop, setCrop] = useState<Crop>(DEFAULT_CROP);
+  const [columns, setColumns] = useState<string>("");
+  const [rows, setRows] = useState<string>("");
+  const [palette, setPalette] = useState<ApiImportPaletteEntry[]>([]);
+  const [fills, setFills] = useState<ApiImportFillZone[]>([]);
+  const [activeIndex, setActiveIndex] = useState(1);
+
+  const [name, setName] = useState("");
+  const [fabricCount, setFabricCount] = useState("14");
+  const [preview, setPreview] = useState<ApiImportJob["preview"] | null>(null);
+  const [committing, setCommitting] = useState(false);
+  const [commitError, setCommitError] = useState<string | null>(null);
 
   const stageRef = useRef<HTMLDivElement>(null);
   const dragEdgeRef = useRef<Edge | null>(null);
@@ -48,9 +76,39 @@ export function ImportScreen({ preview, wide, onCancel, onFinish }: ImportScreen
   const stepLabels = [
     t("import.step.file"),
     t("import.step.crop"),
-    t("import.step.legend"),
+    t("import.step.palette"),
     t("import.step.recap"),
   ];
+
+  const applyConfig = (config: ApiImportConfig): void => {
+    if (config.crop !== null) setCrop(config.crop);
+    if (config.columns !== null) setColumns(String(config.columns));
+    if (config.rows !== null) setRows(String(config.rows));
+    setPalette(config.palette);
+    setFills(config.fills);
+  };
+
+  const upload = async (file: File): Promise<void> => {
+    setUploading(true);
+    setUploadError(null);
+    try {
+      const created = await createImport(file);
+      setJob(created);
+      applyConfig(created.config);
+      setName(file.name.replace(/\.(pdf|png|jpe?g)$/i, ""));
+      setStep(2);
+    } catch (error) {
+      setUploadError(error instanceof ApiError ? `HTTP ${error.status}` : String(error));
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const onFileChosen = (event: ChangeEvent<HTMLInputElement>): void => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (file !== undefined) void upload(file);
+  };
 
   const startDrag = (edge: Edge) => (event: ReactPointerEvent<HTMLDivElement>) => {
     event.stopPropagation();
@@ -86,16 +144,88 @@ export function ImportScreen({ preview, wide, onCancel, onFinish }: ImportScreen
     dragEdgeRef.current = null;
   }, []);
 
-  // Dimensions déduites du cadrage : l'assistant propose, l'utilisateur voit
-  // immédiatement l'effet de son geste.
-  const detectedColumns = Math.round((preview.width * (100 - crop.left - crop.right)) / 82);
-  const detectedRows = Math.round(detectedColumns * (preview.height / preview.width));
-
-  const totals = summarise(countByColor(preview, new Uint8Array(preview.width * preview.height)));
-  const uncertainCount = legend.filter((entry) => entry.uncertain).length;
-
   const centerX = `${crop.left + (100 - crop.left - crop.right) / 2}%`;
   const centerY = `${crop.top + (100 - crop.top - crop.bottom) / 2}%`;
+
+  const columnsValue = Number.parseInt(columns, 10);
+  const rowsValue = Number.parseInt(rows, 10);
+  const dimensionsValid =
+    Number.isFinite(columnsValue) && columnsValue > 0 && Number.isFinite(rowsValue) && rowsValue > 0;
+
+  const goToPalette = async (): Promise<void> => {
+    if (job === null || !dimensionsValid) return;
+    const updated = await patchImportConfig(job.id, { crop, columns: columnsValue, rows: rowsValue });
+    setJob(updated);
+    setStep(3);
+  };
+
+  const painter = useImportPainter(
+    dimensionsValid ? columnsValue : 0,
+    dimensionsValid ? rowsValue : 0,
+    palette.map((entry) => ({
+      code: entry.code,
+      name: entry.name,
+      hex: entry.rgb_hex,
+      symbol: entry.symbol_key,
+    })),
+    fills,
+    (nextFills) => {
+      setFills(nextFills);
+      if (job !== null) void patchImportConfig(job.id, { fills: nextFills });
+    },
+    name,
+  );
+
+  const addPaletteEntry = (): void => {
+    const next = [...palette, nextPaletteEntry(palette)];
+    setPalette(next);
+    setActiveIndex(next.length);
+    if (job !== null) void patchImportConfig(job.id, { palette: next });
+  };
+
+  const updatePaletteEntry = (index: number, patch: Partial<ApiImportPaletteEntry>): void => {
+    const next = palette.map((entry, i) => (i === index ? { ...entry, ...patch } : entry));
+    setPalette(next);
+  };
+
+  const commitPaletteEdits = (): void => {
+    if (job !== null) void patchImportConfig(job.id, { palette });
+  };
+
+  const removePaletteEntry = (index: number): void => {
+    const next = palette.filter((_, i) => i !== index);
+    setPalette(next);
+    if (activeIndex > next.length) setActiveIndex(Math.max(1, next.length));
+    if (job !== null) void patchImportConfig(job.id, { palette: next });
+  };
+
+  const goToRecap = async (): Promise<void> => {
+    if (job === null) return;
+    const updated = await extractImport(job.id);
+    setJob(updated);
+    setPreview(updated.preview);
+    setStep(4);
+  };
+
+  const finish = async (): Promise<void> => {
+    if (job === null || name.trim() === "") return;
+    setCommitting(true);
+    setCommitError(null);
+    try {
+      const fabric = Number.parseInt(fabricCount, 10);
+      const response = await commitImport(job.id, {
+        name: name.trim(),
+        ...(Number.isFinite(fabric) && fabric > 0 && { fabric_count: fabric }),
+      });
+      onFinish(response.pattern_id);
+    } catch (error) {
+      setCommitError(error instanceof ApiError ? `HTTP ${error.status}` : String(error));
+    } finally {
+      setCommitting(false);
+    }
+  };
+
+  const previewPattern = preview !== null ? patternFromImportPreview(preview, name) : null;
 
   return (
     <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
@@ -115,15 +245,7 @@ export function ImportScreen({ preview, wide, onCancel, onFinish }: ImportScreen
           </button>
         </div>
 
-        <ol
-          style={{
-            display: "flex",
-            gap: 8,
-            listStyle: "none",
-            margin: 0,
-            padding: 0,
-          }}
-        >
+        <ol style={{ display: "flex", gap: 8, listStyle: "none", margin: 0, padding: 0 }}>
           {stepLabels.map((label, index) => {
             const position = index + 1;
             const reached = position <= step;
@@ -167,24 +289,31 @@ export function ImportScreen({ preview, wide, onCancel, onFinish }: ImportScreen
                 {t("import.drop.hint")}
               </p>
               <label className="btn btn-secondary" style={{ minHeight: 44, padding: "0 18px" }}>
-                {t("import.drop.choose")}
+                {uploading ? t("import.drop.uploading") : t("import.drop.choose")}
                 <input
                   type="file"
                   accept="application/pdf,image/png,image/jpeg"
                   style={{ display: "none" }}
-                  onChange={() => setStep(2)}
+                  disabled={uploading}
+                  onChange={onFileChosen}
                 />
               </label>
             </div>
-            <button
-              type="button"
+            <label
               className="btn btn-primary"
-              style={{ minHeight: 52, gap: 10 }}
-              onClick={() => setStep(2)}
+              style={{ minHeight: 52, gap: 10, cursor: uploading ? "wait" : "pointer" }}
             >
               <CameraIcon size={20} />
               {t("import.photo")}
-            </button>
+              <input
+                type="file"
+                accept="image/*"
+                capture="environment"
+                style={{ display: "none" }}
+                disabled={uploading}
+                onChange={onFileChosen}
+              />
+            </label>
             <p
               className="text-muted"
               style={{
@@ -198,10 +327,15 @@ export function ImportScreen({ preview, wide, onCancel, onFinish }: ImportScreen
             >
               {t("import.photo.hint")}
             </p>
+            {uploadError !== null && (
+              <p className="tag tag-accent" style={{ margin: 0 }}>
+                {t("import.drop.error", { message: uploadError })}
+              </p>
+            )}
           </div>
         )}
 
-        {step === 2 && (
+        {step === 2 && job !== null && (
           <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
             <div className="text-muted" style={{ fontSize: 13 }}>
               {t("import.crop.hint")}
@@ -214,7 +348,11 @@ export function ImportScreen({ preview, wide, onCancel, onFinish }: ImportScreen
               onPointerUp={endDrag}
               onPointerLeave={endDrag}
             >
-              <PatternThumbnail pattern={preview} progress={null} label={t("import.step.crop")} />
+              <img
+                src={importPagePreviewUrl(job.id, 1)}
+                alt=""
+                style={{ width: "100%", height: "100%", objectFit: "contain", display: "block" }}
+              />
               <div
                 style={{
                   position: "absolute",
@@ -227,287 +365,257 @@ export function ImportScreen({ preview, wide, onCancel, onFinish }: ImportScreen
                   boxShadow: "0 0 0 9999px rgba(20, 16, 12, 0.44)",
                 }}
               />
-              <div
-                className="crop-handle"
-                onPointerDown={startDrag("top")}
-                style={{
-                  left: centerX,
-                  top: `${crop.top}%`,
-                  transform: "translate(-50%, -50%)",
-                  width: 64,
-                  height: 44,
-                  cursor: "ns-resize",
-                }}
-              >
-                <span style={{ width: 52, height: 8 }} />
-              </div>
-              <div
-                className="crop-handle"
-                onPointerDown={startDrag("bottom")}
-                style={{
-                  left: centerX,
-                  bottom: `${crop.bottom}%`,
-                  transform: "translate(-50%, 50%)",
-                  width: 64,
-                  height: 44,
-                  cursor: "ns-resize",
-                }}
-              >
-                <span style={{ width: 52, height: 8 }} />
-              </div>
-              <div
-                className="crop-handle"
-                onPointerDown={startDrag("left")}
-                style={{
-                  top: centerY,
-                  left: `${crop.left}%`,
-                  transform: "translate(-50%, -50%)",
-                  width: 44,
-                  height: 64,
-                  cursor: "ew-resize",
-                }}
-              >
-                <span style={{ width: 8, height: 52 }} />
-              </div>
-              <div
-                className="crop-handle"
-                onPointerDown={startDrag("right")}
-                style={{
-                  top: centerY,
-                  right: `${crop.right}%`,
-                  transform: "translate(50%, -50%)",
-                  width: 44,
-                  height: 64,
-                  cursor: "ew-resize",
-                }}
-              >
-                <span style={{ width: 8, height: 52 }} />
-              </div>
+              {(["top", "bottom", "left", "right"] as const).map((edge) => (
+                <div
+                  key={edge}
+                  className="crop-handle"
+                  onPointerDown={startDrag(edge)}
+                  style={{
+                    ...(edge === "top" || edge === "bottom"
+                      ? { left: centerX, width: 64, height: 44, cursor: "ns-resize" }
+                      : { top: centerY, width: 44, height: 64, cursor: "ew-resize" }),
+                    ...(edge === "top" && { top: `${crop.top}%`, transform: "translate(-50%, -50%)" }),
+                    ...(edge === "bottom" && {
+                      bottom: `${crop.bottom}%`,
+                      transform: "translate(-50%, 50%)",
+                    }),
+                    ...(edge === "left" && { left: `${crop.left}%`, transform: "translate(-50%, -50%)" }),
+                    ...(edge === "right" && {
+                      right: `${crop.right}%`,
+                      transform: "translate(50%, -50%)",
+                    }),
+                  }}
+                >
+                  <span
+                    style={
+                      edge === "top" || edge === "bottom"
+                        ? { width: 52, height: 8 }
+                        : { width: 8, height: 52 }
+                    }
+                  />
+                </div>
+              ))}
             </div>
 
-            <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-              <span className="tag tag-neutral" style={{ minHeight: 32 }}>
-                {t("import.crop.detected", { cols: detectedColumns, rows: detectedRows })}
-              </span>
-              <button type="button" className="btn btn-ghost" style={{ minHeight: 44 }}>
-                {t("import.crop.redetect")}
-              </button>
+            <div style={{ display: "flex", gap: 10 }}>
+              <label style={{ flex: 1, display: "flex", flexDirection: "column", gap: 4 }}>
+                <span className="text-muted" style={{ fontSize: 12 }}>
+                  {t("import.crop.columns")}
+                </span>
+                <input
+                  className="input"
+                  inputMode="numeric"
+                  value={columns}
+                  onChange={(event) => setColumns(event.target.value.replace(/[^0-9]/g, ""))}
+                  style={{ minHeight: 46 }}
+                />
+              </label>
+              <label style={{ flex: 1, display: "flex", flexDirection: "column", gap: 4 }}>
+                <span className="text-muted" style={{ fontSize: 12 }}>
+                  {t("import.crop.rows")}
+                </span>
+                <input
+                  className="input"
+                  inputMode="numeric"
+                  value={rows}
+                  onChange={(event) => setRows(event.target.value.replace(/[^0-9]/g, ""))}
+                  style={{ minHeight: 46 }}
+                />
+              </label>
             </div>
           </div>
         )}
 
         {step === 3 && (
           <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                gap: 12,
-                flexWrap: "wrap",
-              }}
-            >
-              <div className="text-muted" style={{ fontSize: 13 }}>
-                {t("import.legend.hint", { count: legend.length })}
-              </div>
-              <span className="tag tag-accent-2" style={{ minHeight: 32 }}>
-                {t("import.legend.confidence", {
-                  sure: legend.length - uncertainCount,
-                  unsure: uncertainCount,
-                })}
-              </span>
+            <div className="text-muted" style={{ fontSize: 13 }}>
+              {t("import.paint.hint")}
             </div>
 
-            {wide ? (
-              <div
-                style={{
-                  borderRadius: 22,
-                  background: "var(--color-surface)",
-                  padding: "6px 12px 10px",
-                  maxHeight: 420,
-                  overflow: "auto",
-                }}
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
+              {palette.map((entry, index) => (
+                <button
+                  key={index}
+                  type="button"
+                  className="badge"
+                  aria-pressed={activeIndex === index + 1}
+                  onClick={() => setActiveIndex(index + 1)}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6,
+                    border:
+                      activeIndex === index + 1
+                        ? "2px solid var(--color-accent)"
+                        : "2px solid transparent",
+                  }}
+                >
+                  <span
+                    className="swatch"
+                    style={{ width: 18, height: 18, background: entry.rgb_hex }}
+                  />
+                  {entry.code || entry.name || "—"}
+                </button>
+              ))}
+              <button
+                type="button"
+                className="badge"
+                aria-pressed={activeIndex === 0}
+                onClick={() => setActiveIndex(0)}
               >
-                <table className="table">
-                  <thead>
-                    <tr>
-                      <th style={{ width: 48 }}>{t("import.legend.symbol")}</th>
-                      <th style={{ width: 64 }}>{t("import.legend.color")}</th>
-                      <th>{t("import.legend.code")}</th>
-                      <th>{t("import.legend.name")}</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {legend.map((entry, index) => (
-                      <tr key={entry.code}>
-                        <td style={{ fontSize: 17, textAlign: "center" }}>{entry.symbol}</td>
-                        <td>
-                          <div className="swatch" style={{ width: 34, height: 34, background: entry.hex }} />
-                        </td>
-                        <td>
-                          <input
-                            className="input"
-                            style={{ width: 96 }}
-                            value={entry.code}
-                            aria-label={t("import.legend.code")}
-                            onChange={(event) =>
-                              setLegend((current) =>
-                                current.map((item, i) =>
-                                  i === index ? { ...item, code: event.target.value } : item,
-                                ),
-                              )
-                            }
-                          />
-                        </td>
-                        <td>
-                          <input
-                            className="input"
-                            style={{ minWidth: 140 }}
-                            value={entry.name}
-                            aria-label={t("import.legend.name")}
-                            onChange={(event) =>
-                              setLegend((current) =>
-                                current.map((item, i) =>
-                                  i === index ? { ...item, name: event.target.value } : item,
-                                ),
-                              )
-                            }
-                          />
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                🧹 {t("import.paint.eraser")}
+              </button>
+              <button type="button" className="btn btn-ghost" style={{ minHeight: 32 }} onClick={addPaletteEntry}>
+                + {t("import.palette.add")}
+              </button>
+            </div>
+
+            {palette.length === 0 ? (
+              <p className="text-muted" style={{ fontSize: 13 }}>
+                {t("import.palette.empty")}
+              </p>
             ) : (
-              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                {legend.map((entry, index) => (
-                  <div
-                    key={entry.code}
-                    style={{
-                      display: "flex",
-                      gap: 12,
-                      padding: 12,
-                      borderRadius: 20,
-                      background: "var(--color-surface)",
-                      border: `1px solid ${entry.uncertain ? "var(--color-accent)" : "transparent"}`,
-                    }}
-                  >
-                    <div
-                      style={{
-                        flex: "none",
-                        display: "flex",
-                        flexDirection: "column",
-                        alignItems: "center",
-                        gap: 6,
-                        width: 46,
-                      }}
-                    >
-                      <div className="swatch" style={{ width: 46, height: 46, background: entry.hex }} />
-                      <div
-                        style={{
-                          width: 34,
-                          height: 26,
-                          display: "grid",
-                          placeItems: "center",
-                          borderRadius: 8,
-                          background: "var(--color-bg)",
-                          fontSize: 16,
-                          lineHeight: 1,
-                        }}
-                      >
-                        {entry.symbol}
-                      </div>
-                    </div>
-                    <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 8 }}>
-                      <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                        <span className="text-muted" style={{ flex: "none", fontSize: 12, width: 74 }}>
-                          {t("import.legend.code")}
-                        </span>
-                        <input
-                          className="input"
-                          style={{ flex: 1, minWidth: 0, minHeight: 46 }}
-                          value={entry.code}
-                          onChange={(event) =>
-                            setLegend((current) =>
-                              current.map((item, i) =>
-                                i === index ? { ...item, code: event.target.value } : item,
-                              ),
-                            )
-                          }
-                        />
-                      </label>
-                      <label style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                        <span className="text-muted" style={{ flex: "none", fontSize: 12, width: 74 }}>
-                          {t("import.legend.name")}
-                        </span>
-                        <input
-                          className="input"
-                          style={{ flex: 1, minWidth: 0, minHeight: 46 }}
-                          value={entry.name}
-                          onChange={(event) =>
-                            setLegend((current) =>
-                              current.map((item, i) =>
-                                i === index ? { ...item, name: event.target.value } : item,
-                              ),
-                            )
-                          }
-                        />
-                      </label>
-                      {entry.uncertain && (
-                        <span className="tag tag-accent" style={{ alignSelf: "flex-start", minHeight: 28 }}>
-                          {t("import.legend.uncertain")}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
+              <ImportGridPainter painter={painter} activeIndex={activeIndex} />
             )}
+
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {palette.map((entry, index) => (
+                <div
+                  key={index}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    padding: "8px 10px",
+                    borderRadius: 14,
+                    background:
+                      activeIndex === index + 1 ? "var(--color-surface)" : "transparent",
+                  }}
+                >
+                  <input
+                    type="color"
+                    value={entry.rgb_hex}
+                    onChange={(event) => updatePaletteEntry(index, { rgb_hex: event.target.value })}
+                    onBlur={commitPaletteEdits}
+                    style={{ width: 34, height: 34, flex: "none", border: 0, background: "none" }}
+                    aria-label={t("import.legend.color")}
+                  />
+                  <input
+                    className="input"
+                    style={{ width: 90 }}
+                    placeholder={t("import.legend.code")}
+                    value={entry.code}
+                    onChange={(event) => updatePaletteEntry(index, { code: event.target.value })}
+                    onBlur={commitPaletteEdits}
+                  />
+                  <input
+                    className="input"
+                    style={{ flex: 1, minWidth: 0 }}
+                    placeholder={t("import.legend.name")}
+                    value={entry.name}
+                    onChange={(event) => updatePaletteEntry(index, { name: event.target.value })}
+                    onBlur={commitPaletteEdits}
+                  />
+                  <input
+                    className="input"
+                    style={{ width: 44, textAlign: "center", flex: "none" }}
+                    maxLength={2}
+                    placeholder={t("import.legend.symbol")}
+                    value={entry.symbol_key}
+                    onChange={(event) => updatePaletteEntry(index, { symbol_key: event.target.value })}
+                    onBlur={commitPaletteEdits}
+                  />
+                  <button
+                    type="button"
+                    className="btn btn-icon btn-ghost"
+                    aria-label={t("import.palette.remove")}
+                    onClick={() => removePaletteEntry(index)}
+                  >
+                    ✕
+                  </button>
+                </div>
+              ))}
+            </div>
           </div>
         )}
 
         {step === 4 && (
           <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-            <div
-              style={{
-                borderRadius: 22,
-                overflow: "hidden",
-                background: "var(--color-neutral-200)",
-                aspectRatio: "1.4",
-              }}
-            >
-              <PatternThumbnail pattern={preview} progress={null} label={preview.name} />
-            </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-              <h4 style={{ margin: 0 }}>{preview.name}</h4>
-              <div className="text-muted" style={{ fontSize: 13 }}>
-                {t("import.recap.source", { pages: 4 })}
-              </div>
-            </div>
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))",
-                gap: 10,
-              }}
-            >
-              {[
-                { label: t("import.recap.size"), value: `${preview.width} × ${preview.height}` },
-                { label: t("import.recap.stitches"), value: formatNumber(totals.total) },
-                { label: t("import.recap.colors"), value: `${preview.palette.length} DMC` },
-              ].map((tile) => (
-                <div key={tile.label} style={{ padding: "14px 16px", borderRadius: 20, background: "var(--color-surface)" }}>
-                  <div
-                    className="text-muted"
-                    style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: "0.08em" }}
-                  >
-                    {tile.label}
-                  </div>
-                  <div style={{ fontFamily: "var(--font-heading)", fontSize: 20 }}>{tile.value}</div>
+            {previewPattern === null ? (
+              <p className="tag tag-accent" style={{ margin: 0 }}>
+                {t("import.recap.incomplete")}
+              </p>
+            ) : (
+              <>
+                <div
+                  style={{
+                    borderRadius: 22,
+                    overflow: "hidden",
+                    background: "var(--color-neutral-200)",
+                    aspectRatio: "1.4",
+                  }}
+                >
+                  <PatternThumbnail pattern={previewPattern} progress={null} label={name} />
                 </div>
-              ))}
-            </div>
+                <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                  <span className="text-muted" style={{ fontSize: 12 }}>
+                    {t("import.recap.name")}
+                  </span>
+                  <input
+                    className="input"
+                    value={name}
+                    onChange={(event) => setName(event.target.value)}
+                    style={{ minHeight: 46 }}
+                  />
+                </label>
+                <label style={{ display: "flex", flexDirection: "column", gap: 4, maxWidth: 160 }}>
+                  <span className="text-muted" style={{ fontSize: 12 }}>
+                    {t("import.recap.fabric")}
+                  </span>
+                  <input
+                    className="input"
+                    inputMode="numeric"
+                    value={fabricCount}
+                    onChange={(event) => setFabricCount(event.target.value.replace(/[^0-9]/g, ""))}
+                    style={{ minHeight: 46 }}
+                  />
+                </label>
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))",
+                    gap: 10,
+                  }}
+                >
+                  {[
+                    {
+                      label: t("import.recap.size"),
+                      value: `${previewPattern.width} × ${previewPattern.height}`,
+                    },
+                    { label: t("import.recap.stitches"), value: String(preview?.filled_count ?? 0) },
+                    { label: t("import.recap.colors"), value: String(previewPattern.palette.length) },
+                  ].map((tile) => (
+                    <div
+                      key={tile.label}
+                      style={{ padding: "14px 16px", borderRadius: 20, background: "var(--color-surface)" }}
+                    >
+                      <div
+                        className="text-muted"
+                        style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: "0.08em" }}
+                      >
+                        {tile.label}
+                      </div>
+                      <div style={{ fontFamily: "var(--font-heading)", fontSize: 20 }}>{tile.value}</div>
+                    </div>
+                  ))}
+                </div>
+                {commitError !== null && (
+                  <p className="tag tag-accent" style={{ margin: 0 }}>
+                    {t("import.finish.error", { message: commitError })}
+                  </p>
+                )}
+              </>
+            )}
           </div>
         )}
 
@@ -525,7 +633,17 @@ export function ImportScreen({ preview, wide, onCancel, onFinish }: ImportScreen
               type="button"
               className="btn btn-primary"
               style={{ flex: 2, minHeight: 52 }}
-              onClick={() => (step === STEP_COUNT ? onFinish() : setStep((current) => current + 1))}
+              disabled={
+                (step === 2 && !dimensionsValid) ||
+                (step === 3 && palette.length === 0) ||
+                (step === 4 && (previewPattern === null || name.trim() === "" || committing))
+              }
+              onClick={() => {
+                if (step === 2) void goToPalette();
+                else if (step === 3) void goToRecap();
+                else if (step === STEP_COUNT) void finish();
+                else setStep((current) => current + 1);
+              }}
             >
               {step === STEP_COUNT ? t("import.finish") : t("import.continue")}
             </button>

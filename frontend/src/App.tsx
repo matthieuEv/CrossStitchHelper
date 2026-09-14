@@ -119,12 +119,15 @@ export function App() {
         />
       )}
 
-      {screen === "import" && activeEntry !== undefined && (
+      {screen === "import" && (
         <ImportScreen
-          preview={activeEntry.pattern}
-          wide={wide}
           onCancel={() => navigate("library")}
-          onFinish={() => navigate("track")}
+          onFinish={(patternId) => {
+            void library.refresh().then(() => {
+              setActiveId(patternId);
+              navigate("track");
+            });
+          }}
         />
       )}
 
