@@ -119,3 +119,92 @@ class ProgressSyncResponse(BaseModel):
             "à rejouer côté client."
         )
     )
+
+
+# --- Assistant d'import (Lot 2, cahier des charges §7.2, §9) ---------------
+#
+# Aucune détection automatique en Lot 2 : `ImportCrop`, dimensions et palette
+# sont entièrement saisis par l'utilisateur dans l'assistant.
+
+
+class ImportCrop(BaseModel):
+    """Cadrage de la page, en pourcentage de chaque bord (0-49)."""
+
+    left: float = Field(ge=0, le=49)
+    top: float = Field(ge=0, le=49)
+    right: float = Field(ge=0, le=49)
+    bottom: float = Field(ge=0, le=49)
+
+
+class ImportPaletteEntry(BaseModel):
+    code: str
+    name: str
+    rgb_hex: str
+    symbol_key: str
+
+
+class ImportFillZone(BaseModel):
+    """Une zone peinte d'un même index de palette — voir `app.imports_engine.apply_fills`."""
+
+    x0: int = Field(ge=0)
+    y0: int = Field(ge=0)
+    x1: int = Field(ge=0)
+    y1: int = Field(ge=0)
+    palette_index: int = Field(ge=1)
+
+
+class ImportConfig(BaseModel):
+    crop: ImportCrop | None = None
+    columns: int | None = Field(default=None, ge=1, le=1000)
+    rows: int | None = Field(default=None, ge=1, le=1000)
+    palette: list[ImportPaletteEntry] = Field(default_factory=list)
+    fills: list[ImportFillZone] = Field(default_factory=list)
+
+
+class ImportConfigPatch(BaseModel):
+    """Comme `ImportConfig`, mais chaque champ fourni remplace entièrement
+    l'existant plutôt que de le fusionner finement — le client renvoie
+    toujours l'état complet qu'il détient (mêmes principes que `done` côté
+    suivi), ce qui rend une resynchronisation triviale après une navigation
+    avant/arrière dans l'assistant."""
+
+    crop: ImportCrop | None = None
+    columns: int | None = Field(default=None, ge=1, le=1000)
+    rows: int | None = Field(default=None, ge=1, le=1000)
+    palette: list[ImportPaletteEntry] | None = None
+    fills: list[ImportFillZone] | None = None
+
+
+class ImportPreview(BaseModel):
+    """La grille assemblée à partir de la configuration courante — absente
+    tant que `columns`/`rows`/`palette` ne sont pas encore renseignés."""
+
+    width: int
+    height: int
+    cell_count: int
+    filled_count: int
+    layer_full: str = Field(description="Uint16Array encodée en base64, comme `GridOut`.")
+    palette: list[ImportPaletteEntry]
+
+
+class ImportJobOut(BaseModel):
+    id: str
+    status: str
+    kind: str
+    page_count: int
+    source_filename: str
+    pattern_id: str | None
+    config: ImportConfig
+    preview: ImportPreview | None
+    error: str | None
+    created_at: datetime
+    finished_at: datetime | None
+
+
+class ImportCommitRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+    fabric_count: int | None = Field(default=None, ge=1, le=64)
+
+
+class ImportCommitResponse(BaseModel):
+    pattern_id: str
