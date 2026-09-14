@@ -1,0 +1,541 @@
+/* ==========================================================================
+   Système de design « Organic » — porté depuis les maquettes Claude Design.
+
+   Écart assumé par rapport à la maquette : celle-ci chargeait Caprasimo et
+   Figtree depuis Google Fonts. Une instance auto-hébergée ne doit dépendre
+   d'aucun service tiers et doit fonctionner hors ligne (cahier des charges
+   §3), donc les piles système sont utilisées par défaut. Pour retrouver la
+   typographie exacte : déposer les .woff2 dans `src/assets/fonts/`, les
+   déclarer en @font-face ici, et changer les deux variables ci-dessous.
+   ========================================================================== */
+
+:root {
+  --color-bg: #f5ead8;
+  --color-surface: #ebddc5;
+  --color-text: #201e1d;
+  --color-accent: #c67139;
+  --color-accent-2: #7a8a5e;
+  --color-divider: color-mix(in srgb, #201e1d 16%, transparent);
+
+  --color-neutral-100: #f9f4ed;
+  --color-neutral-200: #eee7db;
+  --color-neutral-300: #dcd3c4;
+  --color-neutral-400: #c0b6a5;
+  --color-neutral-500: #a19786;
+  --color-neutral-600: #82796a;
+  --color-neutral-700: #645c50;
+  --color-neutral-800: #474238;
+  --color-neutral-900: #2e2b25;
+
+  --color-accent-100: #fff2eb;
+  --color-accent-200: #ffe1d0;
+  --color-accent-300: #ffc6a5;
+  --color-accent-400: #f6a06b;
+  --color-accent-500: #d67f48;
+  --color-accent-600: #b2622d;
+  --color-accent-700: #8c491a;
+  --color-accent-800: #643312;
+  --color-accent-900: #402310;
+
+  --color-accent-2-100: #f0fae1;
+  --color-accent-2-200: #e1eecc;
+  --color-accent-2-800: #3d472b;
+
+  --font-heading: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-heading-weight: 800;
+  --font-body: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+
+  --space-1: 4.4px;
+  --space-2: 8.8px;
+  --space-3: 13.2px;
+  --space-4: 17.6px;
+  --space-6: 26.4px;
+  --space-8: 35.2px;
+
+  --radius-sm: 8px;
+  --radius-md: 16px;
+  --radius-lg: 28px;
+
+  --shadow-sm: 0 1px 2px color-mix(in srgb, #2e2b25 14%, transparent);
+  --shadow-md: 0 3px 10px color-mix(in srgb, #2e2b25 16%, transparent);
+  --shadow-lg: 0 12px 32px color-mix(in srgb, #2e2b25 22%, transparent);
+
+  /* Teintes utilisées par le rendu canvas. Lues via getComputedStyle pour
+     que le dessin suive le thème sans dupliquer les valeurs en JavaScript. */
+  --canvas-fabric: #efe3cd;
+  --canvas-ground: #f5ead8;
+  --canvas-ink: #201e1d;
+}
+
+[data-theme="dark"] {
+  --color-bg: #1f1d19;
+  --color-surface: #2e2b25;
+  --color-text: #f9f4ed;
+  --color-accent: #f6a06b;
+  --color-accent-2: #aebf92;
+  --color-divider: color-mix(in srgb, #f9f4ed 18%, transparent);
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5);
+  --shadow-md: 0 3px 12px rgba(0, 0, 0, 0.55);
+  --shadow-lg: 0 14px 36px rgba(0, 0, 0, 0.6);
+
+  --canvas-fabric: #312d26;
+  --canvas-ground: #1f1d19;
+  --canvas-ink: #f9f4ed;
+}
+
+[data-theme="dark"] .tag-neutral {
+  background: #474238;
+  color: #f9f4ed;
+}
+[data-theme="dark"] .tag-accent {
+  background: color-mix(in srgb, #f6a06b 22%, transparent);
+  color: #ffc6a5;
+}
+[data-theme="dark"] .tag-accent-2 {
+  background: color-mix(in srgb, #aebf92 20%, transparent);
+  color: #ccdbb2;
+}
+[data-theme="dark"] .btn-primary {
+  color: #1f1d19;
+}
+[data-theme="dark"] .input {
+  background: #474238;
+}
+
+/* — base — */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-body);
+  font-size: 15px;
+  line-height: 1.55;
+  background: var(--color-bg);
+  color: var(--color-text);
+  /* Empêche le rebond élastique de Safari : l'application occupe l'écran et
+     gère son propre défilement zone par zone. */
+  overscroll-behavior: none;
+  -webkit-text-size-adjust: 100%;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-family: var(--font-heading);
+  font-weight: var(--font-heading-weight);
+  line-height: 1.12;
+  letter-spacing: -0.015em;
+  margin: 0 0 var(--space-2);
+}
+h1 { font-size: 42px; }
+h2 { font-size: 32px; }
+h3 { font-size: 25px; }
+h4 { font-size: 20px; }
+
+p { margin: 0 0 var(--space-3); }
+button { font-family: inherit; color: inherit; }
+:focus { outline: none; }
+:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+::selection { background: color-mix(in srgb, var(--color-accent) 30%, transparent); }
+
+.text-muted { color: color-mix(in srgb, var(--color-text) 58%, transparent); }
+.text-faint { color: color-mix(in srgb, var(--color-text) 50%, transparent); }
+.num { font-variant-numeric: tabular-nums; }
+.elev-sm { box-shadow: var(--shadow-sm); }
+.elev-md { box-shadow: var(--shadow-md); }
+.elev-lg { box-shadow: var(--shadow-lg); }
+
+/* — boutons — */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  cursor: pointer;
+  text-decoration: none;
+  font-family: var(--font-heading);
+  font-weight: var(--font-heading-weight);
+  font-size: 14px;
+  line-height: 1.2;
+  color: var(--color-text);
+  background: transparent;
+  border: 1px solid transparent;
+  padding: var(--space-2) calc(var(--space-3) * 1.2);
+  border-radius: 999px;
+}
+.btn svg { display: block; }
+.btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.btn-primary { background: var(--color-accent); color: var(--color-bg); }
+.btn-primary:hover { background: var(--color-accent-600); }
+.btn-secondary { border-color: var(--color-divider); }
+.btn-secondary:hover { background: color-mix(in srgb, var(--color-text) 7%, transparent); }
+.btn-ghost { color: var(--color-accent); padding-inline: var(--space-1); }
+.btn-ghost:hover { background: color-mix(in srgb, var(--color-accent) 10%, transparent); }
+.btn-icon { width: 44px; height: 44px; padding: 0; flex: none; }
+.btn-block { width: 100%; }
+
+/* — formulaires — */
+.input {
+  width: 100%;
+  min-height: 44px;
+  padding: 6px 14px;
+  font: inherit;
+  /* 16px minimum : en dessous, iOS zoome automatiquement à la mise au point. */
+  font-size: 16px;
+  color: var(--color-text);
+  caret-color: var(--color-accent);
+  background: var(--color-surface);
+  border: 1px solid var(--color-divider);
+  border-radius: 999px;
+}
+.input:focus-visible { border-color: var(--color-accent); outline-offset: 0; }
+
+.seg {
+  display: inline-flex;
+  overflow: hidden;
+  border: 1px solid var(--color-divider);
+  border-radius: 999px;
+}
+.seg button {
+  min-height: 44px;
+  padding: 0 18px;
+  border: 0;
+  cursor: pointer;
+  font-size: 13px;
+  background: transparent;
+}
+.seg button + button { border-left: 1px solid var(--color-divider); }
+.seg button[aria-pressed="true"] { background: var(--color-accent); color: var(--color-bg); }
+
+.switch {
+  flex: none;
+  width: 56px;
+  height: 34px;
+  padding: 3px;
+  border-radius: 999px;
+  border: 1px solid var(--color-divider);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  background: color-mix(in srgb, var(--color-text) 12%, transparent);
+  justify-content: flex-start;
+}
+.switch[aria-checked="true"] { background: var(--color-accent); justify-content: flex-end; }
+.switch > span {
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  background: var(--color-bg);
+  box-shadow: var(--shadow-sm);
+}
+
+/* — cartes, tags, tables — */
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border-radius: calc(var(--radius-lg) * 1.15);
+  background: var(--color-surface);
+}
+.card-title {
+  font-family: var(--font-heading);
+  font-weight: var(--font-heading-weight);
+  font-size: 17px;
+  line-height: 1.2;
+}
+
+.panel {
+  padding: 18px;
+  border-radius: 24px;
+  background: var(--color-surface);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.panel-title { font-family: var(--font-heading); font-weight: var(--font-heading-weight); font-size: 17px; }
+
+.tag {
+  display: inline-flex;
+  align-items: center;
+  font-size: 11px;
+  padding: 3px 10px;
+  border-radius: 999px;
+}
+.tag-accent { background: var(--color-accent-100); color: var(--color-accent-800); }
+.tag-accent-2 { background: var(--color-accent-2-100); color: var(--color-accent-2-800); }
+.tag-neutral { background: var(--color-neutral-100); color: var(--color-neutral-800); }
+
+.table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.table th {
+  text-align: left;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--color-text) 60%, transparent);
+  padding: var(--space-2);
+  border-bottom: 1px solid var(--color-divider);
+}
+.table td {
+  padding: var(--space-2);
+  border-bottom: 1px solid color-mix(in srgb, var(--color-text) 8%, transparent);
+}
+
+/* — barre de progression — */
+.bar {
+  height: 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--color-text) 12%, transparent);
+  overflow: hidden;
+}
+.bar > span { display: block; height: 100%; border-radius: 999px; background: var(--color-accent); }
+
+/* — pastille de couleur de fil — */
+.swatch {
+  flex: none;
+  border-radius: 999px;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.18);
+}
+
+/* ==========================================================================
+   Coquille applicative
+   ========================================================================== */
+
+.app {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--color-bg);
+  color: var(--color-text);
+}
+
+.app-body { flex: 1; min-height: 0; display: flex; }
+.app-main { flex: 1; min-width: 0; display: flex; flex-direction: column; overflow: hidden; }
+
+.screen {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 20px 20px 28px;
+}
+
+/* — barre latérale (iPad) — */
+.sidebar {
+  flex: none;
+  width: 224px;
+  background: var(--color-surface);
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: calc(26px + env(safe-area-inset-top)) 18px 18px;
+}
+.sidebar-brand { font-family: var(--font-heading); font-weight: var(--font-heading-weight); font-size: 19px; line-height: 1.15; padding: 0 8px; }
+.sidebar-link {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 48px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 999px;
+  cursor: pointer;
+  font-size: 15px;
+  text-align: left;
+  background: transparent;
+  color: var(--color-text);
+}
+.sidebar-link[aria-current="page"] {
+  background: color-mix(in srgb, var(--color-accent) 18%, transparent);
+  color: var(--color-accent);
+}
+
+/* — barre d'onglets (iPhone) — */
+.tabbar {
+  flex: none;
+  display: flex;
+  align-items: stretch;
+  padding: 6px 4px calc(6px + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--color-divider);
+  background: var(--color-surface);
+}
+.tabbar button {
+  flex: 1;
+  min-height: 52px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  font-size: 10px;
+  color: color-mix(in srgb, var(--color-text) 55%, transparent);
+}
+.tabbar button[aria-current="page"] { color: var(--color-accent); }
+
+.status-bar-spacer { flex: none; height: env(safe-area-inset-top); }
+
+/* — écran de suivi — */
+/* Deux colonnes sur écran large : la grille, puis le panneau des couleurs. */
+.track-layout { flex: 1; min-height: 0; display: flex; }
+.track { flex: 1; min-width: 0; display: flex; flex-direction: column; position: relative; }
+.track-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  padding-top: calc(10px + env(safe-area-inset-top));
+  border-bottom: 1px solid var(--color-divider);
+}
+.track-canvas-wrap { flex: 1; min-height: 0; position: relative; overflow: hidden; }
+.track-canvas { width: 100%; height: 100%; display: block; touch-action: none; }
+
+.track-badges {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.badge {
+  font-size: 11px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  background: var(--color-surface);
+  box-shadow: var(--shadow-sm);
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+button.badge {
+  border: 0;
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+  min-height: 32px;
+}
+
+.toolbar {
+  position: absolute;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px;
+  border-radius: 999px;
+  background: var(--color-surface);
+  box-shadow: var(--shadow-lg);
+}
+.toolbar button {
+  width: 48px;
+  height: 48px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+}
+.toolbar button[aria-pressed="true"] { background: var(--color-accent); color: var(--color-bg); }
+.toolbar .sep { width: 1px; height: 30px; background: var(--color-divider); margin: 0 4px; }
+
+/* — panneau / tiroir des couleurs — */
+.color-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 56px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 18px;
+  cursor: pointer;
+  text-align: left;
+  background: transparent;
+  color: inherit;
+}
+.color-row[aria-pressed="true"] { background: color-mix(in srgb, var(--color-accent) 20%, transparent); }
+
+.side-panel {
+  flex: none;
+  width: 296px;
+  background: var(--color-surface);
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--color-divider);
+}
+
+.drawer-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(20, 16, 12, 0.5);
+  display: flex;
+  align-items: flex-end;
+  z-index: 10;
+}
+.drawer {
+  width: 100%;
+  max-height: 72%;
+  display: flex;
+  flex-direction: column;
+  background: var(--color-bg);
+  border-radius: 28px 28px 0 0;
+  box-shadow: var(--shadow-lg);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+/* — assistant d'import — */
+.dropzone {
+  border: 2px dashed var(--color-divider);
+  border-radius: 28px;
+  padding: 32px 20px;
+  text-align: center;
+  background: color-mix(in srgb, var(--color-text) 3%, transparent);
+}
+.crop-stage {
+  position: relative;
+  aspect-ratio: 1.35;
+  border-radius: 20px;
+  overflow: hidden;
+  background: #cfc4ae;
+  touch-action: none;
+}
+.crop-handle { position: absolute; display: grid; place-items: center; touch-action: none; }
+.crop-handle > span { border-radius: 999px; background: var(--color-accent); box-shadow: var(--shadow-sm); display: block; }
+
+.stat-tile {
+  padding: 16px 18px;
+  border-radius: 22px;
+  background: var(--color-surface);
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+.stat-value { font-family: var(--font-heading); font-weight: var(--font-heading-weight); font-size: 24px; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}
