@@ -1,23 +1,25 @@
-"""Routes de persistance des motifs (cahier des charges §9, Lot 1).
+"""Routes de persistance des motifs (cahier des charges §9, Lot 1 et 2).
 
-Le Lot 2 (assistant d'import) n'existe pas encore : il n'y a donc pas de
-route pour créer un motif depuis un PDF. Pour l'instant, les motifs
-n'arrivent en base que par un script de seed (voir `app/seed.py`) — la
-persistance et la synchronisation de la progression sont ce que ce module
-apporte.
+Les motifs arrivent en base soit par le script de seed (`app/seed.py`), soit
+par l'assistant d'import (`app/api/imports.py`, Lot 2) ; ce module couvre ce
+qui s'applique une fois qu'un motif existe, quelle que soit son origine :
+lecture, synchronisation de la progression, et export `.cshp`.
 """
 
 from __future__ import annotations
 
 import json
 from typing import Annotated
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from app.codec import bytes_to_base64, count_set_bits, decode_uint16_layer
 from app.db import get_session
+from app.export_cshp import build_cshp_archive
 from app.models import Pattern, Progress, ProgressEvent
 from app.schemas import (
     GridOut,
@@ -235,3 +237,34 @@ def sync_progress(
         conflict=conflict,
         missing_ops=missing_ops,
     )
+
+
+@router.get(
+    "/{pattern_id}/export",
+    summary="Export .cshp (format ouvert)",
+    response_class=Response,
+)
+def export_pattern(
+    pattern_id: str, session: Annotated[Session, Depends(get_session)]
+) -> Response:
+    pattern = _get_pattern(session, pattern_id)
+    if pattern.grid is None or pattern.progress is None:
+        raise HTTPException(status_code=404, detail="Grille ou progression introuvable")
+
+    archive = build_cshp_archive(pattern, pattern.palette_entries, pattern.grid, pattern.progress)
+    return Response(
+        content=archive,
+        media_type="application/zip",
+        headers={"Content-Disposition": _content_disposition(f"{pattern.name}.cshp")},
+    )
+
+
+def _content_disposition(filename: str) -> str:
+    """Un nom de motif est arbitraire (accents, tirets cadratins, etc.) — les
+    en-têtes HTTP, eux, ne le sont pas : latin-1 strict. RFC 6266 fournit le
+    repli standard (``filename`` ASCII + ``filename*`` UTF-8 pourcent-encodé)
+    plutôt que de dégrader silencieusement le nom affiché au téléchargement.
+    """
+    safe = filename.replace("/", "-").encode("ascii", errors="replace").decode("ascii")
+    encoded = quote(filename.replace("/", "-"), safe="")
+    return f'attachment; filename="{safe}"; filename*=UTF-8\'\'{encoded}'

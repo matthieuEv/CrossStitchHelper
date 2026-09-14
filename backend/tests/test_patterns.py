@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import io
+import json
+import zipfile
 from collections.abc import Iterator
 
 import pytest
@@ -165,3 +168,37 @@ def test_sync_progress_404_for_unknown_pattern(client: TestClient) -> None:
         json={"base_version": 0, "ops": []},
     )
     assert response.status_code == 404
+
+
+def test_export_produces_a_self_contained_cshp_archive(seeded_client: TestClient) -> None:
+    response = seeded_client.get(f"/api/patterns/{DEMO_PATTERN_ID}/export")
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/zip"
+    assert "attachment" in response.headers["content-disposition"]
+
+    archive = zipfile.ZipFile(io.BytesIO(response.content))
+    assert set(archive.namelist()) == {"pattern.json", "grid.bin", "progress.bin", "README.txt"}
+
+    manifest = json.loads(archive.read("pattern.json"))
+    assert manifest["format"] == "cshp"
+    assert manifest["pattern"]["width"] == WIDTH
+    assert manifest["pattern"]["height"] == HEIGHT
+    assert len(manifest["palette"]) == 12
+    assert manifest["grid"]["width"] == WIDTH
+    assert manifest["progress"]["version"] == 1
+
+    grid_bytes = archive.read("grid.bin")
+    assert len(grid_bytes) == WIDTH * HEIGHT * 2  # uint16 little-endian, une valeur par case
+    layer = decode_uint16_layer(grid_bytes)
+    # Même contenu que ce que /grid renvoie en base64 — l'export ne doit pas
+    # réencoder ou tronquer les octets stockés en base.
+    grid_response = seeded_client.get(f"/api/patterns/{DEMO_PATTERN_ID}/grid").json()
+    assert layer == decode_uint16_layer(base64_to_bytes(grid_response["layer_full"]))
+
+    progress_bytes = archive.read("progress.bin")
+    progress_response = seeded_client.get(f"/api/patterns/{DEMO_PATTERN_ID}/progress").json()
+    assert progress_bytes == base64_to_bytes(progress_response["bitmap"])
+
+
+def test_export_404_for_unknown_pattern(client: TestClient) -> None:
+    assert client.get("/api/patterns/does-not-exist/export").status_code == 404
