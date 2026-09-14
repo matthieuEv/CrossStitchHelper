@@ -116,7 +116,14 @@ export function useTracker(
   onChangeRef.current = onChange;
 
   const [cell, setCell] = useState(16);
-  const [offset, setOffsetState] = useState({ x0: 30, y0: 24 });
+  // Position de départ pensée pour un grand motif (s'écarter du coin pour ne
+  // pas coller la vue au bord) ; sans le même bornage que `setOffset`
+  // ci-dessous, un petit motif peint à la main (Lot 2) s'ouvrirait sur une
+  // vue entièrement vide, en dehors de sa grille.
+  const [offset, setOffsetState] = useState(() => ({
+    x0: Math.max(-6, Math.min(pattern.width - 4, 30)),
+    y0: Math.max(-6, Math.min(pattern.height - 4, 24)),
+  }));
   const [tool, setTool] = useState<Tool>("stitch");
   const [highlight, setHighlight] = useState(0);
   const [cursor, setCursor] = useState<CellPosition | null>(null);
