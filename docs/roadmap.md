@@ -17,7 +17,7 @@ Chaque lot est indépendamment livrable et utilisable : il n'y a pas de lot "inu
 
 **Terminé quand :** `docker compose up` donne une application installable sur l'écran d'accueil d'un iPhone, avec une page d'accueil vide et une API qui répond.
 
-> **Reste à exécuter une fois sur une machine ayant accès au réseau** (l'environnement où ce lot a été écrit n'avait accès ni à npm ni à PyPI) : `npm install` puis `npm run build` dans `frontend/`, `pip install -e ".[dev]"` puis `pytest` dans `backend/`, et `docker compose up --build`. Le code a été vérifié autrement — typage strict des modules de rendu, exécution réelle de l'interface dans Chromium sur les cinq écrans en clair et en sombre — mais la chaîne d'installation elle-même n'a jamais tourné. Committer le `package-lock.json` produit par le premier `npm install`.
+> `npm install && npm run build` (frontend) et `pip install -e ".[dev]" && pytest` (backend) ont désormais tourné pour de vrai — un bug de typage réel a été trouvé et corrigé au passage (voir l'historique), et le `package-lock.json` produit est committé. **`docker compose up --build` reste à vérifier** : aucun environnement Docker n'était disponible pour l'exécuter jusqu'ici.
 
 ---
 
