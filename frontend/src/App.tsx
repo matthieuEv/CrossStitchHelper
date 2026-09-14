@@ -67,7 +67,7 @@ function PatternSession({
 export function App() {
   const t = useT();
   const wide = useWideLayout();
-  const { screen, navigate } = useRouter();
+  const { screen, patternId: routePatternId, navigate } = useRouter();
   const { state: serverState, health } = useServerHealth();
 
   // Bibliothèque de démonstration, utilisée tant que le serveur n'a rendu
@@ -88,14 +88,20 @@ export function App() {
   const library = usePatternLibrary();
   const entries: LibraryEntry[] = library.entries ?? demoEntries;
 
+  // L'URL (`/track/{id}`) est la source de vérité quand elle en porte un —
+  // c'est ce qui permet à un rechargement de page de rouvrir le même motif
+  // au lieu de retomber sur le premier de la liste (voir `lib/router.ts`).
+  // `activeId` ne sert que de repli pour les raccourcis de la barre de
+  // navigation, qui naviguent sans préciser de motif.
   const [activeId, setActiveId] = useState<string>(() => entries[0]?.pattern.id ?? "");
-  const activeEntry = entries.find((entry) => entry.pattern.id === activeId) ?? entries[0];
+  const effectiveId = routePatternId ?? activeId;
+  const activeEntry = entries.find((entry) => entry.pattern.id === effectiveId) ?? entries[0];
 
   const version = health?.version ?? FALLBACK_VERSION;
 
   const openPattern = (patternId: string): void => {
     setActiveId(patternId);
-    navigate("track");
+    navigate("track", patternId);
   };
 
   return (
@@ -125,7 +131,7 @@ export function App() {
           onFinish={(patternId) => {
             void library.refresh().then(() => {
               setActiveId(patternId);
-              navigate("track");
+              navigate("track", patternId);
             });
           }}
         />
