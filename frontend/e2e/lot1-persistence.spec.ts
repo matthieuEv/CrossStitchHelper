@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 
 /**
  * Vérifie le critère "terminé quand" du Lot 1 (docs/roadmap.md) : on peut
@@ -7,6 +7,26 @@ import { expect, test, type Page } from "@playwright/test";
  * moins un motif en base (voir e2e/README.md pour la procédure locale, et
  * .github/workflows/ci.yml pour celle de la CI).
  */
+
+interface PatternSummary {
+  name: string;
+  cell_count: number;
+}
+
+/**
+ * Le motif de démonstration seedé (`backend/scripts/seed_demo_pattern.py`,
+ * 255×180 = 45 900 cases) plutôt que `patterns[0]` : d'autres specs (Lot 2)
+ * créent leurs propres motifs, minuscules, dans la même base — prendre le
+ * premier motif venu rendrait ce test dépendant de l'ordre d'exécution.
+ */
+async function fetchDemoPattern(request: APIRequestContext): Promise<PatternSummary> {
+  const response = await request.get("/api/patterns");
+  const patterns = (await response.json()) as PatternSummary[];
+  const sorted = [...patterns].sort((a, b) => b.cell_count - a.cell_count);
+  const demo = sorted[0];
+  if (demo === undefined) throw new Error("Aucun motif en base");
+  return demo;
+}
 
 async function remainingCount(page: Page): Promise<number> {
   const text = await page.getByText(/restants$/).first().textContent();
@@ -18,20 +38,17 @@ async function remainingCount(page: Page): Promise<number> {
 test("la bibliothèque affiche un motif chargé depuis le serveur", async ({ page, request }) => {
   const response = await request.get("/api/patterns");
   expect(response.ok()).toBeTruthy();
-  const patterns = (await response.json()) as Array<{ name: string }>;
-  expect(patterns.length).toBeGreaterThan(0);
 
+  const demo = await fetchDemoPattern(request);
   await page.goto("/");
-  await expect(page.getByText(patterns[0]!.name)).toBeVisible();
+  await expect(page.getByText(demo.name)).toBeVisible();
 });
 
 test("cocher une zone de cases persiste après rechargement", async ({ page, request }) => {
-  const response = await request.get("/api/patterns");
-  const [pattern] = (await response.json()) as Array<{ name: string }>;
-  expect(pattern).toBeTruthy();
+  const pattern = await fetchDemoPattern(request);
 
   await page.goto("/");
-  await page.getByText(pattern!.name).click();
+  await page.getByText(pattern.name).click();
 
   const canvas = page.locator("canvas.track-canvas");
   await expect(canvas).toBeVisible();

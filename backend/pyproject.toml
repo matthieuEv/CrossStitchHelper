@@ -12,6 +12,9 @@ dependencies = [
     "alembic>=1.14",
     "pydantic>=2.9",
     "pydantic-settings>=2.6",
+    "python-multipart>=0.0.12",
+    "pymupdf>=1.24",
+    "pillow>=11.0",
 ]
 
 [project.optional-dependencies]
@@ -43,6 +46,13 @@ exclude = ["^alembic/"]
 [[tool.mypy.overrides]]
 module = ["alembic.*"]
 ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# pymupdf n'expose aucune information de type (pas de py.typed, pas de stubs
+# tiers disponibles) : impossible de rester strict sur ce module précis.
+module = ["pymupdf", "pymupdf.*"]
+ignore_missing_imports = true
+disallow_untyped_calls = false
 
 [tool.ruff]
 line-length = 100

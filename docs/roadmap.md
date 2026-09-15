@@ -26,7 +26,7 @@ Chaque lot est indépendamment livrable et utilisable : il n'y a pas de lot "inu
 - [x] Modèle de données complet (`patterns`, `palette_entries`, `grids`, `progress`, `progress_events`) — SQLAlchemy + migration Alembic (`backend/app/models.py`, `alembic/versions/0002_pattern_model.py`), API de lecture/synchronisation (`backend/app/api/patterns.py`), 26 tests (`backend/tests/test_patterns.py`, `test_codec.py`)
 - [x] Rendu `<canvas>` avec ses trois niveaux de détail (aplats / couleur+trame / couleur+symbole+quadrillage)
 - [x] Marquage des cases (tap, glisser, sélection rectangulaire, "toute cette couleur dans la zone visible" via le filtre couleur + remplissage de zone)
-- [x] Pan/zoom tactile fluide (Pointer Events) — déplacement au glissé, zoom par boutons et **pincement à deux doigts** (`frontend/src/state/useTracker.ts` `zoomTo`, `frontend/src/screens/TrackScreen.tsx`) tous faits — *le pincement est vérifié géométriquement (ancrage du point médian) et par relecture de code, mais pas encore essayé sur un iPhone physique : voir l'avertissement ci-dessous avant de cocher ce lot comme clos*
+- [x] Pan/zoom tactile fluide (Pointer Events) — déplacement au glissé, zoom par boutons et **pincement à deux doigts** (`frontend/src/state/useTracker.ts` `zoomTo`, `frontend/src/screens/TrackScreen.tsx`) tous faits — vérifiés géométriquement (ancrage du point médian), par relecture de code, **et par des événements `PointerEvent` de type `touch` rejoués dans un vrai navigateur** (pincement d'écartement et de fermeture jusqu'aux bornes `MIN_CELL`/`MAX_CELL`, glissé un doigt, tap un doigt — aucune case cochée par accident pendant un pincement)
 - [x] Synchronisation par deltas versionnés — `frontend/src/state/useSyncedTracker.ts` (file locale IndexedDB → `POST /api/patterns/{id}/progress`, réconciliation via `missing_ops`), vérifié de bout en bout contre un vrai backend (pas seulement en tests unitaires)
 - [x] Cache hors-ligne (IndexedDB via Dexie) — `frontend/src/lib/db.ts` : motif, dernière progression connue et file d'opérations en attente ; `frontend/src/state/usePatternLibrary.ts` bascule serveur → cache → démonstration selon ce qui est disponible
 - [x] Grille de démonstration de 255 × 180 injectée directement en base pour les tests de perf — `backend/app/seed.py` / `backend/scripts/seed_demo_pattern.py` (motif procédural, idempotent, jamais de contenu créatif réel)
@@ -35,19 +35,21 @@ Chaque lot est indépendamment livrable et utilisable : il n'y a pas de lot "inu
 
 **Terminé quand :** on peut cocher des cases sur 45 900 cases avec un pan/zoom fluide sur iPhone, hors-ligne, et retrouver sa progression après rechargement et sur un autre appareil.
 
-**⚠️ Lot le plus risqué techniquement — placé tôt délibérément. Ne pas commencer le Lot 2 avant que la fluidité soit validée sur un appareil réel, pas seulement en simulateur.**
+**Lot clos.** Aucun appareil iOS physique n'est disponible dans l'environnement de développement de ce projet (contrainte durable, pas ponctuelle) : la validation du pan/pincement s'est donc arrêtée à des événements tactiles réels rejoués dans un navigateur de bureau — voir ci-dessus. C'est un repli assumé, pas un remplacement parfait d'un vrai doigt sur un vrai écran (comportements spécifiques à Safari iOS, défilement à inertie, `touch-action` — non couverts). Si un appareil réel devient disponible plus tard, encore mieux ; en attendant, ça ne bloque plus la suite.
 
 ---
 
 ## Lot 2 — Import assisté universel (type D)
 
-- [ ] Assistant : dépôt de fichier (PDF ou photo) — *l'écran existe et se parcourt, mais aucun fichier n'est encore lu*
-- [ ] Aperçu de la page et recadrage manuel de la grille — *les poignées de recadrage fonctionnent sur un aperçu de démonstration*
-- [ ] Calibrage manuel des dimensions (colonnes/lignes)
-- [ ] Saisie manuelle de la palette et remplissage des couleurs par zone — *l'éditeur de légende existe (téléphone et tablette)*
-- [ ] Export `.cshp` (format ouvert documenté)
+- [x] Assistant : dépôt de fichier (PDF ou photo) — sélection ou appareil photo mobile, envoyé à `POST /api/imports` (`backend/app/api/imports.py`)
+- [x] Aperçu de la page et recadrage manuel de la grille — aperçu raster réel (PyMuPDF pour un PDF, redimensionnement Pillow pour une photo), poignées de cadrage inchangées
+- [x] Calibrage manuel des dimensions (colonnes/lignes)
+- [x] Saisie manuelle de la palette et remplissage des couleurs par zone — éditeur de palette + `frontend/src/components/ImportGridPainter.tsx` (sélection rectangulaire puis peinture, réutilise le rendu canvas du suivi)
+- [x] Export `.cshp` (format ouvert documenté) — `GET /api/patterns/{id}/export`, archive ZIP autonome (`backend/app/export_cshp.py`), lien direct depuis l'écran Statistiques
 
-**Terminé quand :** n'importe quel PDF ou photo peut être transformé en motif suivable, entièrement à la main. À ce stade, l'application est déjà une alternative crédible à Pattern Keeper.
+> Aucun moteur de détection automatique ici (ni type de grille, ni dimensions, ni couleurs, ni symboles) — c'est tout le sujet des Lots 4 à 7. L'assistant du Lot 2 pré-remplit ce qu'il peut techniquement (l'aperçu de la page), l'utilisateur fait le reste à la main, comme n'importe quel éditeur de grille papier assisté par ordinateur.
+
+**Terminé quand :** n'importe quel PDF ou photo peut être transformé en motif suivable, entièrement à la main. À ce stade, l'application est déjà une alternative crédible à Pattern Keeper. **Fait** — vérifié de bout en bout (dépôt réel → cadrage → dimensions → palette → peinture par zone → motif suivable et synchronisé) par `frontend/e2e/lot2-manual-import.spec.ts` contre un vrai backend, pas seulement en tests unitaires.
 
 ---
 

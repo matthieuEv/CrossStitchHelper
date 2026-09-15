@@ -48,6 +48,15 @@ function postJson<T>(path: string, body: unknown, signal?: AbortSignal): Promise
   });
 }
 
+function patchJson<T>(path: string, body: unknown, signal?: AbortSignal): Promise<T> {
+  return request<T>(path, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+    ...(signal !== undefined && { signal }),
+  });
+}
+
 export function fetchHealth(signal: AbortSignal): Promise<HealthResponse> {
   return request<HealthResponse>("/health", { signal });
 }
@@ -151,6 +160,11 @@ export function fetchProgress(id: string, signal?: AbortSignal): Promise<ApiProg
   return request<ApiProgress>(`/patterns/${id}/progress`, withSignal(signal));
 }
 
+/** Format ouvert et documenté (cahier des charges §6.4) — un lien direct suffit. */
+export function patternExportUrl(id: string): string {
+  return `/api/patterns/${id}/export`;
+}
+
 export function syncProgress(
   id: string,
   baseVersion: number,
@@ -162,6 +176,110 @@ export function syncProgress(
     { base_version: baseVersion, ops },
     signal,
   );
+}
+
+/** Formes des réponses de `/api/imports/*` — voir `backend/app/schemas.py`. */
+export interface ApiImportCrop {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+}
+
+export interface ApiImportPaletteEntry {
+  code: string;
+  name: string;
+  rgb_hex: string;
+  symbol_key: string;
+}
+
+export interface ApiImportFillZone {
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+  palette_index: number;
+}
+
+export interface ApiImportConfig {
+  crop: ApiImportCrop | null;
+  columns: number | null;
+  rows: number | null;
+  palette: ApiImportPaletteEntry[];
+  fills: ApiImportFillZone[];
+}
+
+export interface ApiImportConfigPatch {
+  crop?: ApiImportCrop;
+  columns?: number;
+  rows?: number;
+  palette?: ApiImportPaletteEntry[];
+  fills?: ApiImportFillZone[];
+}
+
+export interface ApiImportPreview {
+  width: number;
+  height: number;
+  cell_count: number;
+  filled_count: number;
+  layer_full: string;
+  palette: ApiImportPaletteEntry[];
+}
+
+export interface ApiImportJob {
+  id: string;
+  status: "ready" | "committed";
+  kind: "pdf" | "image";
+  page_count: number;
+  source_filename: string;
+  pattern_id: string | null;
+  config: ApiImportConfig;
+  preview: ApiImportPreview | null;
+  error: string | null;
+  created_at: string;
+  finished_at: string | null;
+}
+
+export function createImport(file: File, signal?: AbortSignal): Promise<ApiImportJob> {
+  const body = new FormData();
+  body.append("file", file);
+  return request<ApiImportJob>("/imports", {
+    method: "POST",
+    body,
+    ...(signal !== undefined && { signal }),
+  });
+}
+
+export function fetchImport(jobId: string, signal?: AbortSignal): Promise<ApiImportJob> {
+  return request<ApiImportJob>(`/imports/${jobId}`, withSignal(signal));
+}
+
+export function importPagePreviewUrl(jobId: string, pageNumber: number): string {
+  return `/api/imports/${jobId}/pages/${pageNumber}/preview`;
+}
+
+export function patchImportConfig(
+  jobId: string,
+  patch: ApiImportConfigPatch,
+  signal?: AbortSignal,
+): Promise<ApiImportJob> {
+  return patchJson<ApiImportJob>(`/imports/${jobId}/config`, patch, signal);
+}
+
+export function extractImport(jobId: string, signal?: AbortSignal): Promise<ApiImportJob> {
+  return postJson<ApiImportJob>(`/imports/${jobId}/extract`, {}, signal);
+}
+
+export interface ApiImportCommitResponse {
+  pattern_id: string;
+}
+
+export function commitImport(
+  jobId: string,
+  payload: { name: string; fabric_count?: number },
+  signal?: AbortSignal,
+): Promise<ApiImportCommitResponse> {
+  return postJson<ApiImportCommitResponse>(`/imports/${jobId}/commit`, payload, signal);
 }
 
 export type ServerState = "checking" | "ok" | "unreachable";

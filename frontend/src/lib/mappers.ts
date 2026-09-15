@@ -1,6 +1,12 @@
 /** Conversion des réponses de l'API vers les types du noyau motif (`pattern/types.ts`). */
 
-import type { ApiGrid, ApiPatternDetail, ApiProgress } from "./api";
+import type {
+  ApiGrid,
+  ApiImportPaletteEntry,
+  ApiImportPreview,
+  ApiPatternDetail,
+  ApiProgress,
+} from "./api";
 import { base64ToBytes, decodeUint16Layer, unpackBitmap } from "./codec";
 import type { PaletteEntry, Pattern, Progress } from "../pattern/types";
 
@@ -11,6 +17,33 @@ export function paletteFromApi(detail: ApiPatternDetail): PaletteEntry[] {
     hex: entry.rgb_hex,
     symbol: entry.symbol_key,
   }));
+}
+
+function paletteFromImportEntries(entries: ApiImportPaletteEntry[]): PaletteEntry[] {
+  return entries.map((entry) => ({
+    code: entry.code,
+    name: entry.name,
+    hex: entry.rgb_hex,
+    symbol: entry.symbol_key,
+  }));
+}
+
+/**
+ * Assemble un `Pattern` à partir de l'aperçu calculé par l'assistant d'import
+ * (Lot 2) — même format compact que `patternFromApi`, pour que l'écran de
+ * peinture par zone et le récapitulatif réutilisent tel quel le rendu canvas
+ * du suivi (`pattern/render.ts`).
+ */
+export function patternFromImportPreview(preview: ApiImportPreview, name: string): Pattern {
+  const layer = decodeUint16Layer(base64ToBytes(preview.layer_full));
+  return {
+    id: "import-preview",
+    name,
+    width: preview.width,
+    height: preview.height,
+    cells: Uint8Array.from(layer),
+    palette: paletteFromImportEntries(preview.palette),
+  };
 }
 
 /**

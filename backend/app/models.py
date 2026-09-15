@@ -7,9 +7,8 @@ charges §6) : ``patterns``, ``palette_entries``, ``grids``, ``progress``,
 distinctes reliées uniquement par ``pattern_id`` — un ré-import ne touche
 jamais à ``progress``.
 
-``recipes`` et ``import_jobs`` (aussi présentes au §6.2 du cahier des
-charges) n'existent pas encore : elles appartiennent aux Lots 2 et 6, qui
-n'ont pas commencé.
+``recipes`` (aussi présente au §6.2 du cahier des charges) n'existe pas
+encore : elle appartient au Lot 6, qui n'a pas commencé.
 """
 
 from __future__ import annotations
@@ -212,3 +211,33 @@ class ProgressEvent(Base):
         return (
             f"ProgressEvent(pattern_id={self.pattern_id!r}, version_after={self.version_after})"
         )
+
+
+class ImportJob(Base):
+    """L'état d'un import en cours (assistant, Lot 2 — cahier des charges §6.2, §9).
+
+    ``result_json`` porte à la fois ce que l'utilisateur a saisi dans
+    l'assistant (``config`` : cadrage, dimensions, palette, zones peintes) et
+    ce qui en a été calculé (``preview`` : la grille assemblée). Le Lot 2
+    n'a aucun moteur de détection automatique — ``config`` est donc
+    entièrement manuel, jamais déduit d'une analyse du fichier.
+    """
+
+    __tablename__ = "import_jobs"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="ready")
+    kind: Mapped[str] = mapped_column(String(8), nullable=False)
+    pattern_id: Mapped[str | None] = mapped_column(
+        ForeignKey("patterns.id", ondelete="SET NULL"), nullable=True
+    )
+    progress_pct: Mapped[int] = mapped_column(Integer, nullable=False, default=100)
+    result_json: Mapped[str] = mapped_column(Text, nullable=False)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utcnow
+    )
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    def __repr__(self) -> str:  # pragma: no cover - confort de débogage
+        return f"ImportJob(id={self.id!r}, status={self.status!r}, kind={self.kind!r})"

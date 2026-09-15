@@ -1,0 +1,127 @@
+/**
+ * État de l'étape « palette + peinture par zone » de l'assistant d'import
+ * (Lot 2, roadmap) : sélection rectangulaire puis remplissage, exactement le
+ * même geste que « marquer toute cette couleur » côté suivi
+ * (`state/useTracker.ts`), appliqué ici pour construire la grille au lieu de
+ * cocher une progression.
+ *
+ * Volontairement un hook séparé plutôt qu'une généralisation de
+ * `useTracker` : les deux écrans ont des besoins proches mais pas
+ * identiques (pas d'annulation multi-niveaux ni d'outils multiples ici), et
+ * `useTracker` est un code du Lot 1 déjà testé qu'il vaut mieux ne pas
+ * risquer de déstabiliser pour un besoin voisin.
+ */
+
+import { useCallback, useMemo, useState } from "react";
+
+import type { ApiImportFillZone } from "../lib/api";
+import { applyFillsLocal } from "../lib/importFills";
+import { MAX_CELL, MIN_CELL, type GridView } from "../pattern/render";
+import type { PaletteEntry, Pattern } from "../pattern/types";
+
+export interface PainterSelection {
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+}
+
+export interface CellPosition {
+  x: number;
+  y: number;
+}
+
+export interface ImportPainter {
+  pattern: Pattern;
+  filledCount: number;
+  cellCount: number;
+
+  view: GridView;
+  setOffset: (x0: number, y0: number) => void;
+  zoomIn: () => void;
+  zoomOut: () => void;
+
+  cursor: CellPosition | null;
+  setCursor: (cursor: CellPosition | null) => void;
+
+  selection: PainterSelection | null;
+  setSelection: (selection: PainterSelection | null) => void;
+
+  /** Peint (ou, avec `paletteIndex = 0`, efface) la sélection courante. */
+  paint: (paletteIndex: number) => void;
+}
+
+export function useImportPainter(
+  columns: number,
+  rows: number,
+  palette: readonly PaletteEntry[],
+  fills: readonly ApiImportFillZone[],
+  onFillsChange: (fills: ApiImportFillZone[]) => void,
+  name: string,
+): ImportPainter {
+  const [cell, setCell] = useState(16);
+  const [offset, setOffsetState] = useState({ x0: -2, y0: -2 });
+  const [cursor, setCursor] = useState<CellPosition | null>(null);
+  const [selection, setSelection] = useState<PainterSelection | null>(null);
+
+  const cells = useMemo(() => applyFillsLocal(columns, rows, fills), [columns, rows, fills]);
+  const filledCount = useMemo(() => cells.reduce((sum, value) => sum + (value !== 0 ? 1 : 0), 0), [
+    cells,
+  ]);
+
+  const pattern: Pattern = useMemo(
+    () => ({ id: "import-painter", name, width: columns, height: rows, cells, palette }),
+    [name, columns, rows, cells, palette],
+  );
+
+  const setOffset = useCallback(
+    (x0: number, y0: number) => {
+      setOffsetState({
+        x0: Math.max(-6, Math.min(columns - 4, x0)),
+        y0: Math.max(-6, Math.min(rows - 4, y0)),
+      });
+    },
+    [columns, rows],
+  );
+
+  const zoomIn = useCallback(
+    () => setCell((value) => Math.min(MAX_CELL, Math.round(value * 1.45))),
+    [],
+  );
+  const zoomOut = useCallback(
+    () => setCell((value) => Math.max(MIN_CELL, Math.round(value / 1.45))),
+    [],
+  );
+
+  const paint = useCallback(
+    (paletteIndex: number) => {
+      if (selection === null) return;
+      const zone: ApiImportFillZone = {
+        x0: Math.max(0, Math.min(selection.x0, selection.x1)),
+        y0: Math.max(0, Math.min(selection.y0, selection.y1)),
+        x1: Math.min(columns - 1, Math.max(selection.x0, selection.x1)),
+        y1: Math.min(rows - 1, Math.max(selection.y0, selection.y1)),
+        palette_index: paletteIndex,
+      };
+      onFillsChange([...fills, zone]);
+    },
+    [selection, columns, rows, fills, onFillsChange],
+  );
+
+  const view: GridView = { cell, x0: offset.x0, y0: offset.y0 };
+
+  return {
+    pattern,
+    filledCount,
+    cellCount: columns * rows,
+    view,
+    setOffset,
+    zoomIn,
+    zoomOut,
+    cursor,
+    setCursor,
+    selection,
+    setSelection,
+    paint,
+  };
+}

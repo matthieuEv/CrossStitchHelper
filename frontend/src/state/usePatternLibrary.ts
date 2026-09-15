@@ -15,7 +15,7 @@
  * coupure réseau.
  */
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
   fetchGrid,
@@ -86,40 +86,55 @@ async function loadEntriesFromCache(): Promise<LibraryPattern[]> {
   return entries;
 }
 
-export function usePatternLibrary(): { entries: LibraryPattern[] | null; source: LibrarySource } {
+export interface PatternLibrary {
+  entries: LibraryPattern[] | null;
+  source: LibrarySource;
+  /**
+   * Recharge depuis le serveur (repli cache/démonstration inchangé).
+   * Utilisé après un import validé (Lot 2) : le motif tout juste créé doit
+   * apparaître sans attendre le prochain montage de l'écran.
+   */
+  refresh: () => Promise<void>;
+}
+
+export function usePatternLibrary(): PatternLibrary {
   const [state, setState] = useState<{ entries: LibraryPattern[] | null; source: LibrarySource }>(
     { entries: null, source: "loading" },
   );
+  // Évite de publier le résultat d'une requête devenue obsolète si `refresh`
+  // est appelé pendant qu'un chargement précédent est encore en vol.
+  const requestIdRef = useRef(0);
 
-  useEffect(() => {
-    let cancelled = false;
+  const load = useCallback(async () => {
+    const requestId = ++requestIdRef.current;
+    const isStale = (): boolean => requestId !== requestIdRef.current;
 
-    void (async () => {
-      try {
-        const summaries = await fetchPatterns();
-        if (summaries.length === 0) {
-          if (!cancelled) setState({ entries: null, source: "demo" });
-          return;
-        }
-        const entries = await Promise.all(summaries.map(loadEntryFromServer));
-        if (!cancelled) setState({ entries, source: "server" });
-      } catch {
-        // Serveur injoignable : on retombe sur le cache local, puis sur la
-        // démonstration si rien n'a jamais été mis en cache sur cet appareil.
-        try {
-          const entries = await loadEntriesFromCache();
-          if (cancelled) return;
-          setState(entries.length > 0 ? { entries, source: "cache" } : { entries: null, source: "demo" });
-        } catch {
-          if (!cancelled) setState({ entries: null, source: "demo" });
-        }
+    try {
+      const summaries = await fetchPatterns();
+      if (summaries.length === 0) {
+        if (!isStale()) setState({ entries: null, source: "demo" });
+        return;
       }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
+      const entries = await Promise.all(summaries.map(loadEntryFromServer));
+      if (!isStale()) setState({ entries, source: "server" });
+    } catch {
+      // Serveur injoignable : on retombe sur le cache local, puis sur la
+      // démonstration si rien n'a jamais été mis en cache sur cet appareil.
+      try {
+        const entries = await loadEntriesFromCache();
+        if (isStale()) return;
+        setState(
+          entries.length > 0 ? { entries, source: "cache" } : { entries: null, source: "demo" },
+        );
+      } catch {
+        if (!isStale()) setState({ entries: null, source: "demo" });
+      }
+    }
   }, []);
 
-  return state;
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  return { ...state, refresh: load };
 }

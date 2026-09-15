@@ -48,6 +48,9 @@ class Settings(BaseSettings):
     lancer une commande de migration à la main après chaque mise à jour.
     """
 
+    import_max_upload_mb: int = 40
+    """Taille maximale d'un fichier déposé dans l'assistant d'import (Lot 2)."""
+
     @property
     def database_path(self) -> Path:
         return self.data_dir / self.database_filename
@@ -56,8 +59,19 @@ class Settings(BaseSettings):
     def database_url(self) -> str:
         return f"sqlite+pysqlite:///{self.database_path}"
 
+    @property
+    def imports_dir(self) -> Path:
+        """Zone de dépôt temporaire des fichiers en cours d'import.
+
+        Le PDF ou la photo source n'est jamais conservé au-delà de
+        l'extraction (CLAUDE.md) : chaque sous-répertoire ``<job_id>/`` est
+        supprimé dès que le job correspondant est validé (``commit``).
+        """
+        return self.data_dir / "imports"
+
     def ensure_directories(self) -> None:
         self.data_dir.mkdir(parents=True, exist_ok=True)
+        self.imports_dir.mkdir(parents=True, exist_ok=True)
 
 
 @lru_cache
