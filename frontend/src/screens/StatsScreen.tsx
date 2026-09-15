@@ -36,6 +36,13 @@ export function StatsScreen({ pattern, counts, totals, activity, sessions }: Sta
     return weekdayNames.format(date);
   };
 
+  const relativeTime = new Intl.RelativeTimeFormat(undefined, { numeric: "auto" });
+  const sessionLabel = (hoursAgo: number): string => {
+    if (hoursAgo < 1) return relativeTime.format(-Math.max(1, Math.round(hoursAgo * 60)), "minute");
+    if (hoursAgo < 24) return relativeTime.format(-Math.round(hoursAgo), "hour");
+    return relativeTime.format(-Math.round(hoursAgo / 24), "day");
+  };
+
   return (
     <div className="screen">
       <div
@@ -193,9 +200,9 @@ export function StatsScreen({ pattern, counts, totals, activity, sessions }: Sta
       </div>
 
       <div style={{ marginTop: 10 }}>
-        {sessions.map((session) => (
+        {sessions.map((session, index) => (
           <div
-            key={session.hoursAgo}
+            key={index}
             style={{
               display: "flex",
               alignItems: "center",
@@ -206,12 +213,7 @@ export function StatsScreen({ pattern, counts, totals, activity, sessions }: Sta
               borderBottom: "1px solid color-mix(in srgb, var(--color-text) 8%, transparent)",
             }}
           >
-            <span style={{ fontSize: 13 }}>
-              {new Intl.RelativeTimeFormat(undefined, { numeric: "auto" }).format(
-                -Math.round(session.hoursAgo / 24) || -1,
-                Math.round(session.hoursAgo / 24) >= 1 ? "day" : "hour",
-              )}
-            </span>
+            <span style={{ fontSize: 13 }}>{sessionLabel(session.hoursAgo)}</span>
             <span className="text-muted num" style={{ fontSize: 13 }}>
               {formatNumber(session.stitches)} · {session.minutes} min
             </span>

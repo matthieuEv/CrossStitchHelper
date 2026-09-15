@@ -10,30 +10,13 @@ import { useRouter } from "./lib/router";
 import { ImportScreen } from "./screens/ImportScreen";
 import { LibraryScreen, type LibraryEntry } from "./screens/LibraryScreen";
 import { SettingsScreen } from "./screens/SettingsScreen";
-import { StatsScreen, type ActivityDay, type ActivitySession } from "./screens/StatsScreen";
+import { StatsScreen } from "./screens/StatsScreen";
 import { TrackScreen } from "./screens/TrackScreen";
+import { usePatternActivity } from "./state/usePatternActivity";
 import { usePatternLibrary } from "./state/usePatternLibrary";
 import { useSyncedTracker, type SyncedTracker } from "./state/useSyncedTracker";
 
 const FALLBACK_VERSION = "0.1.0";
-
-/** Historique de séances de démonstration, remplacé par `progress_events` au Lot 1. */
-const DEMO_ACTIVITY: readonly ActivityDay[] = [
-  { weekday: 0, stitches: 340 },
-  { weekday: 1, stitches: 0 },
-  { weekday: 2, stitches: 580 },
-  { weekday: 3, stitches: 860 },
-  { weekday: 4, stitches: 220 },
-  { weekday: 5, stitches: 1000 },
-  { weekday: 6, stitches: 460 },
-];
-
-const DEMO_SESSIONS: readonly ActivitySession[] = [
-  { hoursAgo: 14, stitches: 312, minutes: 48 },
-  { hoursAgo: 62, stitches: 704, minutes: 112 },
-  { hoursAgo: 110, stitches: 186, minutes: 26 },
-  { hoursAgo: 134, stitches: 421, minutes: 64 },
-];
 
 /**
  * Détient l'état de suivi d'un motif et le prête aux écrans qui en ont besoin.
@@ -97,6 +80,14 @@ export function App() {
   const effectiveId = routePatternId ?? activeId;
   const activeEntry = entries.find((entry) => entry.pattern.id === effectiveId) ?? entries[0];
 
+  // Un motif de démonstration n'existe pas côté serveur : son historique
+  // reste factice plutôt que d'interroger un `/activity` qui répondrait 404
+  // pour de vraies raisons (voir `usePatternActivity`). Récupéré uniquement
+  // quand l'écran Statistiques est affiché — inutile de l'aller chercher en
+  // arrière-plan pendant que l'utilisateur brode.
+  const statsPatternId = screen === "stats" && activeEntry !== undefined ? activeEntry.pattern.id : "";
+  const patternActivity = usePatternActivity(statsPatternId, library.entries === null);
+
   const version = health?.version ?? FALLBACK_VERSION;
 
   const openPattern = (patternId: string): void => {
@@ -147,8 +138,8 @@ export function App() {
                 pattern={tracker.pattern}
                 counts={tracker.counts}
                 totals={tracker.totals}
-                activity={DEMO_ACTIVITY}
-                sessions={DEMO_SESSIONS}
+                activity={patternActivity.activity}
+                sessions={patternActivity.sessions}
               />
             )
           }
