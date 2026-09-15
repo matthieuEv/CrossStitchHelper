@@ -121,6 +121,33 @@ class ProgressSyncResponse(BaseModel):
     )
 
 
+# --- Historique d'activité (Lot 3, cahier des charges §11) -----------------
+#
+# Dérivé de `progress_events`, jamais stocké séparément : le journal des
+# deltas déjà écrit pour la synchronisation multi-appareils (Lot 1) est la
+# seule source de vérité de « qui a brodé quand ».
+
+
+class ActivityDayOut(BaseModel):
+    """Cases brodées un jour donné des 7 derniers jours glissants."""
+
+    weekday: int = Field(ge=0, le=6, description="0 = lundi, ISO.")
+    stitches: int
+
+
+class ActivitySessionOut(BaseModel):
+    """Une séance = des événements de progression sans coupure de plus de 30 min."""
+
+    hours_ago: float
+    stitches: int
+    minutes: int
+
+
+class PatternActivityOut(BaseModel):
+    activity: list[ActivityDayOut]
+    sessions: list[ActivitySessionOut]
+
+
 # --- Assistant d'import (Lot 2, cahier des charges §7.2, §9) ---------------
 #
 # Aucune détection automatique en Lot 2 : `ImportCrop`, dimensions et palette
