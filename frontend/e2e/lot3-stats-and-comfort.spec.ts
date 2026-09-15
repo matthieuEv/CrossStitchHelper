@@ -122,8 +122,8 @@ test("masquer les cases déjà brodées les vide visuellement", async ({ page, r
     canvas.evaluate((element) => {
       const ctx = (element as HTMLCanvasElement).getContext("2d");
       if (ctx === null) throw new Error("pas de contexte 2d");
-      const [r, g, b] = ctx.getImageData(26, 26, 1, 1).data;
-      return [r, g, b];
+      const data = ctx.getImageData(26, 26, 1, 1).data;
+      return [data[0] ?? 0, data[1] ?? 0, data[2] ?? 0];
     });
 
   const stitchedColor = await sample();
