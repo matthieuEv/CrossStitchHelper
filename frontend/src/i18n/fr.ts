@@ -42,6 +42,9 @@ export const fr = {
     "Photo : posez la grille à plat, bien éclairée, sans ombre portée. Le cadrage se corrige à l'étape suivante.",
   "import.crop.hint":
     "Faites glisser les quatre bords pour ne garder que la grille, puis indiquez ses dimensions en cases.",
+  "import.crop.page": "Page {page} / {total}",
+  "import.crop.prevPage": "Page précédente",
+  "import.crop.nextPage": "Page suivante",
   "import.crop.columns": "Colonnes",
   "import.crop.rows": "Lignes",
   "import.legend.code": "Code",

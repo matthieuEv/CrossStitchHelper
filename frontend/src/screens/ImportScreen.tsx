@@ -7,7 +7,7 @@ import {
 } from "react";
 
 import { ImportGridPainter } from "../components/ImportGridPainter";
-import { CameraIcon, UploadIcon } from "../components/Icons";
+import { BackIcon, CameraIcon, UploadIcon } from "../components/Icons";
 import { PatternThumbnail } from "../components/PatternThumbnail";
 import { useT } from "../i18n";
 import {
@@ -58,6 +58,7 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
   const [uploadError, setUploadError] = useState<string | null>(null);
 
   const [crop, setCrop] = useState<Crop>(DEFAULT_CROP);
+  const [page, setPage] = useState(1);
   const [columns, setColumns] = useState<string>("");
   const [rows, setRows] = useState<string>("");
   const [palette, setPalette] = useState<ApiImportPaletteEntry[]>([]);
@@ -96,6 +97,7 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
       setJob(created);
       applyConfig(created.config);
       setName(file.name.replace(/\.(pdf|png|jpe?g)$/i, ""));
+      setPage(1);
       setStep(2);
     } catch (error) {
       setUploadError(error instanceof ApiError ? `HTTP ${error.status}` : String(error));
@@ -341,6 +343,34 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
               {t("import.crop.hint")}
             </div>
 
+            {job.page_count > 1 && (
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 14 }}>
+                <button
+                  type="button"
+                  className="btn btn-icon btn-ghost"
+                  aria-label={t("import.crop.prevPage")}
+                  disabled={page <= 1}
+                  onClick={() => setPage((current) => Math.max(1, current - 1))}
+                >
+                  <BackIcon size={18} />
+                </button>
+                <span className="text-muted num" style={{ fontSize: 13, minWidth: "10ch", textAlign: "center" }}>
+                  {t("import.crop.page", { page, total: job.page_count })}
+                </span>
+                <button
+                  type="button"
+                  className="btn btn-icon btn-ghost"
+                  aria-label={t("import.crop.nextPage")}
+                  disabled={page >= job.page_count}
+                  onClick={() => setPage((current) => Math.min(job.page_count, current + 1))}
+                >
+                  <span style={{ display: "inline-flex", transform: "scaleX(-1)" }}>
+                    <BackIcon size={18} />
+                  </span>
+                </button>
+              </div>
+            )}
+
             <div
               ref={stageRef}
               className="crop-stage"
@@ -349,7 +379,8 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
               onPointerLeave={endDrag}
             >
               <img
-                src={importPagePreviewUrl(job.id, 1)}
+                key={page}
+                src={importPagePreviewUrl(job.id, page)}
                 alt=""
                 style={{ width: "100%", height: "100%", objectFit: "contain", display: "block" }}
               />
