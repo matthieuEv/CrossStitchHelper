@@ -68,6 +68,10 @@ export interface Tracker {
   toggleHighlight: (index: number) => void;
   clearHighlight: () => void;
 
+  /** Masque les cases déjà brodées plutôt que de les délaver. */
+  hideDone: boolean;
+  toggleHideDone: () => void;
+
   cursor: CellPosition | null;
   setCursor: (cursor: CellPosition | null) => void;
 
@@ -126,6 +130,7 @@ export function useTracker(
   }));
   const [tool, setTool] = useState<Tool>("stitch");
   const [highlight, setHighlight] = useState(0);
+  const [hideDone, setHideDone] = useState(false);
   const [cursor, setCursor] = useState<CellPosition | null>(null);
   const [selection, setSelection] = useState<Selection | null>(null);
 
@@ -274,6 +279,8 @@ export function useTracker(
   );
   const clearHighlight = useCallback(() => setHighlight(0), []);
 
+  const toggleHideDone = useCallback(() => setHideDone((current) => !current), []);
+
   const view: GridView = { cell, x0: offset.x0, y0: offset.y0 };
 
   return {
@@ -292,6 +299,8 @@ export function useTracker(
     highlight,
     toggleHighlight,
     clearHighlight,
+    hideDone,
+    toggleHideDone,
     cursor,
     setCursor,
     selection,
