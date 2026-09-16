@@ -9,22 +9,27 @@ import { expect, test, type APIRequestContext, type Page } from "@playwright/tes
  */
 
 interface PatternSummary {
+  id: string;
   name: string;
   cell_count: number;
 }
 
+/** `backend/app/seed.py` — identifiant stable, jamais régénéré. */
+const DEMO_PATTERN_ID = "demo-perf-255x180";
+
 /**
- * Le motif de démonstration seedé (`backend/scripts/seed_demo_pattern.py`,
- * 255×180 = 45 900 cases) plutôt que `patterns[0]` : d'autres specs (Lot 2)
- * créent leurs propres motifs, minuscules, dans la même base — prendre le
- * premier motif venu rendrait ce test dépendant de l'ordre d'exécution.
+ * Le motif de démonstration seedé, repéré par son identifiant stable
+ * (`backend/app/seed.py::DEMO_PATTERN_ID`) plutôt que par sa taille :
+ * d'autres specs (Lot 2, Lot 4) créent leurs propres motifs dans la même
+ * base, potentiellement de mêmes dimensions (255×180, la fixture type A du
+ * Lot 4 y atterrit aussi) — un tri par `cell_count` ne suffit plus à lever
+ * l'ambiguïté depuis que cette coïncidence existe.
  */
 async function fetchDemoPattern(request: APIRequestContext): Promise<PatternSummary> {
   const response = await request.get("/api/patterns");
   const patterns = (await response.json()) as PatternSummary[];
-  const sorted = [...patterns].sort((a, b) => b.cell_count - a.cell_count);
-  const demo = sorted[0];
-  if (demo === undefined) throw new Error("Aucun motif en base");
+  const demo = patterns.find((pattern) => pattern.id === DEMO_PATTERN_ID);
+  if (demo === undefined) throw new Error("Motif de démonstration introuvable en base");
   return demo;
 }
 

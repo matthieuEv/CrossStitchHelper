@@ -15,15 +15,20 @@ interface PatternSummary {
   cell_count: number;
 }
 
-/** Même repli que lot1-persistence.spec.ts : d'autres specs créent leurs
- * propres motifs dans la même base, le plus grand est toujours le motif de
- * démonstration seedé. */
+/** `backend/app/seed.py` — identifiant stable, jamais régénéré. */
+const DEMO_PATTERN_ID = "demo-perf-255x180";
+
+/**
+ * Même repli que lot1-persistence.spec.ts, mais par identifiant plutôt que
+ * par taille : le Lot 4 importe un vrai motif de mêmes dimensions
+ * (255×180) dans la même base, donc `cell_count` seul ne distingue plus le
+ * motif seedé d'un motif importé.
+ */
 async function fetchDemoPattern(request: APIRequestContext): Promise<PatternSummary> {
   const response = await request.get("/api/patterns");
   const patterns = (await response.json()) as PatternSummary[];
-  const sorted = [...patterns].sort((a, b) => b.cell_count - a.cell_count);
-  const demo = sorted[0];
-  if (demo === undefined) throw new Error("Aucun motif en base");
+  const demo = patterns.find((pattern) => pattern.id === DEMO_PATTERN_ID);
+  if (demo === undefined) throw new Error("Motif de démonstration introuvable en base");
   return demo;
 }
 
