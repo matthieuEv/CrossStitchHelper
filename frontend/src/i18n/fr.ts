@@ -42,6 +42,7 @@ export const fr = {
     "Photo : posez la grille à plat, bien éclairée, sans ombre portée. Le cadrage se corrige à l'étape suivante.",
   "import.crop.hint":
     "Faites glisser les quatre bords pour ne garder que la grille, puis indiquez ses dimensions en cases.",
+  "import.detection.running": "Analyse automatique en cours… Vous pouvez déjà cadrer ou saisir les dimensions à la main si vous ne voulez pas attendre.",
   "import.detection.title": "Détection automatique : type {type}, confiance {confidence} %",
   "import.detection.hint": "Vérifiez et corrigez si besoin — rien n'est jamais figé.",
   "import.crop.page": "Page {page} / {total}",

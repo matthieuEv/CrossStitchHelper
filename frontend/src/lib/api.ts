@@ -268,6 +268,7 @@ export interface ApiImportJob {
   config: ApiImportConfig;
   preview: ApiImportPreview | null;
   detection: ApiImportDetection | null;
+  detecting: boolean;
   error: string | null;
   created_at: string;
   finished_at: string | null;

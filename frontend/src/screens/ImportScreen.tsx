@@ -1,5 +1,6 @@
 import {
   useCallback,
+  useEffect,
   useRef,
   useState,
   type ChangeEvent,
@@ -15,6 +16,7 @@ import {
   commitImport,
   createImport,
   extractImport,
+  fetchImport,
   importPagePreviewUrl,
   patchImportConfig,
   type ApiImportConfig,
@@ -75,6 +77,9 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
 
   const stageRef = useRef<HTMLDivElement>(null);
   const dragEdgeRef = useRef<Edge | null>(null);
+  /** Passe à `true` dès que l'utilisateur tape ses propres dimensions —
+   * plus aucun sondage de détection ne doit alors venir écraser sa saisie. */
+  const manualEditRef = useRef(false);
 
   const stepLabels = [
     t("import.step.file"),
@@ -97,6 +102,7 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
     setUploadError(null);
     try {
       const created = await createImport(file);
+      manualEditRef.current = false;
       setJob(created);
       applyConfig(created.config);
       setDetection(created.detection);
@@ -109,6 +115,30 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
       setUploading(false);
     }
   };
+
+  // Détection automatique (Lot 4) : tourne en tâche de fond côté serveur —
+  // on sonde tant qu'elle n'est pas terminée, sans jamais écraser une
+  // saisie manuelle déjà commencée (`manualEditRef`).
+  useEffect(() => {
+    if (job === null || !job.detecting) return;
+    const jobId = job.id;
+    let cancelled = false;
+    const timer = setInterval(() => {
+      void fetchImport(jobId).then((updated) => {
+        if (cancelled) return;
+        setJob(updated);
+        if (!manualEditRef.current) {
+          applyConfig(updated.config);
+          setDetection(updated.detection);
+        }
+      });
+    }, 1200);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [job?.id, job?.detecting]);
 
   const onFileChosen = (event: ChangeEvent<HTMLInputElement>): void => {
     const file = event.target.files?.[0];
@@ -348,6 +378,20 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
               {t("import.crop.hint")}
             </div>
 
+            {job.detecting && (
+              <div
+                className="text-muted"
+                style={{
+                  padding: "12px 16px",
+                  borderRadius: 18,
+                  background: "var(--color-surface)",
+                  fontSize: 13,
+                }}
+              >
+                {t("import.detection.running")}
+              </div>
+            )}
+
             {detection !== null && (
               <div
                 style={{
@@ -470,7 +514,10 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
                   className="input"
                   inputMode="numeric"
                   value={columns}
-                  onChange={(event) => setColumns(event.target.value.replace(/[^0-9]/g, ""))}
+                  onChange={(event) => {
+                    manualEditRef.current = true;
+                    setColumns(event.target.value.replace(/[^0-9]/g, ""));
+                  }}
                   style={{ minHeight: 46 }}
                 />
               </label>
@@ -482,7 +529,10 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
                   className="input"
                   inputMode="numeric"
                   value={rows}
-                  onChange={(event) => setRows(event.target.value.replace(/[^0-9]/g, ""))}
+                  onChange={(event) => {
+                    manualEditRef.current = true;
+                    setRows(event.target.value.replace(/[^0-9]/g, ""));
+                  }}
                   style={{ minHeight: 46 }}
                 />
               </label>
