@@ -69,13 +69,15 @@ Chaque lot est indépendamment livrable et utilisable : il n'y a pas de lot "inu
 
 ## Lot 4 — Extraction automatique type A
 
-- [ ] Analyse structurelle des PDF (polices, rectangles, caractères, texte)
-- [ ] Détection de grille (pavage régulier, pas de grille, dimensions)
-- [ ] Parseur de police de symboles embarquée (type Cafe Brasserie)
-- [ ] Parseur de légende texte ("Floss Used for…")
-- [ ] Assemblage multi-pages par numéros d'axes
+- [x] Analyse structurelle des PDF (polices, rectangles, caractères, texte) — `backend/app/type_a.py`, détection de la police de symboles par géométrie (pavage régulier), jamais par nom de police en dur
+- [x] Détection de grille (pavage régulier, pas de grille, dimensions) — dimensions annoncées en clair par le PDF privilégiées sur l'étendue reconstruite (§7.2 étape 6), avec repli et avertissement sinon
+- [x] Parseur de police de symboles embarquée (type Cafe Brasserie) — clé de rapprochement grille/légende = (glyphe, couleur du petit rectangle sous le glyphe), pas le glyphe seul : ce fichier de référence réutilise le même glyphe pour deux couleurs différentes selon le type de point (voir le commit du moteur)
+- [x] Parseur de légende texte ("Floss Used for…") — table symbole → code DMC → nom, à partir du texte réel de la section « Full Stitches »
+- [x] Assemblage multi-pages par numéros d'axes — 8 pages de grille recollées via les numéros de colonnes/lignes imprimés en marge, avec repli par ordre de lecture (confiance réduite + avertissement) si une page n'en a pas d'exploitables
 
-**Terminé quand :** le PDF `fixtures/cafe-brasserie-charting-export/` s'importe en validant simplement les propositions, et que les comptages par couleur obtenus correspondent à ceux de sa page 11 (voir `fixtures/README.md`).
+**Terminé quand :** le PDF `fixtures/cafe-brasserie-charting-export/` s'importe en validant simplement les propositions, et que les comptages par couleur obtenus correspondent à ceux de sa page 11 (voir `fixtures/README.md`). **Fait** — les 34 couleurs de la légende correspondent exactement aux comptages de la page 11 « Usage Summary » (reparsés depuis le PDF à chaque exécution des tests, jamais recopiés à la main), vérifié à la fois en tests unitaires (`backend/tests/test_type_a.py`) et en e2e bout en bout contre une vraie instance (`frontend/e2e/lot4-automatic-detection.spec.ts` : dépôt du PDF réel → dimensions et palette déjà pré-remplies → validation sans rien construire à la main → motif suivable). Aucune régression sur les cinq autres fixtures (types B/C/E) : `detect_type_a` s'efface proprement (`None`) sur chacune, pas de faux positif.
+
+**Lot clos.** La détection tourne en tâche de fond (`BackgroundTasks`) plutôt que dans la requête d'upload — nécessaire en pratique : l'analyse de cette fixture (11 pages) prenait 41,6 s avant un correctif de performance (indexation spatiale des rectangles de couleur plutôt qu'un balayage par glyphe, voir l'historique), et reste à ~9,5 s après, toujours trop long pour une requête HTTP synchrone. Le parcours manuel du Lot 2 reste intégralement disponible et jamais contourné de force — une correction peinte à la main l'emporte toujours sur la proposition automatique.
 
 ---
 
