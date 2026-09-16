@@ -1,9 +1,14 @@
-"""Assistant d'import — Lot 2 (cahier des charges §7.2, §9).
+"""Assistant d'import — Lot 2 (cahier des charges §7.2, §9), détection
+automatique depuis le Lot 4.
 
-Entièrement manuel : ce module ne contient aucune détection automatique de
-grille, de couleurs ou de légende — ça, c'est les Lots 4 à 7. Ici,
-l'utilisateur dépose un fichier, le cadre et le calibre lui-même, saisit sa
-propre palette, et peint chaque zone de la grille à la main.
+L'utilisateur dépose un fichier, le cadre et le calibre lui-même, saisit sa
+propre palette, et peint chaque zone de la grille à la main — ce parcours
+manuel reste toujours disponible et jamais contourné de force (§4.4 :
+« jamais un résultat imposé »). Pour un PDF, `app/type_a.py` tente en tâche
+de fond une détection automatique dont le résultat ne fait que pré-remplir
+la même configuration modifiable : dimensions, palette, et une grille de
+fond que les zones peintes peuvent corriger (`app/imports_engine.apply_fills`,
+paramètre `base`).
 """
 
 from __future__ import annotations
@@ -15,14 +20,14 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, UploadFile
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
 from app.codec import bytes_to_base64, encode_uint16_layer
 from app.codec import empty_bitmap as codec_empty_bitmap
 from app.config import Settings, get_settings
-from app.db import get_session
+from app.db import get_session, get_session_factory
 from app.imports_engine import (
     MAX_PREVIEW_DIMENSION,
     apply_fills,
@@ -37,9 +42,11 @@ from app.schemas import (
     ImportCommitResponse,
     ImportConfig,
     ImportConfigPatch,
+    ImportDetection,
     ImportJobOut,
     ImportPreview,
 )
+from app.type_a import detect_type_a
 
 router = APIRouter(prefix="/imports", tags=["import"])
 
@@ -82,7 +89,7 @@ def _compute_preview(config: dict[str, Any]) -> dict[str, Any] | None:
     if columns is None or rows is None or not palette:
         return None
 
-    cells = apply_fills(columns, rows, config.get("fills") or [])
+    cells = apply_fills(columns, rows, config.get("fills") or [], base=config.get("detected_cells"))
     filled_count = sum(1 for value in cells if value != 0)
     return {
         "width": columns,
@@ -105,6 +112,10 @@ def _job_out(job: ImportJob) -> ImportJobOut:
         pattern_id=job.pattern_id,
         config=ImportConfig(**result["config"]),
         preview=ImportPreview(**result["preview"]) if result.get("preview") is not None else None,
+        detection=(
+            ImportDetection(**result["detection"]) if result.get("detection") is not None else None
+        ),
+        detecting=bool(result.get("detecting", False)),
         error=job.error,
         created_at=job.created_at,
         finished_at=job.finished_at,
@@ -120,6 +131,7 @@ def _require_editable(job: ImportJob) -> None:
 
 @router.post("", response_model=ImportJobOut, summary="Dépose un fichier, crée un job d'import")
 async def create_import(
+    background_tasks: BackgroundTasks,
     session: Annotated[Session, Depends(get_session)],
     settings: Annotated[Settings, Depends(get_settings)],
     file: UploadFile,
@@ -156,13 +168,32 @@ async def create_import(
         shutil.rmtree(job_dir, ignore_errors=True)
         raise HTTPException(status_code=400, detail="Fichier illisible") from error
 
+    # Un PDF déclenche une tentative de détection automatique (Lot 4) en
+    # tâche de fond — jamais dans la requête elle-même : sur la fixture de
+    # référence (11 pages), l'analyse structurelle prend plusieurs dizaines
+    # de secondes, largement au-dessus de ce qu'une requête HTTP doit
+    # attendre (cahier des charges §5.2 : tâches longues via
+    # `BackgroundTasks` + statut interrogé par le client, jamais
+    # synchrone). Le job reste utilisable manuellement (Lot 2) sans attendre
+    # cette détection, qui ne fait que pré-remplir sa configuration une fois
+    # prête (`GET /api/imports/{id}` reflète `detecting: false`).
+    will_detect = kind == "pdf"
     result = {
         "page_count": page_count,
         "source_filename": file.filename or f"source.{ext}",
         "source_ext": ext,
         "source_sha256": sha256_file(source_path),
-        "config": {"crop": None, "columns": None, "rows": None, "palette": [], "fills": []},
+        "config": {
+            "crop": None,
+            "columns": None,
+            "rows": None,
+            "palette": [],
+            "fills": [],
+            "detected_cells": None,
+        },
         "preview": None,
+        "detection": None,
+        "detecting": will_detect,
     }
 
     job = ImportJob(
@@ -176,7 +207,61 @@ async def create_import(
     )
     session.add(job)
     session.commit()
+
+    if will_detect:
+        background_tasks.add_task(_run_type_a_detection, job_id, source_path)
+
     return _job_out(job)
+
+
+def _run_type_a_detection(job_id: str, source_path: Path) -> None:
+    """Tâche de fond (Lot 4) : détection automatique, jamais bloquante pour
+    la requête d'upload. `detect_type_a` ne lève jamais (voir `app/type_a.py`)
+    mais un filet de sécurité ici garantit que le job sort toujours de l'état
+    « en cours d'analyse », même face à un bug imprévu — un import qui reste
+    éternellement « en cours » serait une impasse (§10 : « aucun import ne
+    doit aboutir à une impasse »)."""
+    with get_session_factory()() as session:
+        job = session.get(ImportJob, job_id)
+        if job is None or job.status == "committed":
+            return  # Job supprimé ou déjà validé entre-temps.
+
+        result = _result_of(job)
+        try:
+            detected = detect_type_a(source_path)
+        except Exception as error:  # pragma: no cover - filet de sécurité défensif
+            result["detecting"] = False
+            result["detection"] = {
+                "grid_type": "A",
+                "confidence": 0.0,
+                "warnings": [f"Échec inattendu de la détection automatique : {error}"],
+            }
+            _save_result(job, result)
+            session.commit()
+            return
+
+        result["detecting"] = False
+        if detected is not None:
+            result["config"]["columns"] = detected.columns
+            result["config"]["rows"] = detected.rows
+            result["config"]["detected_cells"] = detected.cells
+            result["config"]["palette"] = [
+                {
+                    "code": entry.code,
+                    "name": entry.name,
+                    "rgb_hex": entry.rgb_hex,
+                    "symbol_key": entry.symbol_key,
+                }
+                for entry in detected.palette
+            ]
+            result["detection"] = {
+                "grid_type": "A",
+                "confidence": detected.confidence,
+                "warnings": detected.warnings,
+            }
+            result["preview"] = _compute_preview(result["config"])
+        _save_result(job, result)
+        session.commit()
 
 
 @router.get(
@@ -248,6 +333,8 @@ def patch_config(
         config["palette"] = [entry.model_dump() for entry in payload.palette]
     if payload.fills is not None:
         config["fills"] = [fill.model_dump() for fill in payload.fills]
+    if payload.detected_cells is not None:
+        config["detected_cells"] = payload.detected_cells
 
     result["preview"] = _compute_preview(config)
     _save_result(job, result)
@@ -299,7 +386,12 @@ def commit(
     now = datetime.now(UTC)
     pattern_id = uuid.uuid4().hex
     columns, rows = preview["width"], preview["height"]
-    cells = apply_fills(columns, rows, result["config"].get("fills") or [])
+    cells = apply_fills(
+        columns,
+        rows,
+        result["config"].get("fills") or [],
+        base=result["config"].get("detected_cells"),
+    )
 
     pattern = Pattern(
         id=pattern_id,

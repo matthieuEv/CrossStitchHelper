@@ -254,6 +254,10 @@ class ImportJobOut(BaseModel):
     config: ImportConfig
     preview: ImportPreview | None
     detection: ImportDetection | None = None
+    detecting: bool = Field(
+        default=False,
+        description="Détection automatique (Lot 4) en cours en tâche de fond pour ce PDF.",
+    )
     error: str | None
     created_at: datetime
     finished_at: datetime | None

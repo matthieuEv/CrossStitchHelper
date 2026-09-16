@@ -1,12 +1,31 @@
 from __future__ import annotations
 
 import io
+import time
+from pathlib import Path
 from typing import Any
 
 import pymupdf
 import pytest
 from fastapi.testclient import TestClient
 from PIL import Image
+
+from app.codec import base64_to_bytes, decode_uint16_layer
+
+
+def _wait_for_detection(client: TestClient, job_id: str, timeout: float = 20.0) -> dict[str, Any]:
+    """La détection type A (Lot 4) tourne en tâche de fond
+    (`BackgroundTasks`) — ni `TestClient` ni le serveur réel ne garantissent
+    qu'elle soit terminée au retour de `POST /api/imports`, donc on sonde
+    `GET /api/imports/{id}` jusqu'à ce que `detecting` retombe à faux,
+    exactement comme le ferait le client réel."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        job: dict[str, Any] = client.get(f"/api/imports/{job_id}").json()
+        if not job["detecting"]:
+            return job
+        time.sleep(0.05)
+    raise AssertionError(f"détection toujours en cours après {timeout}s pour le job {job_id}")
 
 
 def _tiny_pdf_bytes() -> bytes:
@@ -65,6 +84,52 @@ def test_create_import_accepts_pdf(client: TestClient) -> None:
         "detected_cells": None,
     }
     assert job["preview"] is None
+
+
+def test_create_import_of_trivial_pdf_finishes_detection_with_no_result(
+    client: TestClient,
+) -> None:
+    job = _upload_pdf(client)
+    assert job["detecting"] is True  # tâche de fond juste programmée
+    job = _wait_for_detection(client, job["id"])
+    assert job["detection"] is None
+
+
+def test_manual_fills_override_detected_cells(client: TestClient) -> None:
+    """Une correction peinte à la main doit toujours l'emporter sur la
+    grille détectée automatiquement (Lot 4) — sans passer par une vraie
+    détection PDF, en posant directement `detected_cells` comme le ferait
+    la tâche de fond une fois terminée."""
+    job = _upload_pdf(client)
+    job_id = job["id"]
+    _wait_for_detection(client, job_id)
+
+    detected_cells = [1, 1, 1, 1]  # 2x2, entièrement DMC 310 détecté
+    client.patch(
+        f"/api/imports/{job_id}/config",
+        json={
+            "columns": 2,
+            "rows": 2,
+            "palette": _SAMPLE_PALETTE,
+            "detected_cells": detected_cells,
+        },
+    )
+    baseline = client.post(f"/api/imports/{job_id}/extract").json()
+    assert baseline["preview"]["filled_count"] == 4
+
+    # Corrige une case vers la deuxième couleur — le reste doit rester issu
+    # de la détection, pas retomber à vide.
+    client.patch(
+        f"/api/imports/{job_id}/config",
+        json={"fills": [{"x0": 0, "y0": 0, "x1": 0, "y1": 0, "palette_index": 2}]},
+    )
+    corrected = client.post(f"/api/imports/{job_id}/extract").json()
+    assert corrected["preview"]["filled_count"] == 4  # toujours 4 cases peintes
+    layer = decode_uint16_layer(base64_to_bytes(corrected["preview"]["layer_full"]))
+    assert layer[0] == 2  # la correction a pris le dessus
+    assert layer[1] == 1  # les autres cases restent la détection d'origine
+    assert layer[2] == 1
+    assert layer[3] == 1
 
 
 def test_create_import_accepts_image(client: TestClient) -> None:
@@ -267,3 +332,53 @@ def test_commit_removes_the_staged_source_file(client: TestClient) -> None:
     client.post(f"/api/imports/{job_id}/commit", json={"name": "Motif"})
 
     assert not job_dir.exists()
+
+
+def test_create_import_of_real_type_a_pdf_prefills_config_from_detection(
+    client: TestClient,
+) -> None:
+    """Bout en bout, fixture réelle (Lot 4) : `POST /api/imports` d'un vrai
+    export type A doit ressortir avec la configuration déjà pré-remplie par
+    `app/type_a.py`, sans aucune action de l'utilisateur — c'est le critère
+    "terminé quand" du roadmap (`docs/roadmap.md`, Lot 4). Plus lent que le
+    reste de cette suite (analyse structurelle réelle, ~10s) : c'est
+    attendu, voir `tests/test_type_a.py` pour la vérification exhaustive de
+    la justesse de l'extraction elle-même — ce test-ci ne vérifie que le
+    branchement dans l'API d'import."""
+    fixture_path = (
+        Path(__file__).resolve().parents[2]
+        / "fixtures"
+        / "cafe-brasserie-charting-export"
+        / "CaffeBrasseriecoloursymbols.pdf"
+    )
+    if not fixture_path.is_file():
+        pytest.skip(f"fixture manquante : {fixture_path}")
+
+    with fixture_path.open("rb") as handle:
+        response = client.post(
+            "/api/imports",
+            files={"file": ("CaffeBrasseriecoloursymbols.pdf", handle, "application/pdf")},
+        )
+    assert response.status_code == 200
+    job = _wait_for_detection(client, response.json()["id"], timeout=30.0)
+
+    assert job["detecting"] is False
+    assert job["detection"]["grid_type"] == "A"
+    assert job["detection"]["confidence"] > 0.85
+
+    config = job["config"]
+    assert config["columns"] == 255
+    assert config["rows"] == 180
+    # 34 couleurs DMC de la légende « Full Stitches », plus d'éventuelles
+    # entrées « Symbole non reconnu » (glyphes de demi/quart-point hors
+    # périmètre du Lot 4, voir `app/type_a.py`) — comptées séparément ici,
+    # exactement comme `tests/test_type_a.py`.
+    dmc_entries = [entry for entry in config["palette"] if entry["code"]]
+    assert len(dmc_entries) == 34
+    assert config["detected_cells"] is not None
+    assert len(config["detected_cells"]) == 255 * 180
+
+    # Le récapitulatif (étape 4 de l'assistant) doit déjà avoir une grille
+    # exploitable sans qu'aucune zone n'ait été peinte à la main.
+    assert job["preview"] is not None
+    assert job["preview"]["filled_count"] > 0
