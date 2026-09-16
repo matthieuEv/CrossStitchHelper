@@ -9,6 +9,7 @@ lecture, synchronisation de la progression, et export `.cshp`.
 from __future__ import annotations
 
 import json
+from datetime import UTC
 from typing import Annotated
 from urllib.parse import quote
 
@@ -17,6 +18,7 @@ from fastapi.responses import Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
+from app.activity import compute_activity
 from app.codec import bytes_to_base64, count_set_bits, decode_uint16_layer
 from app.db import get_session
 from app.export_cshp import build_cshp_archive
@@ -24,6 +26,7 @@ from app.models import Pattern, Progress, ProgressEvent
 from app.schemas import (
     GridOut,
     PaletteEntryOut,
+    PatternActivityOut,
     PatternDetail,
     PatternSummary,
     ProgressOp,
@@ -237,6 +240,38 @@ def sync_progress(
         conflict=conflict,
         missing_ops=missing_ops,
     )
+
+
+@router.get(
+    "/{pattern_id}/activity",
+    response_model=PatternActivityOut,
+    summary="Historique d'activité dérivé des événements de progression",
+)
+def get_activity(
+    pattern_id: str, session: Annotated[Session, Depends(get_session)]
+) -> PatternActivityOut:
+    _get_pattern(session, pattern_id)  # 404 si le motif n'existe pas.
+    events = (
+        session.execute(
+            select(ProgressEvent)
+            .where(ProgressEvent.pattern_id == pattern_id)
+            .order_by(ProgressEvent.ts)
+        )
+        .scalars()
+        .all()
+    )
+    # SQLite ne conserve pas le fuseau horaire au stockage : `event.ts` en
+    # ressort naïf bien que la colonne soit `DateTime(timezone=True)` et
+    # toujours écrite en UTC (`_utcnow`, `app/models.py`) — sans ce réattachement
+    # explicite, comparer à `datetime.now(UTC)` lève une `TypeError`.
+    parsed = [
+        (
+            event.ts if event.ts.tzinfo is not None else event.ts.replace(tzinfo=UTC),
+            json.loads(event.ops_json),
+        )
+        for event in events
+    ]
+    return compute_activity(parsed)
 
 
 @router.get(

@@ -4,6 +4,7 @@ import { ColorList } from "../components/ColorList";
 import {
   BackIcon,
   CloseIcon,
+  EyeOffIcon,
   MinusIcon,
   PanIcon,
   PlusIcon,
@@ -67,7 +68,8 @@ export function TrackScreen({ tracker, wide, onBack }: TrackScreenProps) {
     initialCell: number;
   } | null>(null);
 
-  const { pattern, view, tool, highlight, cursor, selection, totals, counts, version } = tracker;
+  const { pattern, view, tool, highlight, hideDone, cursor, selection, totals, counts, version } =
+    tracker;
 
   // Redessine la grille puis les repères. Les dépendances couvrent tout ce qui
   // peut changer l'image : progression, vue, filtre, thème et taille de boîte.
@@ -82,12 +84,13 @@ export function TrackScreen({ tracker, wide, onBack }: TrackScreenProps) {
       view,
       theme,
       highlight,
+      hideDone,
     });
     if (!drawn) return;
 
     const accent = getComputedStyle(canvas).getPropertyValue("--color-accent").trim();
     drawOverlay(canvas, { view, accent, cursor, selection });
-  }, [pattern, tracker.done, version, view, highlight, cursor, selection, resolved, size]);
+  }, [pattern, tracker.done, version, view, highlight, hideDone, cursor, selection, resolved, size]);
 
   const cellAt = useCallback(
     (event: ReactPointerEvent<HTMLCanvasElement>): CellPosition => {
@@ -397,6 +400,14 @@ export function TrackScreen({ tracker, wide, onBack }: TrackScreenProps) {
               style={{ opacity: tracker.canUndo ? 1 : 0.4 }}
             >
               <UndoIcon />
+            </button>
+            <button
+              type="button"
+              aria-pressed={hideDone}
+              onClick={tracker.toggleHideDone}
+              aria-label={t(hideDone ? "track.showDone" : "track.hideDone")}
+            >
+              <EyeOffIcon />
             </button>
             <div className="sep" />
             <button

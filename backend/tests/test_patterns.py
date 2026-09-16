@@ -202,3 +202,36 @@ def test_export_produces_a_self_contained_cshp_archive(seeded_client: TestClient
 
 def test_export_404_for_unknown_pattern(client: TestClient) -> None:
     assert client.get("/api/patterns/does-not-exist/export").status_code == 404
+
+
+def test_activity_is_empty_for_a_pattern_with_no_progress_events(seeded_client: TestClient) -> None:
+    response = seeded_client.get(f"/api/patterns/{DEMO_PATTERN_ID}/activity")
+    assert response.status_code == 200
+    body = response.json()
+    assert len(body["activity"]) == 7
+    assert all(day["stitches"] == 0 for day in body["activity"])
+    assert body["sessions"] == []
+
+
+def test_activity_reflects_a_real_progress_sync(seeded_client: TestClient) -> None:
+    base = seeded_client.get(f"/api/patterns/{DEMO_PATTERN_ID}/progress").json()
+    seeded_client.post(
+        f"/api/patterns/{DEMO_PATTERN_ID}/progress",
+        json={
+            "base_version": base["version"],
+            "ops": [
+                {"index": 90 * WIDTH + 130, "stitched": True},
+                {"index": 90 * WIDTH + 131, "stitched": True},
+            ],
+        },
+    )
+
+    body = seeded_client.get(f"/api/patterns/{DEMO_PATTERN_ID}/activity").json()
+    assert sum(day["stitches"] for day in body["activity"]) == 2
+    assert len(body["sessions"]) == 1
+    assert body["sessions"][0]["stitches"] == 2
+    assert body["sessions"][0]["hours_ago"] < 0.01
+
+
+def test_activity_404_for_unknown_pattern(client: TestClient) -> None:
+    assert client.get("/api/patterns/does-not-exist/activity").status_code == 404

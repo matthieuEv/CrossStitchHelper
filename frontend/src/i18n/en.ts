@@ -80,6 +80,8 @@ export const en: Record<TranslationKey, string> = {
   "track.zoomIn": "Zoom in",
   "track.zoomOut": "Zoom out",
   "track.undo": "Undo",
+  "track.hideDone": "Hide stitched cells",
+  "track.showDone": "Show stitched cells",
   "track.tool.stitch": "Mark",
   "track.tool.pan": "Pan",
   "track.tool.select": "Select an area",

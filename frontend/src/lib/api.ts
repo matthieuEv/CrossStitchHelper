@@ -140,6 +140,22 @@ export interface ApiProgressSyncResponse {
   missing_ops: ApiProgressOp[];
 }
 
+export interface ApiActivityDay {
+  weekday: number;
+  stitches: number;
+}
+
+export interface ApiActivitySession {
+  hours_ago: number;
+  stitches: number;
+  minutes: number;
+}
+
+export interface ApiPatternActivity {
+  activity: ApiActivityDay[];
+  sessions: ApiActivitySession[];
+}
+
 function withSignal(signal?: AbortSignal): RequestInit | undefined {
   return signal === undefined ? undefined : { signal };
 }
@@ -163,6 +179,13 @@ export function fetchProgress(id: string, signal?: AbortSignal): Promise<ApiProg
 /** Format ouvert et documenté (cahier des charges §6.4) — un lien direct suffit. */
 export function patternExportUrl(id: string): string {
   return `/api/patterns/${id}/export`;
+}
+
+export function fetchPatternActivity(
+  id: string,
+  signal?: AbortSignal,
+): Promise<ApiPatternActivity> {
+  return request<ApiPatternActivity>(`/patterns/${id}/activity`, withSignal(signal));
 }
 
 export function syncProgress(

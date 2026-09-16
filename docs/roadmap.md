@@ -55,13 +55,15 @@ Chaque lot est indépendamment livrable et utilisable : il n'y a pas de lot "inu
 
 ## Lot 3 — Statistiques et confort de suivi
 
-- [ ] Statistiques complètes (progression globale/par couleur, écheveaux estimés, historique)
-- [ ] Filtrage par couleur (mise en évidence, estompage des autres)
-- [ ] Masquage des cases déjà faites
-- [ ] Surlignage de la ligne/colonne courante
-- [ ] Annulation multi-niveaux
+- [x] Statistiques complètes (progression globale/par couleur, écheveaux estimés, historique) — la progression globale/par couleur était déjà réelle depuis le Lot 1 ; l'historique (`stats.activity`, séances récentes) était le dernier à être factice (`DEMO_ACTIVITY`/`DEMO_SESSIONS` figées dans `App.tsx`) — remplacé par `GET /api/patterns/{id}/activity` (`backend/app/activity.py`), qui agrège `progress_events` (déjà écrit à chaque synchronisation depuis le Lot 1) plutôt que de dupliquer un second historique
+- [x] Filtrage par couleur (mise en évidence, estompage des autres) — déjà réel depuis le Lot 1 (`useTracker.highlight`, estompage dans `pattern/render.ts`)
+- [x] Masquage des cases déjà faites — nouveau bouton dans la barre d'outils du Suivi (`useTracker.hideDone`), rend une case faite en toile nue plutôt que délavée
+- [x] Surlignage de la ligne/colonne courante — déjà réel depuis le Lot 1 (réticule de `drawOverlay`, `pattern/render.ts`)
+- [x] Annulation multi-niveaux — déjà réelle depuis le Lot 1 (pile de 16 états dans `useTracker.ts`)
 
 **Terminé quand :** les quatre besoins initiaux (import, suivi, couleur exacte par case, stats) sont couverts, même si l'import reste manuel. **Fin de la V1.**
+
+**Lot clos.** Vérifié par `frontend/e2e/lot3-stats-and-comfort.spec.ts` contre un vrai backend : une zone cochée apparaît dans un vrai historique de séances (pas les données factices), le masquage change réellement les pixels rendus du canvas, et l'annulation revient sur deux gestes d'affilée (pas un seul).
 
 ---
 

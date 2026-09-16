@@ -88,6 +88,8 @@ export const fr = {
   "track.zoomIn": "Zoomer",
   "track.zoomOut": "Dézoomer",
   "track.undo": "Annuler",
+  "track.hideDone": "Masquer les cases faites",
+  "track.showDone": "Réafficher les cases faites",
   "track.tool.stitch": "Cocher",
   "track.tool.pan": "Déplacer",
   "track.tool.select": "Sélectionner une zone",

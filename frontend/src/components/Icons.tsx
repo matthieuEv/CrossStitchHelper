@@ -154,3 +154,14 @@ export function CameraIcon(props: IconProps) {
     </Svg>
   );
 }
+
+/** Œil barré : masque les cases déjà brodées pour ne montrer que le reste à faire. */
+export function EyeOffIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M3 3l18 18" />
+      <path d="M10.6 5.2A10.4 10.4 0 0 1 12 5c5 0 9 4 10 7-.4 1.1-1.2 2.4-2.3 3.5M6.3 6.3C4.2 7.7 2.7 9.6 2 12c1 3 5 7 10 7 1.4 0 2.7-.3 3.9-.8" />
+      <path d="M9.5 10a3.4 3.4 0 0 0 4.5 4.5" />
+    </Svg>
+  );
+}

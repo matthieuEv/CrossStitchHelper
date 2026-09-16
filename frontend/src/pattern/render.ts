@@ -41,6 +41,8 @@ export interface DrawGridOptions {
   /** Index de palette 1-based à mettre en avant ; 0 pour n'en surligner aucun. */
   highlight: number;
   gridlines?: boolean;
+  /** Masque les cases déjà brodées (toile nue) plutôt que de les délaver. */
+  hideDone?: boolean;
 }
 
 /**
@@ -158,10 +160,15 @@ export function drawGrid(canvas: HTMLCanvasElement, options: DrawGridOptions): b
       const entry = pattern.palette[value - 1];
       if (entry === undefined) continue;
 
+      const isDone = done !== null && done[index] === 1;
+      // Case masquée : on la laisse en toile nue, exactement comme une case
+      // vide du motif — c'est ce qui fait disparaître visuellement ce qui est
+      // déjà brodé plutôt que de simplement le délaver.
+      if (isDone && options.hideDone === true) continue;
+
       const px = (x - x0) * cell;
       const py = (y - y0) * cell;
       const dimmed = highlight !== 0 && highlight !== value;
-      const isDone = done !== null && done[index] === 1;
 
       g.globalAlpha = dimmed ? 0.14 : 1;
       // Une case faite reste reconnaissable à sa couleur, mais délavée : c'est
