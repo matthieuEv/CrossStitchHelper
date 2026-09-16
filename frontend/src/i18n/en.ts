@@ -36,6 +36,8 @@ export const en: Record<TranslationKey, string> = {
   "import.photo.hint":
     "Photo: lay the chart flat, well lit, with no shadow across it. You can fix the framing in the next step.",
   "import.crop.hint": "Drag the four edges to keep only the grid, then set its size in cells.",
+  "import.detection.title": "Automatic detection: type {type}, {confidence}% confidence",
+  "import.detection.hint": "Check and correct as needed — nothing here is final.",
   "import.crop.page": "Page {page} / {total}",
   "import.crop.prevPage": "Previous page",
   "import.crop.nextPage": "Next page",

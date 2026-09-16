@@ -63,6 +63,8 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
   const [rows, setRows] = useState<string>("");
   const [palette, setPalette] = useState<ApiImportPaletteEntry[]>([]);
   const [fills, setFills] = useState<ApiImportFillZone[]>([]);
+  const [detectedCells, setDetectedCells] = useState<number[] | null>(null);
+  const [detection, setDetection] = useState<ApiImportJob["detection"]>(null);
   const [activeIndex, setActiveIndex] = useState(1);
 
   const [name, setName] = useState("");
@@ -87,6 +89,7 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
     if (config.rows !== null) setRows(String(config.rows));
     setPalette(config.palette);
     setFills(config.fills);
+    setDetectedCells(config.detected_cells);
   };
 
   const upload = async (file: File): Promise<void> => {
@@ -96,6 +99,7 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
       const created = await createImport(file);
       setJob(created);
       applyConfig(created.config);
+      setDetection(created.detection);
       setName(file.name.replace(/\.(pdf|png|jpe?g)$/i, ""));
       setPage(1);
       setStep(2);
@@ -176,6 +180,7 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
       if (job !== null) void patchImportConfig(job.id, { fills: nextFills });
     },
     name,
+    detectedCells,
   );
 
   const addPaletteEntry = (): void => {
@@ -342,6 +347,34 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
             <div className="text-muted" style={{ fontSize: 13 }}>
               {t("import.crop.hint")}
             </div>
+
+            {detection !== null && (
+              <div
+                style={{
+                  padding: "12px 16px",
+                  borderRadius: 18,
+                  background: "var(--color-surface)",
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 6,
+                }}
+              >
+                <div style={{ fontSize: 13, fontWeight: 600 }}>
+                  {t("import.detection.title", {
+                    type: detection.grid_type,
+                    confidence: Math.round(detection.confidence * 100),
+                  })}
+                </div>
+                <div className="text-muted" style={{ fontSize: 12 }}>
+                  {t("import.detection.hint")}
+                </div>
+                {detection.warnings.map((warning, index) => (
+                  <div key={index} className="text-faint" style={{ fontSize: 11 }}>
+                    ⚠ {warning}
+                  </div>
+                ))}
+              </div>
+            )}
 
             {job.page_count > 1 && (
               <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 14 }}>

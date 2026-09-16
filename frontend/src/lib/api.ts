@@ -230,6 +230,8 @@ export interface ApiImportConfig {
   rows: number | null;
   palette: ApiImportPaletteEntry[];
   fills: ApiImportFillZone[];
+  /** Grille détectée automatiquement (Lot 4), fond sous `fills` — voir `apply_fills`. */
+  detected_cells: number[] | null;
 }
 
 export interface ApiImportConfigPatch {
@@ -238,6 +240,13 @@ export interface ApiImportConfigPatch {
   rows?: number;
   palette?: ApiImportPaletteEntry[];
   fills?: ApiImportFillZone[];
+  detected_cells?: number[] | null;
+}
+
+export interface ApiImportDetection {
+  grid_type: string;
+  confidence: number;
+  warnings: string[];
 }
 
 export interface ApiImportPreview {
@@ -258,6 +267,7 @@ export interface ApiImportJob {
   pattern_id: string | null;
   config: ApiImportConfig;
   preview: ApiImportPreview | null;
+  detection: ApiImportDetection | null;
   error: string | null;
   created_at: string;
   finished_at: string | null;

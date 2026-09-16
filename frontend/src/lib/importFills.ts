@@ -6,12 +6,19 @@
 
 import type { ApiImportFillZone } from "./api";
 
+/**
+ * `base` (Lot 4) : grille détectée automatiquement, utilisée comme fond
+ * plutôt qu'une case vide — miroir du paramètre `base` de `apply_fills`
+ * côté serveur.
+ */
 export function applyFillsLocal(
   columns: number,
   rows: number,
   fills: readonly ApiImportFillZone[],
+  base?: readonly number[] | null,
 ): Uint8Array {
   const cells = new Uint8Array(columns * rows);
+  if (base !== null && base !== undefined) cells.set(base);
   for (const fill of fills) {
     const x0 = Math.max(0, Math.min(fill.x0, fill.x1));
     const x1 = Math.min(columns - 1, Math.max(fill.x0, fill.x1));

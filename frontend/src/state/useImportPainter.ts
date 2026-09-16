@@ -58,13 +58,17 @@ export function useImportPainter(
   fills: readonly ApiImportFillZone[],
   onFillsChange: (fills: ApiImportFillZone[]) => void,
   name: string,
+  detectedCells?: readonly number[] | null,
 ): ImportPainter {
   const [cell, setCell] = useState(16);
   const [offset, setOffsetState] = useState({ x0: -2, y0: -2 });
   const [cursor, setCursor] = useState<CellPosition | null>(null);
   const [selection, setSelection] = useState<PainterSelection | null>(null);
 
-  const cells = useMemo(() => applyFillsLocal(columns, rows, fills), [columns, rows, fills]);
+  const cells = useMemo(
+    () => applyFillsLocal(columns, rows, fills, detectedCells),
+    [columns, rows, fills, detectedCells],
+  );
   const filledCount = useMemo(() => cells.reduce((sum, value) => sum + (value !== 0 ? 1 : 0), 0), [
     cells,
   ]);
