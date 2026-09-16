@@ -67,7 +67,9 @@ def render_image_page(path: Path, max_dimension: int = MAX_PREVIEW_DIMENSION) ->
         return buffer.getvalue()
 
 
-def apply_fills(columns: int, rows: int, fills: list[dict[str, int]]) -> list[int]:
+def apply_fills(
+    columns: int, rows: int, fills: list[dict[str, int]], base: list[int] | None = None
+) -> list[int]:
     """Assemble une grille `columns` × `rows` à partir des zones peintes.
 
     Chaque zone est un rectangle inclusif de coordonnées de case
@@ -77,8 +79,18 @@ def apply_fills(columns: int, rows: int, fills: list[dict[str, int]]) -> list[in
     `fillSelection` côté client (`frontend/src/state/useTracker.ts`), pour
     que le comportement du pinceau soit identique pendant l'import et
     pendant le suivi.
+
+    `base` (Lot 4) : une grille détectée automatiquement (`app/type_a.py`)
+    sert de fond plutôt qu'une case vide — les zones peintes par
+    l'utilisateur restent des *corrections* par-dessus la proposition, sans
+    aucun nouveau mécanisme de peinture à écrire côté client.
     """
-    cells = [0] * (columns * rows)
+    if base is not None:
+        if len(base) != columns * rows:
+            raise ValueError("`base` doit avoir exactement columns*rows cases")
+        cells = list(base)
+    else:
+        cells = [0] * (columns * rows)
     for fill in fills:
         x0 = max(0, min(fill["x0"], fill["x1"]))
         x1 = min(columns - 1, max(fill["x0"], fill["x1"]))

@@ -62,6 +62,7 @@ def test_create_import_accepts_pdf(client: TestClient) -> None:
         "rows": None,
         "palette": [],
         "fills": [],
+        "detected_cells": None,
     }
     assert job["preview"] is None
 

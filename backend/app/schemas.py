@@ -150,8 +150,14 @@ class PatternActivityOut(BaseModel):
 
 # --- Assistant d'import (Lot 2, cahier des charges §7.2, §9) ---------------
 #
-# Aucune détection automatique en Lot 2 : `ImportCrop`, dimensions et palette
+# Lot 2 : aucune détection automatique, `ImportCrop`, dimensions et palette
 # sont entièrement saisis par l'utilisateur dans l'assistant.
+#
+# Lot 4 (`detected_cells`, `ImportDetection`) : pour un PDF de type A
+# reconnu, `app/type_a.py` pré-remplit `columns`/`rows`/`palette` et une
+# grille de fond — l'utilisateur corrige toujours via le même mécanisme de
+# zones peintes (`fills`) qu'en Lot 2, jamais une proposition imposée
+# (cahier des charges §4.4 : « jamais un résultat imposé »).
 
 
 class ImportCrop(BaseModel):
@@ -191,6 +197,14 @@ class ImportConfig(BaseModel):
     rows: int | None = Field(default=None, ge=1, le=1000)
     palette: list[ImportPaletteEntry] = Field(default_factory=list)
     fills: list[ImportFillZone] = Field(default_factory=list)
+    detected_cells: list[int] | None = Field(
+        default=None,
+        description=(
+            "Grille proposée par la détection automatique (Lot 4), même convention "
+            "que le blob de grille : longueur columns*rows, 0 = case vide, n = index "
+            "1-based dans `palette`. `fills` s'applique par-dessus, jamais en dessous."
+        ),
+    )
 
 
 class ImportConfigPatch(BaseModel):
@@ -205,6 +219,7 @@ class ImportConfigPatch(BaseModel):
     rows: int | None = Field(default=None, ge=1, le=1000)
     palette: list[ImportPaletteEntry] | None = None
     fills: list[ImportFillZone] | None = None
+    detected_cells: list[int] | None = None
 
 
 class ImportPreview(BaseModel):
@@ -219,6 +234,16 @@ class ImportPreview(BaseModel):
     palette: list[ImportPaletteEntry]
 
 
+class ImportDetection(BaseModel):
+    """Résumé de la détection automatique (Lot 4) — jamais une certitude,
+    toujours un score exploitable pour que l'assistant d'import invite à
+    vérifier plutôt qu'à faire confiance aveuglément (§4.4)."""
+
+    grid_type: str = Field(description='Ex. "A". Un seul type détecté pour l\'instant.')
+    confidence: float = Field(ge=0, le=1)
+    warnings: list[str] = Field(default_factory=list)
+
+
 class ImportJobOut(BaseModel):
     id: str
     status: str
@@ -228,6 +253,7 @@ class ImportJobOut(BaseModel):
     pattern_id: str | None
     config: ImportConfig
     preview: ImportPreview | None
+    detection: ImportDetection | None = None
     error: str | None
     created_at: datetime
     finished_at: datetime | None
