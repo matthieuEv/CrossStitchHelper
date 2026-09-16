@@ -115,6 +115,7 @@ class _GridPage:
     all_chars: list[Char]
     symbol_chars: list[Char]
     rects: list[Char]
+    rect_index: dict[tuple[int, int], list[Char]]
     pitch_x: float
     pitch_y: float
 
@@ -302,12 +303,14 @@ def _collect_grid_pages(
         if metrics is None:
             continue
         pitch_x, pitch_y = metrics
+        rects = list(page.rects)
         grid_pages.append(
             _GridPage(
                 index=index,
                 all_chars=list(page.chars),
                 symbol_chars=symbol_chars,
-                rects=list(page.rects),
+                rects=rects,
+                rect_index=_build_rect_index(rects, pitch_x, pitch_y),
                 pitch_x=pitch_x,
                 pitch_y=pitch_y,
             )
@@ -337,7 +340,13 @@ def _rect_color_under_char(char: Char, rects: list[Char]) -> Color | None:
     du glyphe `char`. Ce fichier de référence dessine un petit carré de la
     couleur DMC réelle sous chaque glyphe (légende comme grille) — c'est un
     signal plus fiable que le glyphe seul quand un même glyphe est réutilisé
-    pour deux couleurs différentes (voir docstring de `CellKey`)."""
+    pour deux couleurs différentes (voir docstring de `CellKey`).
+
+    Balayage complet de `rects` — utilisé seulement pour la légende (une
+    poignée d'appels). Les pages de grille utilisent `_rect_color_indexed`
+    ci-dessous : un balayage complet par glyphe y serait O(glyphes ×
+    rectangles), soit plusieurs centaines de millions d'itérations sur la
+    fixture de référence (mesuré au profilage — ~80 % du temps total)."""
     cx = (float(char["x0"]) + float(char["x1"])) / 2
     ctop = (float(char["top"]) + float(char["bottom"])) / 2
     best: Char | None = None
@@ -353,6 +362,56 @@ def _rect_color_under_char(char: Char, rects: list[Char]) -> Color | None:
         if area < best_area:
             best_area = area
             best = rect
+    if best is None:
+        return None
+    return _normalize_color(best["non_stroking_color"])
+
+
+def _build_rect_index(
+    rects: list[Char], pitch_x: float, pitch_y: float
+) -> dict[tuple[int, int], list[Char]]:
+    """Regroupe les rectangles remplis par case de grille (même pas que les
+    glyphes de symboles) : une case ne contient presque toujours qu'un seul
+    petit rectangle de couleur, donc ne chercher que dans le bucket d'un
+    glyphe (et ses voisins immédiats, pour le bruit d'arrondi de bord)
+    remplace un balayage de tous les rectangles de la page par une poignée
+    de candidats."""
+    index: dict[tuple[int, int], list[Char]] = {}
+    for rect in rects:
+        if not rect.get("fill"):
+            continue
+        cx = (float(rect["x0"]) + float(rect["x1"])) / 2
+        cy = (float(rect["top"]) + float(rect["bottom"])) / 2
+        key = (round(cx / pitch_x), round(cy / pitch_y))
+        index.setdefault(key, []).append(rect)
+    return index
+
+
+def _rect_color_indexed(
+    char: Char,
+    rect_index: dict[tuple[int, int], list[Char]],
+    pitch_x: float,
+    pitch_y: float,
+) -> Color | None:
+    """Équivalent de `_rect_color_under_char`, mais via `rect_index`
+    (`_build_rect_index`) plutôt qu'un balayage complet — voir cette
+    dernière pour le détail du gain de performance."""
+    cx = (float(char["x0"]) + float(char["x1"])) / 2
+    ctop = (float(char["top"]) + float(char["bottom"])) / 2
+    base_key = (round(cx / pitch_x), round(ctop / pitch_y))
+    best: Char | None = None
+    best_area = float("inf")
+    for dx in (-1, 0, 1):
+        for dy in (-1, 0, 1):
+            for rect in rect_index.get((base_key[0] + dx, base_key[1] + dy), ()):
+                x0, x1 = float(rect["x0"]), float(rect["x1"])
+                top, bottom = float(rect["top"]), float(rect["bottom"])
+                if not (x0 <= cx <= x1 and top <= ctop <= bottom):
+                    continue
+                area = (x1 - x0) * (bottom - top)
+                if area < best_area:
+                    best_area = area
+                    best = rect
     if best is None:
         return None
     return _normalize_color(best["non_stroking_color"])
@@ -566,8 +625,9 @@ def _fit_axes(grid_page: _GridPage, symbol_font: str) -> tuple[float, float, flo
 # --------------------------------------------------------------------------
 
 
-def _cell_key(char: Char, rects: list[Char]) -> CellKey:
-    return (str(char["text"]), _rect_color_under_char(char, rects))
+def _cell_key(char: Char, grid_page: _GridPage) -> CellKey:
+    color = _rect_color_indexed(char, grid_page.rect_index, grid_page.pitch_x, grid_page.pitch_y)
+    return (str(char["text"]), color)
 
 
 def _set_placement(
@@ -629,7 +689,7 @@ def _place_grid_pages(
             for c in grid_page.symbol_chars:
                 col0 = fallback_col_offset + round((float(c["x0"]) - min_x) / grid_page.pitch_x)
                 row0 = round((float(c["top"]) - min_top) / grid_page.pitch_y)
-                cell_key = _cell_key(c, grid_page.rects)
+                cell_key = _cell_key(c, grid_page)
                 _set_placement(placements, (row0, col0), cell_key, key_to_index)
             fallback_col_offset += col_span
             continue
@@ -642,7 +702,7 @@ def _place_grid_pages(
             row0 = abs_row - 1
             if col0 < 0 or row0 < 0:
                 continue
-            _set_placement(placements, (row0, col0), _cell_key(c, grid_page.rects), key_to_index)
+            _set_placement(placements, (row0, col0), _cell_key(c, grid_page), key_to_index)
 
     return placements, warnings, penalty
 
