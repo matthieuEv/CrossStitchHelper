@@ -83,14 +83,16 @@ Chaque lot est indépendamment livrable et utilisable : il n'y a pas de lot "inu
 
 ## Lot 5 — Extraction automatique types B et C
 
-- [ ] Extraction des couleurs par remplissage de rectangles (gestion CMJN/RVB)
-- [ ] Rapprochement Lab vers la palette DMC
-- [ ] Mesure de la densité de tracés vectoriels par page pour décider si une superposition à deux pages est nécessaire (ne jamais supposer "page 1 = couleur, page 2 = symboles" par défaut — voir `docs/cahier-des-charges.md` §4.3, cas Summer Flight)
-- [ ] Superposition des grilles jumelles quand elle s'avère nécessaire
-- [ ] Reconnaissance des symboles vectoriels avec score de confiance
-- [ ] Repli manuel explicite quand le score est insuffisant
+- [x] Extraction des couleurs par remplissage de rectangles (gestion CMJN/RVB)
+- [x] Rapprochement Lab vers la palette DMC
+- [x] Mesure de la densité de tracés vectoriels par page pour décider si une superposition à deux pages est nécessaire (ne jamais supposer "page 1 = couleur, page 2 = symboles" par défaut — voir `docs/cahier-des-charges.md` §4.3, cas Summer Flight)
+- [x] Superposition des grilles jumelles quand elle s'avère nécessaire
+- [x] Reconnaissance des symboles vectoriels avec score de confiance
+- [x] Repli manuel explicite quand le score est insuffisant
 
 **Terminé quand :** les quatre fixtures DMC (`winter-wreath-dmc`, `botanical-citrus`, `cucurbit`, `summer-flight`) s'importent chacune avec leurs couleurs correctes, la bonne stratégie de page(s) détectée automatiquement, et un signalement explicite des cases incertaines. **Fin de la V2.**
+
+**Lot clos.** `backend/app/type_bc.py` mesure la densité de tracés par page avant de décider d'une superposition — constat contre-intuitif mesuré (pas supposé) : `winter-wreath-dmc` se comporte comme le cas piège `summer-flight-dmc` (sa page couleur porte déjà ses symboles), seules `botanical-citrus-dmc` et `cucurbit-dmc` superposent une vraie deuxième page. `summer-flight-dmc` bascule honnêtement en type B (reconnaissance de forme trop fragmentée sur son illustration nuancée) plutôt que produire une palette inutilisable. Catalogue couleur DMC→RVB communautaire dans `backend/app/dmc_catalog.py` (228 teintes), distinct de `app/dmc_colors.py` (type A, où le texte de légende fait déjà foi). Les cases incertaines (`uncertain_cells`) sont signalées à la fois dans la bannière de détection et par un repère visuel sur chaque case concernée dans le pinceau de l'assistant (`ImportGridPainter`, `pattern/render.ts`).
 
 ---
 

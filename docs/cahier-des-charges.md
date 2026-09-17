@@ -82,7 +82,7 @@ Six PDF réels ont été analysés en profondeur (structure interne, polices, tr
 
 - Grille dessinée en **~6 800 rectangles vectoriels par page**, chacun portant sa couleur de remplissage → **la couleur de chaque case est extractible sans OCR**.
 - Les symboles (T, Z, U…) sont des **tracés vectoriels** (~3 300–3 700 lignes/courbes par page), **pas du texte** → illisibles par extraction de texte, nécessitent une reconnaissance de forme.
-- Motif réparti sur **deux grilles jumelles** : page 1 = couleurs sans symboles, page 2 = symboles sans couleurs, mêmes dimensions.
+- Motif réparti sur **deux grilles jumelles visuellement semblables**, mêmes dimensions : à l'œil, page 1 = couleurs, page 2 = symboles en noir et blanc. **Correction Lot 5, mesurée et non supposée (`backend/app/type_bc.py`) :** la page 1 porte en réalité déjà ses propres petits tracés de symbole par-dessus chaque aplat de couleur (~3 362 courbes mesurées, réparties sur toute la grille, pas un simple ornement localisé — confirmé par rendu visuel d'un symbole extrait) ; la page 2 (tout en noir, ~2 466 courbes) n'est donc qu'un doublon redondant, pas la seule source de symboles exploitable. Ce fichier se comporte en pratique comme le cas piège `summer-flight-dmc` (§4.3) plutôt que comme `botanical-citrus-dmc`/`cucurbit-dmc`, qui superposent vraiment deux pages — **la leçon du §4.3 s'applique donc aussi à ce fichier lui-même : ne jamais supposer sans mesurer, même ici.**
 - Légende page 4 : codes DMC en texte (3345, 3346, 471…), pastilles de couleur en aplats.
 - Aucune image bitmap : 100 % vectoriel.
 
