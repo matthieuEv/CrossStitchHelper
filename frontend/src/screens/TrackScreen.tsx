@@ -16,7 +16,13 @@ import { useT } from "../i18n";
 import { useElementSize } from "../lib/hooks";
 import { useNumberFormat } from "../lib/format";
 import { useTheme } from "../lib/theme";
-import { SYMBOL_MIN_CELL, drawGrid, drawOverlay, readGridTheme } from "../pattern/render";
+import {
+  SYMBOL_MIN_CELL,
+  drawGrid,
+  drawOverlay,
+  onSymbolImageLoaded,
+  readGridTheme,
+} from "../pattern/render";
 import type { CellPosition, Tracker } from "../state/useTracker";
 
 /**
@@ -71,6 +77,13 @@ export function TrackScreen({ tracker, wide, onBack }: TrackScreenProps) {
   const { pattern, view, tool, highlight, hideDone, cursor, selection, totals, counts, version } =
     tracker;
 
+  // Un symbole réel (Lot 4) se décode de façon asynchrone la première fois
+  // qu'il apparaît à l'écran (voir `onSymbolImageLoaded`) : ce compteur
+  // force un nouveau rendu une fois prêt, pour remplacer le repli textuel
+  // affiché entre-temps.
+  const [symbolImageTick, setSymbolImageTick] = useState(0);
+  useEffect(() => onSymbolImageLoaded(() => setSymbolImageTick((value) => value + 1)), []);
+
   // Redessine la grille puis les repères. Les dépendances couvrent tout ce qui
   // peut changer l'image : progression, vue, filtre, thème et taille de boîte.
   useEffect(() => {
@@ -90,7 +103,19 @@ export function TrackScreen({ tracker, wide, onBack }: TrackScreenProps) {
 
     const accent = getComputedStyle(canvas).getPropertyValue("--color-accent").trim();
     drawOverlay(canvas, { view, accent, cursor, selection });
-  }, [pattern, tracker.done, version, view, highlight, hideDone, cursor, selection, resolved, size]);
+  }, [
+    pattern,
+    tracker.done,
+    version,
+    view,
+    highlight,
+    hideDone,
+    cursor,
+    selection,
+    resolved,
+    size,
+    symbolImageTick,
+  ]);
 
   // Molette et trackpad (défilement à deux doigts, macOS comme Windows) :
   // zoome sous le curseur plutôt que de faire défiler la page. Écouteur DOM

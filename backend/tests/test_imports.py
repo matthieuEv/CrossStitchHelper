@@ -419,6 +419,42 @@ def test_create_import_of_real_type_a_pdf_prefills_config_from_detection(
     assert job["preview"]["filled_count"] > 0
 
 
+def test_real_type_a_pdf_prefills_real_symbol_images_not_just_letters(
+    client: TestClient,
+) -> None:
+    """Le symbole affiché doit être celui du PDF, pas une lettre synthétique
+    (`app.type_a.symbol_key`, jamais destinée qu'à un repli interne) —
+    branchement bout en bout de `app.imports_engine.render_symbol_svg`, dont
+    la justesse est vérifiée exhaustivement dans `tests/test_type_a.py`."""
+    job = _wait_for_detection(client, _upload_real_type_a_pdf(client)["id"], timeout=30.0)
+
+    dmc_entries = [entry for entry in job["config"]["palette"] if entry["code"]]
+    assert dmc_entries
+    for entry in dmc_entries:
+        assert entry["symbol_svg"] is not None
+        assert entry["symbol_svg"].startswith('<svg xmlns="http://www.w3.org/2000/svg"')
+        assert "image/png;base64," in entry["symbol_svg"]
+
+
+def test_symbol_images_survive_commit_into_a_real_pattern(client: TestClient) -> None:
+    """Le symbole réel doit rester disponible après validation — le PDF
+    source, lui, ne l'est plus (§3 : jamais conservé au-delà de
+    l'extraction), donc c'est le seul moment où il est capturable."""
+    job = _wait_for_detection(client, _upload_real_type_a_pdf(client)["id"], timeout=30.0)
+    response = client.post(
+        f"/api/imports/{job['id']}/commit", json={"name": "Café Brasserie e2e"}
+    )
+    assert response.status_code == 200
+    pattern_id = response.json()["pattern_id"]
+
+    detail = client.get(f"/api/patterns/{pattern_id}").json()
+    dmc_entries = [entry for entry in detail["palette"] if entry["code"]]
+    assert dmc_entries
+    for entry in dmc_entries:
+        assert entry["symbol_svg"] is not None
+        assert "image/png;base64," in entry["symbol_svg"]
+
+
 def test_manual_config_started_before_detection_finishes_is_not_overwritten(
     client: TestClient,
 ) -> None:

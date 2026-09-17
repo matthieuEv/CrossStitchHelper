@@ -79,6 +79,26 @@ _LEGEND_ROW_RE = re.compile(r"^(\S)\s*\d+\s*DMC\s+([A-Za-z0-9]+)\s+(.+)$")
 
 
 @dataclass
+class SymbolGlyphLocation:
+    """Position d'une occurrence du glyphe de symbole sur la page PDF
+    source — jamais le glyphe lui-même (police privée, illisible hors de ce
+    fichier), mais assez pour qu'un appelant en dehors de ce module pur
+    (`app/imports_engine.py`, qui a déjà PyMuPDF) en découpe un aperçu
+    raster fidèle depuis la page rendue. C'est ça, et non le glyphe brut ou
+    une clé synthétique, qui permet de retrouver le vrai symbole tel
+    qu'imprimé dans le PDF — quel que soit le fichier, sans dépendre d'une
+    liste de symboles connus à l'avance (des symboles différents d'un
+    export à l'autre)."""
+
+    page_number: int
+    """1-based, comme `pdfplumber.page.Page.page_number`."""
+
+    bbox: tuple[float, float, float, float]
+    """`(x0, top, x1, bottom)`, mêmes unités et origine (haut-gauche) que
+    les rectangles `pdfplumber`."""
+
+
+@dataclass
 class TypeAPaletteEntry:
     code: str
     """Code DMC tel qu'imprimé dans la légende, p. ex. ``"310"`` ou ``"B5200"``."""
@@ -93,6 +113,10 @@ class TypeAPaletteEntry:
     rgb_hex: str
     """Couleur d'affichage approximative — depuis `dmc_hex`, ou
     `FALLBACK_HEX` si le code est absent de la table locale."""
+
+    symbol_glyph: SymbolGlyphLocation | None = None
+    """Absente pour un symbole non rapproché d'une ligne de légende (repli
+    sur `symbol_key` côté rendu) — voir `SymbolGlyphLocation`."""
 
 
 @dataclass
@@ -126,6 +150,7 @@ class _LegendRow:
     code: str
     name: str
     swatch_color: Color | None
+    glyph: SymbolGlyphLocation | None
 
 
 def detect_type_a(pdf_path: Path) -> TypeAResult | None:
@@ -446,12 +471,26 @@ def _parse_full_stitches_rows(pages: list[Page]) -> list[_LegendRow]:
             row_chars = line.get("chars") or []
             first_char = row_chars[0] if row_chars else None
             swatch_color = _rect_color_under_char(first_char, rects) if first_char else None
+            glyph = (
+                SymbolGlyphLocation(
+                    page_number=page.page_number,
+                    bbox=(
+                        float(first_char["x0"]),
+                        float(first_char["top"]),
+                        float(first_char["x1"]),
+                        float(first_char["bottom"]),
+                    ),
+                )
+                if first_char is not None
+                else None
+            )
             rows.append(
                 _LegendRow(
                     symbol_char=match.group(1),
                     code=match.group(2),
                     name=match.group(3).strip(),
                     swatch_color=swatch_color,
+                    glyph=glyph,
                 )
             )
     return rows
@@ -489,6 +528,7 @@ def _build_palette(
                 name=row.name,
                 symbol_key=_symbol_key(index - 1),
                 rgb_hex=hex_value,
+                symbol_glyph=row.glyph,
             )
         )
         key: CellKey = (row.symbol_char, row.swatch_color)

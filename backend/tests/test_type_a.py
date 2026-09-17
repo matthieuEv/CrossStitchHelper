@@ -10,13 +10,17 @@ garde contre ce genre de duplication)."""
 
 from __future__ import annotations
 
+import base64
 import re
+from io import BytesIO
 from pathlib import Path
 
 import pdfplumber
 import pymupdf
 import pytest
+from PIL import Image
 
+from app.imports_engine import render_symbol_svg
 from app.type_a import TypeAResult, detect_type_a
 
 FIXTURES_ROOT = Path(__file__).resolve().parents[2] / "fixtures"
@@ -120,6 +124,54 @@ def test_palette_entries_have_display_colour(result: TypeAResult) -> None:
         # Jamais le glyphe brut de la police privée du PDF comme clé UI.
         assert entry.symbol_key.isascii()
         assert entry.symbol_key.isprintable()
+
+
+def test_palette_entries_carry_symbol_glyph_location(result: TypeAResult) -> None:
+    """Nécessaire pour retrouver le vrai symbole du PDF (`render_symbol_svg`)
+    plutôt qu'une lettre synthétique côté UI — voir `SymbolGlyphLocation`."""
+    dmc_entries = [entry for entry in result.palette if entry.code]
+    assert dmc_entries
+    for entry in dmc_entries:
+        assert entry.symbol_glyph is not None
+        assert 1 <= entry.symbol_glyph.page_number <= 11
+        x0, top, x1, bottom = entry.symbol_glyph.bbox
+        assert x1 > x0
+        assert bottom > top
+
+
+def test_render_symbol_svg_produces_a_real_legible_glyph_crop(result: TypeAResult) -> None:
+    """Bout en bout : la position capturée par `detect_type_a` doit vraiment
+    permettre de découper une image lisible du symbole — pas juste être bien
+    formée en apparence, et pas juste un carré blanc entre deux glyphes."""
+    entry = next(e for e in result.palette if e.code)
+    assert entry.symbol_glyph is not None
+    svg = render_symbol_svg(FIXTURE_PATH, entry.symbol_glyph.page_number, entry.symbol_glyph.bbox)
+    assert svg.startswith('<svg xmlns="http://www.w3.org/2000/svg"')
+    assert "image/png;base64," in svg
+
+    png_bytes = base64.b64decode(svg.split("base64,", 1)[1].split('"', 1)[0])
+    with Image.open(BytesIO(png_bytes)) as image:
+        assert image.width >= 32
+        assert image.height >= 32
+        low, high = image.convert("L").getextrema()
+        assert isinstance(low, int) and isinstance(high, int)
+        assert high - low > 40
+
+
+def test_render_symbol_svg_differs_between_distinct_symbols(result: TypeAResult) -> None:
+    """Filet contre un bug de coordonnées qui découperait toujours la même
+    zone de la page quel que soit le glyphe demandé."""
+    dmc_entries = [entry for entry in result.palette if entry.code]
+    first, second = dmc_entries[0], dmc_entries[1]
+    assert first.symbol_glyph is not None
+    assert second.symbol_glyph is not None
+    svg_first = render_symbol_svg(
+        FIXTURE_PATH, first.symbol_glyph.page_number, first.symbol_glyph.bbox
+    )
+    svg_second = render_symbol_svg(
+        FIXTURE_PATH, second.symbol_glyph.page_number, second.symbol_glyph.bbox
+    )
+    assert svg_first != svg_second
 
 
 def test_unmapped_cells_are_flagged_not_silently_empty(result: TypeAResult) -> None:

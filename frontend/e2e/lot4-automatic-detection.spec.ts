@@ -1,6 +1,6 @@
 import { fileURLToPath } from "node:url";
 
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 
 /**
  * Vérifie le critère "terminé quand" du Lot 4 (docs/roadmap.md) : le PDF de
@@ -14,6 +14,23 @@ import { expect, test, type Page } from "@playwright/test";
  * vérification exhaustive de la justesse de l'extraction elle-même — ce
  * test-ci ne vérifie que le parcours utilisateur bout en bout.
  */
+
+/** `backend/app/seed.py` — identifiant stable, jamais régénéré, palette
+ * saisie à la main (pas de `symbol_svg`) : le repli textuel doit s'appliquer. */
+const DEMO_PATTERN_ID = "demo-perf-255x180";
+
+interface PatternSummary {
+  id: string;
+  name: string;
+}
+
+async function fetchDemoPattern(request: APIRequestContext): Promise<PatternSummary> {
+  const response = await request.get("/api/patterns");
+  const patterns = (await response.json()) as PatternSummary[];
+  const demo = patterns.find((pattern) => pattern.id === DEMO_PATTERN_ID);
+  if (demo === undefined) throw new Error("Motif de démonstration introuvable en base");
+  return demo;
+}
 
 async function remainingCount(page: Page): Promise<number> {
   const text = await page.getByText(/restants$/).first().textContent();
@@ -266,4 +283,64 @@ test("le cadrage manuel est indépendant d'une page à l'autre", async ({ page }
   const pageOneAgain = await page.locator(".crop-handle").first().boundingBox();
   if (pageOneAgain === null) throw new Error("La poignée de cadrage n'a pas de boîte englobante");
   expect(Math.abs(pageOneAgain.y - pageOneCropped.y)).toBeLessThan(5);
+});
+
+test("les symboles affichés sont les vrais glyphes du PDF, pas des lettres synthétiques", async ({
+  page,
+}) => {
+  // Bug réel signalé par l'utilisateur : le moteur d'extraction générait une
+  // clé interne imprimable (A, B, ..., AB, ...) faute de pouvoir réutiliser
+  // le glyphe brut de la police privée du PDF (`app.type_a.symbol_key`) —
+  // mais cette clé n'a jamais été pensée comme le symbole à afficher, jamais
+  // une liste de symboles connus à l'avance (les symboles varient d'un PDF à
+  // l'autre) : `app.imports_engine.render_symbol_svg` découpe désormais le
+  // symbole réel depuis la page rendue, voir `tests/test_type_a.py` côté
+  // backend pour la vérification exhaustive de sa justesse.
+  test.setTimeout(120_000);
+
+  const pageErrors: Error[] = [];
+  page.on("pageerror", (error) => pageErrors.push(error));
+
+  await page.goto("/");
+  await page.getByRole("button", { name: "Importer", exact: true }).click();
+  await page.locator('input[type="file"][accept*="pdf"]').setInputFiles(FIXTURE_PATH);
+
+  await expect(page.getByText(/Détection automatique : type A/)).toBeVisible({
+    timeout: DETECTION_TIMEOUT,
+  });
+  await page.getByRole("button", { name: "Continuer", exact: true }).click();
+  await expect(page.getByPlaceholder("Code").first()).toBeVisible();
+  await page.getByRole("button", { name: "Continuer", exact: true }).click();
+
+  const nameInput = page.getByLabel("Nom du motif");
+  await nameInput.fill(`e2e symboles réels ${Date.now()}`);
+  await page.getByRole("button", { name: "Ajouter et commencer" }).click();
+
+  await expect(page.locator("canvas.track-canvas")).toBeVisible();
+
+  // La légende (`ColorList.tsx`) affiche le symbole réel en image, pas la
+  // lettre synthétique en texte — au moins les 34 couleurs DMC de la
+  // légende du PDF.
+  const symbolImages = page.locator('img[src^="data:image/svg+xml;base64,"]');
+  await expect(symbolImages.first()).toBeVisible();
+  expect(await symbolImages.count()).toBeGreaterThanOrEqual(34);
+
+  expect(pageErrors).toEqual([]);
+});
+
+test("une palette saisie à la main garde son repli textuel, sans symbole réel à afficher", async ({
+  page,
+  request,
+}) => {
+  // Contrepartie du test précédent : le motif de démonstration (Lot 1, pas
+  // un import PDF) n'a jamais eu de PDF source à découper — la légende doit
+  // continuer d'afficher le texte de `symbol_key`, jamais casser en essayant
+  // d'afficher une image absente.
+  const pattern = await fetchDemoPattern(request);
+  await page.goto("/");
+  await page.getByText(pattern.name).click();
+  await expect(page.locator("canvas.track-canvas")).toBeVisible();
+
+  await expect(page.getByText("DMC 310")).toBeVisible();
+  expect(await page.locator('img[src^="data:image/svg+xml;base64,"]').count()).toBe(0);
 });

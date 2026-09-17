@@ -174,6 +174,10 @@ class ImportPaletteEntry(BaseModel):
     name: str
     rgb_hex: str
     symbol_key: str
+    symbol_svg: str | None = None
+    """Symbole réel découpé depuis le PDF (Lot 4, `detect_type_a`) — absent
+    pour une entrée saisie à la main (Lot 2), qui reste rendue via
+    `symbol_key`. Voir `app.type_a.SymbolGlyphLocation`."""
 
 
 class ImportFillZone(BaseModel):

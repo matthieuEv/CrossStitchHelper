@@ -16,6 +16,7 @@ export function paletteFromApi(detail: ApiPatternDetail): PaletteEntry[] {
     name: entry.name,
     hex: entry.rgb_hex,
     symbol: entry.symbol_key,
+    ...(entry.symbol_svg !== null && { symbolSvg: entry.symbol_svg }),
   }));
 }
 
@@ -25,6 +26,8 @@ function paletteFromImportEntries(entries: ApiImportPaletteEntry[]): PaletteEntr
     name: entry.name,
     hex: entry.rgb_hex,
     symbol: entry.symbol_key,
+    ...(entry.symbol_svg !== null &&
+      entry.symbol_svg !== undefined && { symbolSvg: entry.symbol_svg }),
   }));
 }
 

@@ -34,6 +34,7 @@ from app.imports_engine import (
     pdf_page_count,
     render_image_page,
     render_pdf_page,
+    render_symbol_svg,
     sha256_file,
 )
 from app.models import Grid, ImportJob, PaletteEntry, Pattern, Progress
@@ -46,7 +47,7 @@ from app.schemas import (
     ImportJobOut,
     ImportPreview,
 )
-from app.type_a import detect_type_a
+from app.type_a import TypeAPaletteEntry, detect_type_a
 
 router = APIRouter(prefix="/imports", tags=["import"])
 
@@ -235,6 +236,21 @@ async def create_import(
     return _job_out(job)
 
 
+def _symbol_svg_for(entry: TypeAPaletteEntry, source_path: Path) -> str | None:
+    """`None` si l'entrée n'a pas de position de glyphe connue, ou si le
+    découpage échoue — un aperçu manquant retombe sur `symbol_key` côté
+    rendu (jamais un import cassé pour un symbole qu'on n'a pas pu
+    illustrer, cahier des charges §10)."""
+    if entry.symbol_glyph is None:
+        return None
+    try:
+        return render_symbol_svg(
+            source_path, entry.symbol_glyph.page_number, entry.symbol_glyph.bbox
+        )
+    except Exception:  # pragma: no cover - filet de sécurité défensif
+        return None
+
+
 def _run_type_a_detection(job_id: str, source_path: Path) -> None:
     """Tâche de fond (Lot 4) : détection automatique, jamais bloquante pour
     la requête d'upload. `detect_type_a` ne lève jamais (voir `app/type_a.py`)
@@ -301,6 +317,7 @@ def _run_type_a_detection(job_id: str, source_path: Path) -> None:
                         "name": entry.name,
                         "rgb_hex": entry.rgb_hex,
                         "symbol_key": entry.symbol_key,
+                        "symbol_svg": _symbol_svg_for(entry, source_path),
                     }
                     for entry in detected.palette
                 ]
@@ -488,7 +505,7 @@ def commit(
                 name=entry["name"],
                 rgb_hex=entry["rgb_hex"],
                 symbol_key=entry["symbol_key"],
-                symbol_svg=None,
+                symbol_svg=entry.get("symbol_svg"),
                 strands_full=2,
                 strands_back=1,
                 count_full=sum(1 for value in cells if value == index_in_grid),

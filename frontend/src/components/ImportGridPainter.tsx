@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPoi
 
 import { useT } from "../i18n";
 import { useTheme } from "../lib/theme";
-import { drawGrid, drawOverlay, readGridTheme } from "../pattern/render";
+import { drawGrid, drawOverlay, onSymbolImageLoaded, readGridTheme } from "../pattern/render";
 import type { CellPosition, ImportPainter } from "../state/useImportPainter";
 
 interface ImportGridPainterProps {
@@ -32,6 +32,11 @@ export function ImportGridPainter({ painter, activeIndex }: ImportGridPainterPro
   const [tool, setTool] = useState<"paint" | "pan">("paint");
   const { pattern, view, cursor, selection } = painter;
 
+  // Voir TrackScreen.tsx : force un nouveau rendu une fois qu'un symbole
+  // réel (Lot 4) termine de se décoder de façon asynchrone.
+  const [symbolImageTick, setSymbolImageTick] = useState(0);
+  useEffect(() => onSymbolImageLoaded(() => setSymbolImageTick((value) => value + 1)), []);
+
   useEffect(() => {
     const canvas = canvasRef.current;
     if (canvas === null) return;
@@ -40,7 +45,7 @@ export function ImportGridPainter({ painter, activeIndex }: ImportGridPainterPro
     if (!drawn) return;
     const accent = getComputedStyle(canvas).getPropertyValue("--color-accent").trim();
     drawOverlay(canvas, { view, accent, cursor, selection });
-  }, [pattern, view, cursor, selection, resolved]);
+  }, [pattern, view, cursor, selection, resolved, symbolImageTick]);
 
   // Molette/trackpad : zoome sous le curseur — voir TrackScreen.tsx pour le
   // détail (écouteur DOM natif, pas `onWheel` React, pour que

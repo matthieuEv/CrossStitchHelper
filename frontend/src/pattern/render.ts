@@ -47,6 +47,49 @@ export interface GridView {
   y0: number;
 }
 
+/**
+ * Cache des symboles réels découpés depuis un PDF (Lot 4, `symbolSvg`),
+ * décodés une seule fois puis réutilisés à chaque case et à chaque rendu —
+ * jamais rechargés depuis la chaîne SVG à chaque frame. Module-level plutôt
+ * que par composant : plusieurs canvas (Suivi, pinceau d'import) affichent
+ * souvent la même palette, inutile de décoder deux fois la même image.
+ */
+const symbolImageCache = new Map<string, HTMLImageElement>();
+const symbolImagePending = new Set<string>();
+const symbolImageListeners = new Set<() => void>();
+
+/**
+ * S'abonne au chargement d'un symbole réel — un composant appelant `drawGrid`
+ * doit redessiner quand celui-ci se déclenche, pour remplacer le repli
+ * textuel (`entry.symbol`) dès que l'image devient disponible. Renvoie une
+ * fonction de désabonnement, pour un `useEffect` React classique.
+ */
+export function onSymbolImageLoaded(listener: () => void): () => void {
+  symbolImageListeners.add(listener);
+  return () => symbolImageListeners.delete(listener);
+}
+
+function getSymbolImage(svg: string): HTMLImageElement | null {
+  const cached = symbolImageCache.get(svg);
+  if (cached !== undefined) return cached;
+  if (!symbolImagePending.has(svg)) {
+    symbolImagePending.add(svg);
+    const image = new Image();
+    image.onload = () => {
+      symbolImageCache.set(svg, image);
+      symbolImagePending.delete(svg);
+      for (const listener of symbolImageListeners) listener();
+    };
+    image.onerror = () => {
+      // Repli silencieux sur `entry.symbol` — un SVG mal formé ne doit
+      // jamais faire disparaître la case ni casser le rendu du reste.
+      symbolImagePending.delete(svg);
+    };
+    image.src = `data:image/svg+xml;base64,${btoa(svg)}`;
+  }
+  return null;
+}
+
 export interface DrawGridOptions {
   pattern: Pattern;
   done: Progress | null;
@@ -200,8 +243,15 @@ export function drawGrid(canvas: HTMLCanvasElement, options: DrawGridOptions): b
         g.lineTo(px + cell * 0.22, py + cell * 0.78);
         g.stroke();
       } else if (withSymbols) {
-        g.fillStyle = mix(entry.hex, theme.ink, 0.72);
-        g.fillText(entry.symbol, px + cell / 2, py + cell * 0.54);
+        const image = entry.symbolSvg !== undefined ? getSymbolImage(entry.symbolSvg) : null;
+        if (image !== null) {
+          const size = cell * 0.7;
+          const inset = (cell - size) / 2;
+          g.drawImage(image, px + inset, py + inset, size, size);
+        } else {
+          g.fillStyle = mix(entry.hex, theme.ink, 0.72);
+          g.fillText(entry.symbol, px + cell / 2, py + cell * 0.54);
+        }
       }
       g.globalAlpha = 1;
     }

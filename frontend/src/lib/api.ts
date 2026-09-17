@@ -214,6 +214,8 @@ export interface ApiImportPaletteEntry {
   name: string;
   rgb_hex: string;
   symbol_key: string;
+  /** Symbole réel découpé depuis le PDF (Lot 4) — voir `ApiPaletteEntry`. */
+  symbol_svg?: string | null;
 }
 
 export interface ApiImportFillZone {
