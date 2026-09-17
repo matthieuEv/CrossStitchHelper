@@ -72,3 +72,77 @@ test("un PDF type A reconnu pré-remplit l'assistant, qu'il suffit de valider", 
   await expect(page.locator("canvas.track-canvas")).toBeVisible();
   expect(await remainingCount(page)).toBeGreaterThan(30_000);
 });
+
+test("taper des dimensions à la main pendant l'analyse ne plante ni le client ni le serveur", async ({
+  page,
+}) => {
+  // Bug réel trouvé en test manuel : le message affiché pendant l'analyse
+  // invite explicitement à cadrer ou saisir les dimensions à la main en
+  // attendant (`import.detection.running`) — si l'utilisateur le fait
+  // vraiment, avant que l'analyse en tâche de fond (~10s sur cette fixture)
+  // n'ait fini, deux choses plantaient : le client (`Uint8Array.set` avec
+  // une grille détectée devenue trop longue pour les nouvelles dimensions
+  // tapées) et le serveur (500 sur `PATCH /config`, même cause côté
+  // `apply_fills`). Voir les commits de correction pour le détail.
+  test.setTimeout(60_000);
+
+  const pageErrors: Error[] = [];
+  page.on("pageerror", (error) => pageErrors.push(error));
+
+  await page.goto("/");
+  await page.getByRole("button", { name: "Importer", exact: true }).click();
+  await page.locator('input[type="file"][accept*="pdf"]').setInputFiles(FIXTURE_PATH);
+
+  // Ne pas attendre la détection : taper tout de suite, comme un
+  // utilisateur pressé qui suit l'invite du message affiché pendant
+  // l'analyse plutôt que de patienter les ~10s qu'elle prend réellement.
+  await expect(page.getByText("Colonnes")).toBeVisible();
+  const [columnsInput, rowsInput] = await page.locator("input.input").all();
+  await columnsInput!.fill("92");
+  await rowsInput!.fill("74");
+
+  const configPatch = page.waitForResponse((response) => response.url().includes("/config"));
+  await page.getByRole("button", { name: "Continuer", exact: true }).click();
+  expect((await configPatch).status()).toBe(200);
+
+  // Toujours utilisable : l'étape Palette s'affiche (vide, puisque
+  // l'utilisateur a pris la main avant que la détection ne propose quoi que
+  // ce soit — comportement Lot 2 normal), pas un écran blanc planté.
+  await expect(page.getByRole("button", { name: /Ajouter une couleur/ })).toBeVisible();
+  expect(pageErrors).toEqual([]);
+});
+
+test("changer des dimensions déjà détectées ne plante pas non plus", async ({ page }) => {
+  // Même bug que le test précédent, mais reproduit de façon déterministe
+  // (sans dépendre de battre une course de ~10s) : on laisse la détection
+  // se terminer et pré-remplir 255×180 avec une vraie `detected_cells`,
+  // *puis* on corrige les dimensions — exactement le geste qui faisait
+  // planter le client (`Uint8Array.set`, grille détectée devenue trop
+  // longue pour 92×74) et le serveur (500 sur `PATCH /config`).
+  test.setTimeout(60_000);
+
+  const pageErrors: Error[] = [];
+  page.on("pageerror", (error) => pageErrors.push(error));
+
+  await page.goto("/");
+  await page.getByRole("button", { name: "Importer", exact: true }).click();
+  await page.locator('input[type="file"][accept*="pdf"]').setInputFiles(FIXTURE_PATH);
+
+  await expect(page.getByText("Colonnes")).toBeVisible();
+  const [columnsInput, rowsInput] = await page.locator("input.input").all();
+  await expect(columnsInput!).toHaveValue("255", { timeout: 30_000 });
+  await expect(rowsInput!).toHaveValue("180");
+  expect(pageErrors).toEqual([]); // pas encore planté à ce stade
+
+  await columnsInput!.fill("92");
+  expect(pageErrors).toEqual([]); // toujours pas, même avec rows=180 encore incohérent
+  await rowsInput!.fill("74");
+  expect(pageErrors).toEqual([]);
+
+  const configPatch = page.waitForResponse((response) => response.url().includes("/config"));
+  await page.getByRole("button", { name: "Continuer", exact: true }).click();
+  expect((await configPatch).status()).toBe(200);
+
+  await expect(page.getByRole("button", { name: /Ajouter une couleur/ })).toBeVisible();
+  expect(pageErrors).toEqual([]);
+});
