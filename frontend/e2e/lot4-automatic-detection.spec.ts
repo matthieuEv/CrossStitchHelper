@@ -323,6 +323,15 @@ test("les symboles affichés sont les vrais glyphes du PDF, pas des lettres synt
   await expect(paletteSwatchImages.first()).toBeVisible();
   expect(await paletteSwatchImages.count()).toBeGreaterThanOrEqual(34);
 
+  // Repère à côté de la clé éditable (`symbol_key`) de la légende du bas —
+  // un deuxième site distinct qui perdait aussi `symbol_svg` avant d'être
+  // corrigé, trouvé par le même bug réel que les pastilles ci-dessus.
+  const legendRowImages = page.locator(
+    'div:has(> input[type="color"]) img[src^="data:image/svg+xml;base64,"]',
+  );
+  await expect(legendRowImages.first()).toBeVisible();
+  expect(await legendRowImages.count()).toBeGreaterThanOrEqual(34);
+
   await page.getByRole("button", { name: "Continuer", exact: true }).click();
 
   const nameInput = page.getByLabel("Nom du motif");

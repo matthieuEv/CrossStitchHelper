@@ -678,6 +678,17 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
                     onChange={(event) => updatePaletteEntry(index, { name: event.target.value })}
                     onBlur={commitPaletteEdits}
                   />
+                  {entry.symbol_svg !== null && entry.symbol_svg !== undefined && (
+                    // Symbole réel découpé du PDF (Lot 4), à titre de repère
+                    // pendant la correction — la clé reste éditable à côté :
+                    // corriger `symbol_key` ne change jamais ce symbole-ci,
+                    // qui vient du fichier, pas de cette saisie.
+                    <img
+                      src={`data:image/svg+xml;base64,${btoa(entry.symbol_svg)}`}
+                      alt=""
+                      style={{ width: 28, height: 28, flex: "none" }}
+                    />
+                  )}
                   <input
                     className="input"
                     style={{ width: 44, textAlign: "center", flex: "none" }}
