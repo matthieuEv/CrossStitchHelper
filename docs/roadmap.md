@@ -98,12 +98,16 @@ Chaque lot est indépendamment livrable et utilisable : il n'y a pas de lot "inu
 
 ## Lot 6 — Recettes réutilisables
 
-- [ ] Calcul d'empreinte de fichier (polices, motifs de texte d'en-tête, géométrie — jamais le contenu créatif)
-- [ ] Enregistrement d'une configuration validée comme recette
-- [ ] Réapplication automatique sur un fichier de même empreinte
-- [ ] Gestion de la bibliothèque locale de recettes
+- [x] Calcul d'empreinte de fichier (polices, motifs de texte d'en-tête, géométrie — jamais le contenu créatif)
+- [x] Enregistrement d'une configuration validée comme recette
+- [x] Réapplication automatique sur un fichier de même empreinte
+- [x] Gestion de la bibliothèque locale de recettes
 
-**Terminé quand :** réimporter un second PDF du même éditeur saute directement au récapitulatif.
+**Terminé quand :** réimporter un second PDF du même éditeur reprend automatiquement le cadrage déjà validé, sans repasser par l'étape de recadrage manuel.
+
+**Lot clos.** `backend/app/fingerprint.py` calcule l'empreinte à partir de la taille de page, des polices embarquées (préfixe de sous-ensemble PDF retiré — jamais stable d'un export à l'autre) et de libellés génériques de logiciel de charting repérés dans le texte (« Floss Used for », « Symbol »... jamais le titre du motif). Vérifiée contre les six fixtures de référence : `botanical-citrus-dmc` et `cucurbit-dmc`, deux grilles DMC officielles réelles au même gabarit d'export mais à motifs différents, obtiennent la **même** empreinte (constat mesuré, pas provoqué — voir `backend/tests/test_fingerprint.py`) ; les quatre autres fixtures restent chacune distinctes. C'est cette paire réelle, pas une fixture synthétique, qui sert de cas de bout en bout au Lot 6 (`backend/tests/test_recipes.py`, `frontend/e2e/lot6-recettes.spec.ts`).
+
+Une recette (`backend/app/models.py::Recipe`, `backend/app/api/recipes.py`) ne porte que `crop_by_page` — jamais les dimensions ni la palette, contenu propre à chaque motif même au sein d'un même éditeur (cf. Winter Wreath/Summer Flight vs Botanical Citrus/Cucurbit ci-dessus) : voir la précision actée au cahier des charges §8.7. Le rapprochement automatique tourne dans la même tâche de fond que la détection type A/B/C (`_run_auto_detection`, `backend/app/api/imports.py`) plutôt que dans la requête d'upload — l'empreinte y avait d'abord été calculée par erreur avant ce déplacement : mesurée à 14 s sur la fixture Café Brasserie (police de symboles riche, onze pages), largement au-dessus de ce qu'une requête HTTP doit attendre, un bug trouvé et corrigé avant la fin du lot grâce à une régression observée sur les suites e2e Lots 4-5 tournées en parallèle. Une recette n'écrase jamais un cadrage déjà commencé à la main. Bibliothèque gérée depuis l'écran Réglages du frontend (lister, supprimer) ; proposée à l'enregistrement à l'étape récapitulative de l'assistant d'import.
 
 ---
 
