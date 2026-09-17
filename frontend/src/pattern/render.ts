@@ -100,6 +100,16 @@ export interface DrawGridOptions {
   gridlines?: boolean;
   /** Masque les cases déjà brodées (toile nue) plutôt que de les délaver. */
   hideDone?: boolean;
+  /**
+   * Index de cases (mêmes indices que `pattern.cells`) signalées incertaines
+   * par la détection automatique type B/C (Lot 5, `uncertain_cells`) —
+   * couleur douteuse et/ou symbole ambigu. Repère visuel dans l'assistant
+   * d'import (`ImportGridPainter`) uniquement, jamais utilisé côté Suivi.
+   */
+  uncertainCells?: ReadonlySet<number> | null;
+  /** Couleur du repère d'incertitude — lue depuis `--color-accent` par
+   * l'appelant, comme `drawOverlay`, plutôt que dérivée de `theme`. */
+  uncertainColor?: string;
 }
 
 /**
@@ -254,6 +264,21 @@ export function drawGrid(canvas: HTMLCanvasElement, options: DrawGridOptions): b
         }
       }
       g.globalAlpha = 1;
+
+      if (!isDone && cell >= 6 && options.uncertainCells?.has(index) === true) {
+        // Petit triangle plein dans le coin — un repère d'incertitude doit
+        // rester visible même sur une case minuscule, contrairement au
+        // symbole (`withSymbols`) qui, lui, devient illisible en dessous de
+        // `SYMBOL_MIN_CELL` et disparaît entièrement à ce zoom.
+        const size = Math.max(4, cell * 0.36);
+        g.fillStyle = options.uncertainColor ?? theme.ink;
+        g.beginPath();
+        g.moveTo(px + cell - size, py);
+        g.lineTo(px + cell, py);
+        g.lineTo(px + cell, py + size);
+        g.closePath();
+        g.fill();
+      }
     }
   }
 

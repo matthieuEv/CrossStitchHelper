@@ -2,7 +2,7 @@
 
 *Extrait actionnable de `docs/cahier-des-charges.md` §11. Ce fichier est celui qu'on coche au fil de l'avancement ; le cahier des charges reste la version narrative de référence — en cas de divergence, c'est lui qui fait foi sur le fond, ce fichier sur le séquencement.*
 
-Chaque lot est indépendamment livrable et utilisable : il n'y a pas de lot "inutile tant que le suivant n'est pas fini". Les lots 0 à 3 forment la V1 utilisable. Les lots 4 et 5 forment la V2 différenciante. Les lots 6 à 8 sont des amplificateurs.
+Chaque lot est indépendamment livrable et utilisable : il n'y a pas de lot "inutile tant que le suivant n'est pas fini". Les lots 0 à 3 forment la V1 utilisable. Les lots 4 et 5 forment la V2 différenciante. Les lots 6 à 9 sont des amplificateurs.
 
 ---
 
@@ -83,14 +83,16 @@ Chaque lot est indépendamment livrable et utilisable : il n'y a pas de lot "inu
 
 ## Lot 5 — Extraction automatique types B et C
 
-- [ ] Extraction des couleurs par remplissage de rectangles (gestion CMJN/RVB)
-- [ ] Rapprochement Lab vers la palette DMC
-- [ ] Mesure de la densité de tracés vectoriels par page pour décider si une superposition à deux pages est nécessaire (ne jamais supposer "page 1 = couleur, page 2 = symboles" par défaut — voir `docs/cahier-des-charges.md` §4.3, cas Summer Flight)
-- [ ] Superposition des grilles jumelles quand elle s'avère nécessaire
-- [ ] Reconnaissance des symboles vectoriels avec score de confiance
-- [ ] Repli manuel explicite quand le score est insuffisant
+- [x] Extraction des couleurs par remplissage de rectangles (gestion CMJN/RVB)
+- [x] Rapprochement Lab vers la palette DMC
+- [x] Mesure de la densité de tracés vectoriels par page pour décider si une superposition à deux pages est nécessaire (ne jamais supposer "page 1 = couleur, page 2 = symboles" par défaut — voir `docs/cahier-des-charges.md` §4.3, cas Summer Flight)
+- [x] Superposition des grilles jumelles quand elle s'avère nécessaire
+- [x] Reconnaissance des symboles vectoriels avec score de confiance
+- [x] Repli manuel explicite quand le score est insuffisant
 
 **Terminé quand :** les quatre fixtures DMC (`winter-wreath-dmc`, `botanical-citrus`, `cucurbit`, `summer-flight`) s'importent chacune avec leurs couleurs correctes, la bonne stratégie de page(s) détectée automatiquement, et un signalement explicite des cases incertaines. **Fin de la V2.**
+
+**Lot clos.** `backend/app/type_bc.py` mesure la densité de tracés par page avant de décider d'une superposition — constat contre-intuitif mesuré (pas supposé) : `winter-wreath-dmc` se comporte comme le cas piège `summer-flight-dmc` (sa page couleur porte déjà ses symboles), seules `botanical-citrus-dmc` et `cucurbit-dmc` superposent une vraie deuxième page. `summer-flight-dmc` bascule honnêtement en type B (reconnaissance de forme trop fragmentée sur son illustration nuancée) plutôt que produire une palette inutilisable. Catalogue couleur DMC→RVB communautaire dans `backend/app/dmc_catalog.py` (228 teintes), distinct de `app/dmc_colors.py` (type A, où le texte de légende fait déjà foi). Les cases incertaines (`uncertain_cells`) sont signalées à la fois dans la bannière de détection et par un repère visuel sur chaque case concernée dans le pinceau de l'assistant (`ImportGridPainter`, `pattern/render.ts`).
 
 ---
 
@@ -131,6 +133,20 @@ Chaque lot est indépendamment livrable et utilisable : il n'y a pas de lot "inu
 - [ ] Thème sombre
 - [ ] Traductions FR/EN complètes
 - [ ] Partage communautaire des recettes (éventuel, sous conditions strictes — voir cahier des charges §8.7)
+
+---
+
+## Lot 9 — Extraction des points spéciaux (arrière, nœuds, fractionnés)
+
+Repéré en testant le Lot 5 en vrai sur `cafe-brasserie-charting-export` : certains PDF dessinent des points arrière (traits) et des points de nœud (petites formes isolées) directement par-dessus la grille de points comptés — `backstitch_json`/`french_knots_json` existent déjà dans le modèle de données (§6.2) mais aucun connecteur (A/B/C) ne les remplit jamais aujourd'hui, ils restent toujours vides. Le Lot 8 suppose cette donnée déjà présente pour compléter l'*interface* de suivi (cocher un point arrière) — ce lot-ci est ce qui la produit réellement depuis le PDF.
+
+- [ ] Détection des tracés de point arrière : un trait qui **traverse plusieurs cases** (contrairement à un symbole de point plein, toujours contenu dans une seule case, et au quadrillage imprimé, toujours aligné sur les axes — voir `backend/app/type_bc.py::_is_grid_ruling`, à généraliser plutôt qu'à dupliquer)
+- [ ] Détection des points de nœud : petite forme isolée, pas alignée sur le pavage régulier des cases coloriées
+- [ ] Distinction entre point arrière **décoratif** (texte ou bordure d'une page de garde/légende, hors de la grille de travail) et point arrière **réel** (fait partie du motif, doit être signalé au fil) — ne jamais extraire le premier comme s'il fallait le broder
+- [ ] Type A : croiser avec les tableaux de légende déjà présents mais ignorés depuis le Lot 4 ("Floss Used for Backstitch"/"French Knots", distincts de "Full Stitches") pour valider les comptages, comme déjà fait pour les points entiers (§7.3)
+- [ ] Vérifier explicitement (fixtures existantes, pas seulement de nouvelles) que cette extraction ne dégrade jamais la reconnaissance des points pleins déjà en place (Lots 4-5) — un point arrière qui traverse une case de la grille de symboles type B/C ne doit jamais faire basculer cette case en case incertaine à tort
+
+**Terminé quand :** les points arrière et de nœuds documentés dans la légende de `cafe-brasserie-charting-export` sont extraits avec des comptages cohérents avec cette légende, cochables dans le suivi (Lot 8), sans qu'aucun point arrière décoratif hors-grille ne soit importé comme faisant partie du motif à broder.
 
 ---
 

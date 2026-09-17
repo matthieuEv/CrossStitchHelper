@@ -9,6 +9,9 @@ interface ImportGridPainterProps {
   painter: ImportPainter;
   /** Index de palette 1-based actuellement choisi pour peindre ; 0 = gomme. */
   activeIndex: number;
+  /** Cases signalées incertaines par la détection type B/C (Lot 5) — voir
+   * `pattern/render.ts::DrawGridOptions.uncertainCells`. */
+  uncertainCells?: ReadonlySet<number> | null;
 }
 
 /**
@@ -18,7 +21,11 @@ interface ImportGridPainterProps {
  * sans bouton de confirmation séparé pour rester rapide sur une grille peinte
  * à la main case par case.
  */
-export function ImportGridPainter({ painter, activeIndex }: ImportGridPainterProps) {
+export function ImportGridPainter({
+  painter,
+  activeIndex,
+  uncertainCells = null,
+}: ImportGridPainterProps) {
   const t = useT();
   const { resolved } = useTheme();
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -41,11 +48,19 @@ export function ImportGridPainter({ painter, activeIndex }: ImportGridPainterPro
     const canvas = canvasRef.current;
     if (canvas === null) return;
     const theme = readGridTheme(canvas);
-    const drawn = drawGrid(canvas, { pattern, done: null, view, theme, highlight: 0 });
-    if (!drawn) return;
     const accent = getComputedStyle(canvas).getPropertyValue("--color-accent").trim();
+    const drawn = drawGrid(canvas, {
+      pattern,
+      done: null,
+      view,
+      theme,
+      highlight: 0,
+      uncertainCells,
+      uncertainColor: accent,
+    });
+    if (!drawn) return;
     drawOverlay(canvas, { view, accent, cursor, selection });
-  }, [pattern, view, cursor, selection, resolved, symbolImageTick]);
+  }, [pattern, view, cursor, selection, resolved, symbolImageTick, uncertainCells]);
 
   // Molette/trackpad : zoome sous le curseur — voir TrackScreen.tsx pour le
   // détail (écouteur DOM natif, pas `onWheel` React, pour que

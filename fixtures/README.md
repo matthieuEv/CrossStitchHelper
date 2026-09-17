@@ -17,11 +17,11 @@ Export d'un logiciel de charting (police embarquée personnalisée `CROSSSTICH6`
 Grille officielle DMC ("Winter Wreath / Couronne d'hiver"), 5 pages, 100 % vectorielle.
 
 **Caractéristiques à vérifier par les tests :**
-- Page 1 : grille couleur (~6800 rectangles vectoriels colorés) — peu de tracés (symboles) sur cette page
-- Page 2 : grille symboles séparée, mêmes dimensions que la page 1 (tracés vectoriels, pas du texte)
+- Page 1 : grille couleur (~6800 rectangles vectoriels colorés) — **mesuré au Lot 5 (`backend/tests/test_type_bc.py`) : cette page porte en réalité déjà ~3362 courbes de tracé réparties sur toute la grille (un petit symbole par-dessus chaque aplat de couleur), pas "peu de tracés" comme le laisse croire un premier coup d'œil**
+- Page 2 : grille symboles séparée en noir et blanc, mêmes dimensions que la page 1 (~2466 courbes) — mesuré au Lot 5 : redondante avec les symboles déjà présents sur la page 1, jamais la seule source exploitable
 - Page 4 : légende texte avec codes DMC (3345, 3346, 471, 472, 11, 18, 3821, 726, 3853, 3854, blanc, 351, 814, E321)
 - Taille dessin annoncée : 16 × 15,81 cm sur Aida 14 count
-- **Sert de cas de référence pour la vraie superposition à deux pages** (contrairement à `summer-flight-dmc` ci-dessous)
+- **Se comporte en réalité comme le cas piège `summer-flight-dmc` ci-dessous** (contrairement à ce qu'un premier examen visuel suggère) : `botanical-citrus-dmc` et `cucurbit-dmc` sont les deux seules fixtures DMC de ce jeu à réellement superposer une deuxième page de symboles — voir cahier des charges §4.1 pour le détail de cette correction mesurée au Lot 5.
 
 ## `botanical-citrus-dmc/agrumes_-_planche_botanique.pdf` — type C
 

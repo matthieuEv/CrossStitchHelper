@@ -1,40 +1,36 @@
 ---
 name: verify-extraction-fixtures
-description: Vérifie le moteur d'extraction PDF contre les deux fixtures de référence et leurs valeurs attendues. À utiliser après toute modification du moteur d'extraction (backend), avant de considérer la tâche terminée.
+description: Vérifie le moteur d'extraction PDF contre les six fixtures de référence et leurs valeurs attendues. À utiliser après toute modification du moteur d'extraction (backend), avant de considérer la tâche terminée.
 ---
 
 # Vérifier l'extraction contre les fixtures de référence
 
-Procédure à suivre après toute modification touchant à l'analyse structurelle des PDF, à la détection de grille, aux parseurs de type A/B/C, ou au rapprochement couleur → DMC.
+Procédure à suivre après toute modification touchant à l'analyse structurelle des PDF, à la détection de grille, aux parseurs de type A/B/C/E, ou au rapprochement couleur → DMC.
 
 ## 1. Identifier les fixtures concernées
 
-- `fixtures/cafe-brasserie-charting-export/CaffeBrasseriecoloursymbols.pdf` — cas type A (police de symboles embarquée, légende texte).
-- `fixtures/winter-wreath-dmc/PATASS117_2C_2.pdf` — cas types B/C (vectoriel, grilles jumelles couleur/symboles).
+Six PDF réels couvrent les types A/B/C/E connus (voir `fixtures/README.md` pour la liste complète des valeurs attendues, et `docs/cahier-des-charges.md` §4 pour le détail de chaque cas) :
 
-Lire `fixtures/README.md` pour la liste complète des valeurs attendues avant de commencer.
+- `fixtures/cafe-brasserie-charting-export/` — type A (police de symboles embarquée, légende texte) → `backend/app/type_a.py`.
+- `fixtures/winter-wreath-dmc/`, `fixtures/summer-flight-dmc/` — type C, cas piège : la page couleur porte déjà ses propres tracés de symbole, ne jamais superposer une deuxième page à l'aveugle → `backend/app/type_bc.py`.
+- `fixtures/botanical-citrus-dmc/`, `fixtures/cucurbit-dmc/` — type C, superposition à deux pages réellement nécessaire → `backend/app/type_bc.py`.
+- `fixtures/river-and-mountains-laserarts/` — type E (catalogue d'images bitmap réutilisées, hors périmètre des connecteurs A/B/C : sert surtout à vérifier l'absence de faux positif).
+
+N'importe lequel de ces six fichiers peut, à l'œil, sembler suivre une structure différente de sa réalité mesurée (`winter-wreath-dmc` en est la preuve directe, corrigée au Lot 5 après une première description erronée dans le cahier des charges) — ne jamais faire confiance à un premier examen visuel ou à une description déjà écrite sans la revérifier par la mesure sur le fichier réel.
 
 ## 2. Lancer l'extraction sur chaque fixture concernée par le changement
 
-Utiliser le point d'entrée du moteur d'extraction backend (voir `docs/cahier-des-charges.md` §8 pour le détail des étapes du pipeline : analyse structurelle → détection de grille → parseur spécifique → rapprochement couleur → assemblage).
+Utiliser le point d'entrée du moteur d'extraction backend concerné (`detect_type_a`, `detect_type_bc`, …) — voir `docs/cahier-des-charges.md` §8 pour le détail des étapes du pipeline : analyse structurelle → détection de grille → parseur spécifique → rapprochement couleur → assemblage.
 
 ## 3. Comparer aux valeurs attendues
 
-Pour `cafe-brasserie-charting-export` :
-- Dimensions extraites = 255 × 180 (45 900 cases)
-- 34 couleurs distinctes identifiées
-- Comptages par couleur cohérents avec la page 11 du PDF (ex. DMC 310 = 3839 points pleins)
-
-Pour `winter-wreath-dmc` :
-- Couleurs de case extraites correctement depuis les rectangles vectoriels de la page 1
-- Grille de symboles de la page 2 correctement superposée à la grille de couleurs de la page 1 (mêmes dimensions, recalage correct)
-- Codes DMC de la légende (page 4) correctement associés aux couleurs extraites
+Les valeurs exactes (dimensions, nombre de couleurs, comptages, stratégie de page) sont dans `fixtures/README.md` — ne pas les recopier ici, un seul endroit par information (voir `CLAUDE.md`). Les suites `backend/tests/test_type_a.py` et `backend/tests/test_type_bc.py` les vérifient déjà automatiquement ; les relancer est le moyen le plus rapide de faire cette comparaison.
 
 ## 4. En cas d'écart
 
-- Si l'écart est mineur et documenté (score de confiance bas signalé correctement) : c'est attendu, l'assistant d'import doit permettre la correction manuelle — vérifier que le signalement de confiance fonctionne, pas que le résultat est parfait.
-- Si l'écart est silencieux (valeur fausse sans signalement de confiance bas) : c'est un bug à corriger avant de considérer la tâche terminée. Ne jamais laisser une extraction incorrecte non signalée.
+- Si l'écart est mineur et documenté (score de confiance bas, ou case listée dans `uncertain_cells`, signalés correctement) : c'est attendu, l'assistant d'import doit permettre la correction manuelle — vérifier que le signalement de confiance fonctionne, pas que le résultat est parfait.
+- Si l'écart est silencieux (valeur fausse sans signalement de confiance bas ni case incertaine) : c'est un bug à corriger avant de considérer la tâche terminée. Ne jamais laisser une extraction incorrecte non signalée.
 
-## 5. Si le changement couvre un cas non représenté par les deux fixtures
+## 5. Si le changement couvre un cas non représenté par les six fixtures
 
 Envisager l'ajout d'une nouvelle fixture (voir le skill `add-import-connector`) plutôt que de valider uniquement par inspection manuelle ponctuelle — les fixtures sont ce qui empêche une régression silencieuse plus tard.

@@ -46,13 +46,27 @@ const FIXTURE_PATH = fileURLToPath(
   ),
 );
 
-/** Fixture type C (voir `fixtures/README.md`) : `detect_type_a` s'y efface
- * proprement (aucun faux positif attendu), utile pour vérifier le repli
- * manuel quand la détection ne trouve rien — contrairement à la fixture
- * type A ci-dessus, qui réussit toujours. */
-const NON_TYPE_A_FIXTURE_PATH = fileURLToPath(
-  new URL("../../fixtures/winter-wreath-dmc/PATASS117_2C_2.pdf", import.meta.url),
-);
+// PDF minimal valide (deux pages — le test de cadrage indépendant par page a
+// besoin d'une deuxième page à naviguer —, un peu de texte courant, aucun
+// rectangle vectoriel ni police de symboles), encodé en dur — plus rapide et
+// plus robuste qu'une vraie fixture pour vérifier le repli manuel : `fixtures/
+// river-and-mountains-laserarts` (type E) le fait aussi, mais ses 18 pages
+// ralentissent nettement l'analyse des deux connecteurs sous Docker CI (voir
+// commit de correction), au point d'avoir fait déborder ces tests-ci *et* de
+// laisser le conteneur assez chargé pour faire déborder par contrecoup le
+// test type A suivant dans la même suite. Les fixtures DMC (`winter-wreath-
+// dmc` et consorts), elles, sont désormais reconnues comme type B/C depuis
+// le Lot 5 et ne conviennent plus non plus à ce rôle.
+const TINY_UNDETECTABLE_PDF_BASE64 =
+  "JVBERi0xLjcKJcK1wrYKJSBXcml0dGVuIGJ5IE11UERGIDEuMjguMgoKMSAwIG9iago8PC9UeXBlL0NhdGFsb2cvUGFnZXMgMiAwIFIvSW5mbzw8L1Byb2R1Y2VyKE11UERGIDEuMjguMik+Pj4+CmVuZG9iagoKMiAwIG9iago8PC9UeXBlL1BhZ2VzL0NvdW50IDIvS2lkc1s0IDAgUiA4IDAgUl0+PgplbmRvYmoKCjMgMCBvYmoKPDwvRm9udDw8L2hlbHYgNSAwIFI+Pj4+CmVuZG9iagoKNCAwIG9iago8PC9UeXBlL1BhZ2UvTWVkaWFCb3hbMCAwIDMwMCAyMDBdL1JvdGF0ZSAwL1Jlc291cmNlcyAzIDAgUi9QYXJlbnQgMiAwIFIvQ29udGVudHNbNiAwIFJdPj4KZW5kb2JqCgo1IDAgb2JqCjw8L1R5cGUvRm9udC9TdWJ0eXBlL1R5cGUxL0Jhc2VGb250L0hlbHZldGljYS9FbmNvZGluZy9XaW5BbnNpRW5jb2Rpbmc+PgplbmRvYmoKCjYgMCBvYmoKPDwvTGVuZ3RoIDEwNS9GaWx0ZXIvRmxhdGVEZWNvZGU+PgpzdHJlYW0KeNoVSjsKQkEQ6+cUcwNnZvdlniAWD2zshOnESnex0MLG8xsJSchHPrKVuBrhulDMtN6ye47XV921pl4PfWBmD4OTLYOpZYsHtWNPNqz/BSs8g897WPKNxMJ+YtDH8VZnOZVc5AcK1hpwCmVuZHN0cmVhbQplbmRvYmoKCjcgMCBvYmoKPDwvRm9udDw8L2hlbHYgNSAwIFI+Pj4+CmVuZG9iagoKOCAwIG9iago8PC9UeXBlL1BhZ2UvTWVkaWFCb3hbMCAwIDMwMCAyMDBdL1JvdGF0ZSAwL1Jlc291cmNlcyA3IDAgUi9QYXJlbnQgMiAwIFIvQ29udGVudHNbOSAwIFJdPj4KZW5kb2JqCgo5IDAgb2JqCjw8L0xlbmd0aCAxMDYvRmlsdGVyL0ZsYXRlRGVjb2RlPj4Kc3RyZWFtCnjaFYoxCkJBEEP7OcXcwJnZ/ZkviMUHGzthOrHSXSy0sPH8RkIeCYl8ZCtxNcp1Icy03rJ7jtdX3bWmXg99YGYPg9Mtg61liwfZsacb1v+CFZ7B5z0s+UZiYeqZmDGOtzrLqeQiPwdxGkMKZW5kc3RyZWFtCmVuZG9iagoKeHJlZgowIDEwCjAwMDAwMDAwMDAgNjU1MzUgZiAKMDAwMDAwMDA0MiAwMDAwMCBuIAowMDAwMDAwMTIwIDAwMDAwIG4gCjAwMDAwMDAxNzggMDAwMDAgbiAKMDAwMDAwMDIxOSAwMDAwMCBuIAowMDAwMDAwMzI2IDAwMDAwIG4gCjAwMDAwMDA0MTUgMDAwMDAgbiAKMDAwMDAwMDU4OSAwMDAwMCBuIAowMDAwMDAwNjMwIDAwMDAwIG4gCjAwMDAwMDA3MzcgMDAwMDAgbiAKCnRyYWlsZXIKPDwvU2l6ZSAxMC9Sb290IDEgMCBSL0lEWzxDMjk5NDZDM0EyNTIzNDUwMzkwOEMzOTY2OUMyOEZDMj48OEY2NjgwMzY5NTc3RDkzNzM2OTM4MkE2OTYxN0FBODg+XT4+CnN0YXJ0eHJlZgo5MTIKJSVFT0YK";
+
+function tinyUndetectablePdf(): { name: string; mimeType: string; buffer: Buffer } {
+  return {
+    name: "not-a-cross-stitch-chart.pdf",
+    mimeType: "application/pdf",
+    buffer: Buffer.from(TINY_UNDETECTABLE_PDF_BASE64, "base64"),
+  };
+}
 
 /**
  * ~10s en local (voir `backend/tests/test_type_a.py`), mais nettement plus
@@ -204,21 +218,22 @@ test("le cadrage manuel reste bloqué pendant l'analyse automatique", async ({ p
 test("le cadrage manuel apparaît si la détection automatique ne trouve rien", async ({
   page,
 }) => {
-  // Repli explicitement demandé : un fichier qui n'est pas de type A (ou
-  // dont `detect_type_a` s'efface, voir fixtures/README.md) doit retomber
-  // sur le cadrage manuel du Lot 2 une fois l'analyse terminée — jamais
-  // pendant qu'elle tourne encore (test précédent).
+  // Repli explicitement demandé : un fichier qui ne correspond à aucun type
+  // reconnu (ni `detect_type_a`, ni `detect_type_bc` depuis le Lot 5 — voir
+  // fixtures/README.md) doit retomber sur le cadrage manuel du Lot 2 une
+  // fois l'analyse terminée — jamais pendant qu'elle tourne encore (test
+  // précédent).
   test.setTimeout(60_000);
 
   await page.goto("/");
   await page.getByRole("button", { name: "Importer", exact: true }).click();
-  await page.locator('input[type="file"][accept*="pdf"]').setInputFiles(NON_TYPE_A_FIXTURE_PATH);
+  await page.locator('input[type="file"][accept*="pdf"]').setInputFiles(tinyUndetectablePdf());
 
   await expect(page.getByText("Colonnes")).toBeVisible();
   await expect(page.locator(".crop-stage-loading")).not.toBeVisible({
     timeout: DETECTION_TIMEOUT,
   });
-  // Jamais de bannière de détection : `detect_type_a` ne s'est pas imposé.
+  // Jamais de bannière de détection : aucun des deux connecteurs ne s'est imposé.
   await expect(page.getByText(/Détection automatique/)).not.toBeVisible();
 
   const topHandle = page.locator(".crop-handle").first();
@@ -247,7 +262,7 @@ test("le cadrage manuel est indépendant d'une page à l'autre", async ({ page }
 
   await page.goto("/");
   await page.getByRole("button", { name: "Importer", exact: true }).click();
-  await page.locator('input[type="file"][accept*="pdf"]').setInputFiles(NON_TYPE_A_FIXTURE_PATH);
+  await page.locator('input[type="file"][accept*="pdf"]').setInputFiles(tinyUndetectablePdf());
 
   await expect(page.getByText("Colonnes")).toBeVisible();
   await expect(page.locator(".crop-stage-loading")).not.toBeVisible({

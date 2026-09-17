@@ -82,7 +82,7 @@ Six PDF réels ont été analysés en profondeur (structure interne, polices, tr
 
 - Grille dessinée en **~6 800 rectangles vectoriels par page**, chacun portant sa couleur de remplissage → **la couleur de chaque case est extractible sans OCR**.
 - Les symboles (T, Z, U…) sont des **tracés vectoriels** (~3 300–3 700 lignes/courbes par page), **pas du texte** → illisibles par extraction de texte, nécessitent une reconnaissance de forme.
-- Motif réparti sur **deux grilles jumelles** : page 1 = couleurs sans symboles, page 2 = symboles sans couleurs, mêmes dimensions.
+- Motif réparti sur **deux grilles jumelles visuellement semblables**, mêmes dimensions : à l'œil, page 1 = couleurs, page 2 = symboles en noir et blanc. **Correction Lot 5, mesurée et non supposée (`backend/app/type_bc.py`) :** la page 1 porte en réalité déjà ses propres petits tracés de symbole par-dessus chaque aplat de couleur (~3 362 courbes mesurées, réparties sur toute la grille, pas un simple ornement localisé — confirmé par rendu visuel d'un symbole extrait) ; la page 2 (tout en noir, ~2 466 courbes) n'est donc qu'un doublon redondant, pas la seule source de symboles exploitable. Ce fichier se comporte en pratique comme le cas piège `summer-flight-dmc` (§4.3) plutôt que comme `botanical-citrus-dmc`/`cucurbit-dmc`, qui superposent vraiment deux pages — **la leçon du §4.3 s'applique donc aussi à ce fichier lui-même : ne jamais supposer sans mesurer, même ici.**
 - Légende page 4 : codes DMC en texte (3345, 3346, 471…), pastilles de couleur en aplats.
 - Aucune image bitmap : 100 % vectoriel.
 
@@ -411,11 +411,17 @@ Détection de grille par vision par ordinateur, correction de perspective, quant
 
 ### Lot 8 — Finitions
 
-Points fractionnés et spéciaux complets dans l'interface de suivi, sauvegarde/restauration, thème sombre, traductions, éventuel partage communautaire des recettes.
+Points fractionnés et spéciaux complets dans l'interface de suivi, sauvegarde/restauration, thème sombre, traductions, éventuel partage communautaire des recettes. Suppose que `backstitch_json`/`french_knots_json` (§6.2) sont déjà renseignés — voir Lot 9 pour leur extraction réelle depuis le PDF.
+
+### Lot 9 — Extraction des points spéciaux (arrière, nœuds, fractionnés)
+
+Repéré en testant le Lot 5 en vrai : certains PDF (dont « Cafe Brasserie ») dessinent des points arrière et des points de nœud directement par-dessus la grille de points comptés, jamais extraits par aucun connecteur (A/B/C) à ce jour. Détection des tracés de point arrière (un trait qui traverse plusieurs cases, contrairement à un symbole de point plein ou au quadrillage imprimé) et des points de nœud (forme isolée hors du pavage régulier), avec une distinction impérative entre point arrière décoratif (page de garde, hors grille de travail) et point arrière réel destiné à être brodé. Pour le type A, croisement avec les tableaux de légende « Backstitch »/« French Knots » déjà ignorés depuis le Lot 4, sur le même principe que la vérification des points entiers (§7.3).
+
+*Terminé quand :* les points arrière et de nœuds de « Cafe Brasserie » sont extraits avec des comptages cohérents avec sa légende, cochables dans le suivi, sans qu'un point arrière décoratif hors-grille ne soit importé à tort comme faisant partie du motif.
 
 ### Séquencement recommandé
 
-Les lots 0 à 3 constituent la **V1 utilisable** et devraient être menés d'un trait. Les lots 4 et 5 forment la **V2 différenciante** — c'est là que l'application dépasse la concurrence gratuite. Les lots 6 à 8 sont des amplificateurs, à prioriser selon l'usage réel.
+Les lots 0 à 3 constituent la **V1 utilisable** et devraient être menés d'un trait. Les lots 4 et 5 forment la **V2 différenciante** — c'est là que l'application dépasse la concurrence gratuite. Les lots 6 à 9 sont des amplificateurs, à prioriser selon l'usage réel.
 
 ---
 
@@ -428,6 +434,7 @@ Les lots 0 à 3 constituent la **V1 utilisable** et devraient être menés d'un 
 | Confusion entre deux nuances proches de fil | Moyenne — fausse la broderie | Distance perceptuelle Lab, seuil de confiance, signalement explicite, codes texte de la légende prioritaires sur la couleur |
 | Éviction du stockage par Safari | Moyenne — perte de progression | Le serveur est la source de vérité, IndexedDB n'est qu'un cache, deltas rejouables |
 | Reconnaissance des symboles vectoriels sans solution existante à réutiliser | Moyenne | Reportée au lot 5, non bloquante ; type B (couleur seule) reste utilisable en attendant |
+| Point arrière décoratif (texte, bordure de page de garde) confondu avec un point arrière réel du motif | Moyenne — importerait un élément non destiné à être brodé | Reportée au lot 9 ; distinction explicite entre grille de travail et pages hors-grille avant toute extraction de point arrière |
 | Propriété intellectuelle des motifs | Moyenne — juridique | Traitement strictement local, aucun partage de motif, recettes sans contenu créatif, CGU explicites |
 | Complexité d'auto-hébergement rebutante | Faible à moyenne | Un seul conteneur, aucune dépendance externe, documentation soignée |
 
