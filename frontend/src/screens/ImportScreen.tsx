@@ -640,74 +640,86 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
               <ImportGridPainter painter={painter} activeIndex={activeIndex} />
             )}
 
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              {palette.map((entry, index) => (
-                <div
-                  key={index}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 8,
-                    padding: "8px 10px",
-                    borderRadius: 14,
-                    background:
-                      activeIndex === index + 1 ? "var(--color-surface)" : "transparent",
-                  }}
-                >
-                  <input
-                    type="color"
-                    value={entry.rgb_hex}
-                    onChange={(event) => updatePaletteEntry(index, { rgb_hex: event.target.value })}
-                    onBlur={commitPaletteEdits}
-                    style={{ width: 34, height: 34, flex: "none", border: 0, background: "none" }}
-                    aria-label={t("import.legend.color")}
-                  />
-                  <input
-                    className="input"
-                    style={{ width: 90 }}
-                    placeholder={t("import.legend.code")}
-                    value={entry.code}
-                    onChange={(event) => updatePaletteEntry(index, { code: event.target.value })}
-                    onBlur={commitPaletteEdits}
-                  />
-                  <input
-                    className="input"
-                    style={{ flex: 1, minWidth: 0 }}
-                    placeholder={t("import.legend.name")}
-                    value={entry.name}
-                    onChange={(event) => updatePaletteEntry(index, { name: event.target.value })}
-                    onBlur={commitPaletteEdits}
-                  />
-                  {entry.symbol_svg !== null && entry.symbol_svg !== undefined && (
-                    // Symbole réel découpé du PDF (Lot 4), à titre de repère
-                    // pendant la correction — la clé reste éditable à côté :
-                    // corriger `symbol_key` ne change jamais ce symbole-ci,
-                    // qui vient du fichier, pas de cette saisie.
-                    <img
-                      src={`data:image/svg+xml;base64,${btoa(entry.symbol_svg)}`}
-                      alt=""
-                      style={{ width: 28, height: 28, flex: "none" }}
-                    />
-                  )}
-                  <input
-                    className="input"
-                    style={{ width: 44, textAlign: "center", flex: "none" }}
-                    maxLength={2}
-                    placeholder={t("import.legend.symbol")}
-                    value={entry.symbol_key}
-                    onChange={(event) => updatePaletteEntry(index, { symbol_key: event.target.value })}
-                    onBlur={commitPaletteEdits}
-                  />
-                  <button
-                    type="button"
-                    className="btn btn-icon btn-ghost"
-                    aria-label={t("import.palette.remove")}
-                    onClick={() => removePaletteEntry(index)}
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
+                gap: 8,
+              }}
+            >
+              {palette.map((entry, index) => {
+                const hasRealSymbol = entry.symbol_svg !== null && entry.symbol_svg !== undefined;
+                return (
+                  <div
+                    key={index}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
+                      padding: "8px 10px",
+                      borderRadius: 14,
+                      background:
+                        activeIndex === index + 1 ? "var(--color-surface)" : "transparent",
+                    }}
                   >
-                    ✕
-                  </button>
-                </div>
-              ))}
+                    <input
+                      type="color"
+                      value={entry.rgb_hex}
+                      onChange={(event) => updatePaletteEntry(index, { rgb_hex: event.target.value })}
+                      onBlur={commitPaletteEdits}
+                      style={{ width: 34, height: 34, flex: "none", border: 0, background: "none" }}
+                      aria-label={t("import.legend.color")}
+                    />
+                    {hasRealSymbol ? (
+                      // Symbole réel découpé du PDF (Lot 4) : la clé interne
+                      // (`symbol_key`) n'a alors plus besoin d'être visible ni
+                      // modifiable — ce symbole-ci vient du fichier, jamais
+                      // d'elle.
+                      <img
+                        src={`data:image/svg+xml;base64,${btoa(entry.symbol_svg as string)}`}
+                        alt=""
+                        style={{ width: 28, height: 28, flex: "none" }}
+                      />
+                    ) : (
+                      <input
+                        className="input"
+                        style={{ width: 44, textAlign: "center", flex: "none" }}
+                        maxLength={2}
+                        placeholder={t("import.legend.symbol")}
+                        value={entry.symbol_key}
+                        onChange={(event) =>
+                          updatePaletteEntry(index, { symbol_key: event.target.value })
+                        }
+                        onBlur={commitPaletteEdits}
+                      />
+                    )}
+                    <input
+                      className="input"
+                      style={{ width: 90 }}
+                      placeholder={t("import.legend.code")}
+                      value={entry.code}
+                      onChange={(event) => updatePaletteEntry(index, { code: event.target.value })}
+                      onBlur={commitPaletteEdits}
+                    />
+                    <input
+                      className="input"
+                      style={{ flex: 1, minWidth: 0 }}
+                      placeholder={t("import.legend.name")}
+                      value={entry.name}
+                      onChange={(event) => updatePaletteEntry(index, { name: event.target.value })}
+                      onBlur={commitPaletteEdits}
+                    />
+                    <button
+                      type="button"
+                      className="btn btn-icon btn-ghost"
+                      aria-label={t("import.palette.remove")}
+                      onClick={() => removePaletteEntry(index)}
+                    >
+                      ✕
+                    </button>
+                  </div>
+                );
+              })}
             </div>
           </div>
         )}
