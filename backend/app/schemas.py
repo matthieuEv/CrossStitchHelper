@@ -216,6 +216,17 @@ class ImportConfig(BaseModel):
             "1-based dans `palette`. `fills` s'applique par-dessus, jamais en dessous."
         ),
     )
+    uncertain_cells: list[int] | None = Field(
+        default=None,
+        description=(
+            "Index (0-based, dans `detected_cells`) des cases que la détection "
+            "automatique de type B/C (Lot 5) signale explicitement comme incertaines "
+            "— couleur douteuse et/ou symbole ambigu. Jamais consommé par "
+            "l'extraction elle-même, purement indicatif pour l'assistant d'import : "
+            "une case incertaine n'est jamais fausse en silence (règle impérative du "
+            "`pdf-extraction-specialist`)."
+        ),
+    )
 
 
 class ImportConfigPatch(BaseModel):
@@ -231,6 +242,7 @@ class ImportConfigPatch(BaseModel):
     palette: list[ImportPaletteEntry] | None = None
     fills: list[ImportFillZone] | None = None
     detected_cells: list[int] | None = None
+    uncertain_cells: list[int] | None = None
 
 
 class ImportPreview(BaseModel):
@@ -246,11 +258,11 @@ class ImportPreview(BaseModel):
 
 
 class ImportDetection(BaseModel):
-    """Résumé de la détection automatique (Lot 4) — jamais une certitude,
+    """Résumé de la détection automatique (Lots 4-5) — jamais une certitude,
     toujours un score exploitable pour que l'assistant d'import invite à
     vérifier plutôt qu'à faire confiance aveuglément (§4.4)."""
 
-    grid_type: str = Field(description='Ex. "A". Un seul type détecté pour l\'instant.')
+    grid_type: str = Field(description='"A", "B" ou "C" — voir cahier des charges §4.4.')
     confidence: float = Field(ge=0, le=1)
     warnings: list[str] = Field(default_factory=list)
 

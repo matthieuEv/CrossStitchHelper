@@ -1,14 +1,16 @@
 """Assistant d'import — Lot 2 (cahier des charges §7.2, §9), détection
-automatique depuis le Lot 4.
+automatique depuis les Lots 4-5.
 
 L'utilisateur dépose un fichier, le cadre et le calibre lui-même, saisit sa
 propre palette, et peint chaque zone de la grille à la main — ce parcours
 manuel reste toujours disponible et jamais contourné de force (§4.4 :
-« jamais un résultat imposé »). Pour un PDF, `app/type_a.py` tente en tâche
-de fond une détection automatique dont le résultat ne fait que pré-remplir
-la même configuration modifiable : dimensions, palette, et une grille de
-fond que les zones peintes peuvent corriger (`app/imports_engine.apply_fills`,
-paramètre `base`).
+« jamais un résultat imposé »). Pour un PDF, `_run_auto_detection` tente en
+tâche de fond `app/type_a.py` puis, s'il ne reconnaît rien, `app/type_bc.py`
+(la typologie A/B/C/D est une classification, jamais un empilement de
+suppositions concurrentes — un seul résultat de détection par fichier) : le
+résultat ne fait que pré-remplir la même configuration modifiable :
+dimensions, palette, et une grille de fond que les zones peintes peuvent
+corriger (`app/imports_engine.apply_fills`, paramètre `base`).
 """
 
 from __future__ import annotations
@@ -16,9 +18,10 @@ from __future__ import annotations
 import json
 import shutil
 import uuid
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, UploadFile
 from fastapi.responses import Response
@@ -47,7 +50,8 @@ from app.schemas import (
     ImportJobOut,
     ImportPreview,
 )
-from app.type_a import TypeAPaletteEntry, detect_type_a
+from app.type_a import SymbolGlyphLocation, TypeAPaletteEntry, detect_type_a
+from app.type_bc import TypeBCPaletteEntry, detect_type_bc
 
 router = APIRouter(prefix="/imports", tags=["import"])
 
@@ -212,6 +216,7 @@ async def create_import(
             "palette": [],
             "fills": [],
             "detected_cells": None,
+            "uncertain_cells": None,
         },
         "preview": None,
         "detection": None,
@@ -231,47 +236,83 @@ async def create_import(
     session.commit()
 
     if will_detect:
-        background_tasks.add_task(_run_type_a_detection, job_id, source_path)
+        background_tasks.add_task(_run_auto_detection, job_id, source_path)
 
     return _job_out(job)
 
 
-def _symbol_svg_for(entry: TypeAPaletteEntry, source_path: Path) -> str | None:
-    """`None` si l'entrée n'a pas de position de glyphe connue, ou si le
-    découpage échoue — un aperçu manquant retombe sur `symbol_key` côté
+def _symbol_svg_for(glyph: SymbolGlyphLocation | None, source_path: Path) -> str | None:
+    """`None` si l'entrée n'a pas de position de glyphe/symbole connue, ou si
+    le découpage échoue — un aperçu manquant retombe sur `symbol_key` côté
     rendu (jamais un import cassé pour un symbole qu'on n'a pas pu
-    illustrer, cahier des charges §10)."""
-    if entry.symbol_glyph is None:
+    illustrer, cahier des charges §10). Commun aux types A (`app/type_a.py`)
+    et B/C (`app/type_bc.py`), qui partagent la même dataclass de position."""
+    if glyph is None:
         return None
     try:
-        return render_symbol_svg(
-            source_path, entry.symbol_glyph.page_number, entry.symbol_glyph.bbox
-        )
+        return render_symbol_svg(source_path, glyph.page_number, glyph.bbox)
     except Exception:  # pragma: no cover - filet de sécurité défensif
         return None
 
 
-def _run_type_a_detection(job_id: str, source_path: Path) -> None:
-    """Tâche de fond (Lot 4) : détection automatique, jamais bloquante pour
-    la requête d'upload. `detect_type_a` ne lève jamais (voir `app/type_a.py`)
-    mais un filet de sécurité ici garantit que le job sort toujours de l'état
-    « en cours d'analyse », même face à un bug imprévu — un import qui reste
-    éternellement « en cours » serait une impasse (§10 : « aucun import ne
-    doit aboutir à une impasse »).
+@dataclass
+class _Detected:
+    grid_type: Literal["A", "B", "C"]
+    columns: int
+    rows: int
+    cells: list[int]
+    palette: list[TypeAPaletteEntry] | list[TypeBCPaletteEntry]
+    confidence: float
+    warnings: list[str]
+    uncertain_cells: list[int]
 
-    L'analyse (`detect_type_a`) tourne **avant** d'ouvrir la session ou de
-    lire l'état courant du job : elle prend plusieurs secondes, largement de
-    quoi laisser l'utilisateur commencer à configurer le job à la main
-    pendant ce temps (le message affiché pendant l'attente l'y invite
-    explicitement). Lire `result["config"]` avant l'analyse plutôt qu'après
-    figerait un instantané périmé — la décision « l'utilisateur a-t-il déjà
-    commencé ? » doit se prendre sur l'état le plus frais possible, juste
-    avant d'écrire, pas sur celui d'il y a plusieurs secondes."""
+
+def _run_auto_detection(job_id: str, source_path: Path) -> None:
+    """Tâche de fond (Lots 4-5) : détection automatique, jamais bloquante
+    pour la requête d'upload. Essaie `detect_type_a` puis, s'il ne reconnaît
+    rien, `detect_type_bc` (ni l'un ni l'autre ne lève jamais — voir leurs
+    modules) — un filet de sécurité ici garantit malgré tout que le job sort
+    toujours de l'état « en cours d'analyse », même face à un bug imprévu :
+    un import qui reste éternellement « en cours » serait une impasse (§10 :
+    « aucun import ne doit aboutir à une impasse »).
+
+    L'analyse tourne **avant** d'ouvrir la session ou de lire l'état courant
+    du job : elle prend plusieurs secondes, largement de quoi laisser
+    l'utilisateur commencer à configurer le job à la main pendant ce temps
+    (le message affiché pendant l'attente l'y invite explicitement). Lire
+    `result["config"]` avant l'analyse plutôt qu'après figerait un
+    instantané périmé — la décision « l'utilisateur a-t-il déjà commencé ? »
+    doit se prendre sur l'état le plus frais possible, juste avant d'écrire,
+    pas sur celui d'il y a plusieurs secondes."""
     detection_error: Exception | None = None
+    detected: _Detected | None = None
     try:
-        detected = detect_type_a(source_path)
+        type_a = detect_type_a(source_path)
+        if type_a is not None:
+            detected = _Detected(
+                grid_type="A",
+                columns=type_a.columns,
+                rows=type_a.rows,
+                cells=type_a.cells,
+                palette=type_a.palette,
+                confidence=type_a.confidence,
+                warnings=type_a.warnings,
+                uncertain_cells=[],
+            )
+        else:
+            type_bc = detect_type_bc(source_path)
+            if type_bc is not None:
+                detected = _Detected(
+                    grid_type=type_bc.grid_type,
+                    columns=type_bc.columns,
+                    rows=type_bc.rows,
+                    cells=type_bc.cells,
+                    palette=type_bc.palette,
+                    confidence=type_bc.confidence,
+                    warnings=type_bc.warnings,
+                    uncertain_cells=type_bc.uncertain_cells,
+                )
     except Exception as error:  # pragma: no cover - filet de sécurité défensif
-        detected = None
         detection_error = error
 
     with get_session_factory()() as session:
@@ -284,7 +325,7 @@ def _run_type_a_detection(job_id: str, source_path: Path) -> None:
         if detection_error is not None:
             result["detecting"] = False
             result["detection"] = {
-                "grid_type": "A",
+                "grid_type": "?",
                 "confidence": 0.0,
                 "warnings": [f"Échec inattendu de la détection automatique : {detection_error}"],
             }
@@ -311,19 +352,20 @@ def _run_type_a_detection(job_id: str, source_path: Path) -> None:
                 config["columns"] = detected.columns
                 config["rows"] = detected.rows
                 config["detected_cells"] = detected.cells
+                config["uncertain_cells"] = detected.uncertain_cells or None
                 config["palette"] = [
                     {
                         "code": entry.code,
                         "name": entry.name,
                         "rgb_hex": entry.rgb_hex,
                         "symbol_key": entry.symbol_key,
-                        "symbol_svg": _symbol_svg_for(entry, source_path),
+                        "symbol_svg": _symbol_svg_for(entry.symbol_glyph, source_path),
                     }
                     for entry in detected.palette
                 ]
                 result["preview"] = _compute_preview(config)
             result["detection"] = {
-                "grid_type": "A",
+                "grid_type": detected.grid_type,
                 "confidence": detected.confidence,
                 "warnings": detected.warnings
                 if not already_configured
@@ -410,14 +452,18 @@ def patch_config(
         config["fills"] = [fill.model_dump() for fill in payload.fills]
     if payload.detected_cells is not None:
         config["detected_cells"] = payload.detected_cells
+    if payload.uncertain_cells is not None:
+        config["uncertain_cells"] = payload.uncertain_cells
 
-    # Ne garde une grille détectée que si elle correspond encore aux
+    # Ne garde une grille détectée (et son signalement de cases incertaines,
+    # qui référence les mêmes index) que si elle correspond encore aux
     # dimensions courantes (voir `_detected_base`) — pas seulement pour la
     # lecture ici, mais pour ne pas trimballer indéfiniment un blob de
     # plusieurs dizaines de milliers d'entiers devenu sans objet.
     columns, rows = config.get("columns"), config.get("rows")
     if columns is not None and rows is not None and _detected_base(config, columns, rows) is None:
         config["detected_cells"] = None
+        config["uncertain_cells"] = None
 
     result["preview"] = _compute_preview(config)
     _save_result(job, result)

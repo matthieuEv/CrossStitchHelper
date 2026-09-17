@@ -82,6 +82,7 @@ def test_create_import_accepts_pdf(client: TestClient) -> None:
         "palette": [],
         "fills": [],
         "detected_cells": None,
+        "uncertain_cells": None,
     }
     assert job["preview"] is None
 
@@ -474,9 +475,9 @@ def test_manual_config_started_before_detection_finishes_is_not_overwritten(
     entièrement stabilisé (upload d'un PDF trivial, dont la détection se
     termine quasi instantanément et ne modifie rien), y substitue le vrai
     fichier de référence, corrige la configuration à la main, puis invoque
-    `_run_type_a_detection` directement — reproduisant exactement l'ordre
+    `_run_auto_detection` directement — reproduisant exactement l'ordre
     des opérations du bug sans dépendre d'aucun minutage."""
-    from app.api.imports import _run_type_a_detection
+    from app.api.imports import _run_auto_detection
     from app.config import get_settings
 
     if not _TYPE_A_FIXTURE.is_file():
@@ -494,7 +495,7 @@ def test_manual_config_started_before_detection_finishes_is_not_overwritten(
     # serveur.
     client.patch(f"/api/imports/{job_id}/config", json={"columns": 92, "rows": 74})
 
-    _run_type_a_detection(job_id, source_path)
+    _run_auto_detection(job_id, source_path)
 
     job = client.get(f"/api/imports/{job_id}").json()
     assert "modifiée manuellement" in " ".join(job["detection"]["warnings"])
@@ -502,3 +503,78 @@ def test_manual_config_started_before_detection_finishes_is_not_overwritten(
     assert config["columns"] == 92  # jamais réécrasé par la détection
     assert config["rows"] == 74
     assert config["detected_cells"] is None  # jamais posée par-dessus une saisie déjà en cours
+
+
+_BOTANICAL_CITRUS_FIXTURE = (
+    Path(__file__).resolve().parents[2]
+    / "fixtures"
+    / "botanical-citrus-dmc"
+    / "agrumes_-_planche_botanique.pdf"
+)
+
+
+def _upload_real_type_bc_pdf(client: TestClient) -> dict[str, Any]:
+    if not _BOTANICAL_CITRUS_FIXTURE.is_file():
+        pytest.skip(f"fixture manquante : {_BOTANICAL_CITRUS_FIXTURE}")
+    with _BOTANICAL_CITRUS_FIXTURE.open("rb") as handle:
+        response = client.post(
+            "/api/imports",
+            files={"file": ("agrumes_-_planche_botanique.pdf", handle, "application/pdf")},
+        )
+    assert response.status_code == 200
+    result: dict[str, Any] = response.json()
+    return result
+
+
+def test_create_import_of_real_type_bc_pdf_prefills_config_from_detection(
+    client: TestClient,
+) -> None:
+    """Bout en bout, fixture réelle (Lot 5) : `POST /api/imports` d'un PDF
+    vectoriel DMC sans police de symboles doit ressortir avec `detect_type_a`
+    ayant cédé la main à `detect_type_bc` (voir `_run_auto_detection`), la
+    configuration déjà pré-remplie — c'est le critère "terminé quand" du
+    roadmap (`docs/roadmap.md`, Lot 5). Justesse de l'extraction elle-même
+    vérifiée exhaustivement dans `tests/test_type_bc.py` ; ce test-ci ne
+    vérifie que le branchement dans l'API d'import."""
+    job = _wait_for_detection(client, _upload_real_type_bc_pdf(client)["id"], timeout=30.0)
+
+    assert job["detecting"] is False
+    assert job["detection"]["grid_type"] == "C"
+
+    config = job["config"]
+    assert config["columns"] is not None
+    assert config["rows"] is not None
+    assert config["detected_cells"] is not None
+    assert len(config["detected_cells"]) == config["columns"] * config["rows"]
+    # `botanical-citrus-dmc` superpose une vraie page de symboles (Lot 5,
+    # `tests/test_type_bc.py`) — au moins une entrée doit donc porter un
+    # symbole réel découpé du PDF, exactement comme le type A (Lot 4).
+    assert any(entry["symbol_svg"] is not None for entry in config["palette"])
+
+    # Signalement explicite des cases incertaines (roadmap Lot 5, "terminé
+    # quand") : jamais une case fausse laissée sans indication côté API.
+    assert config["uncertain_cells"]
+    assert all(0 <= idx < len(config["detected_cells"]) for idx in config["uncertain_cells"])
+
+    assert job["preview"] is not None
+    assert job["preview"]["filled_count"] > 0
+
+
+def test_real_type_bc_pattern_survives_commit_with_its_uncertain_cells_config(
+    client: TestClient,
+) -> None:
+    """La configuration validée (jamais le résultat de détection lui-même,
+    qui n'est qu'une proposition) doit être celle réellement archivée dans
+    `patterns.import_config_json` — y compris `uncertain_cells`, pour qu'une
+    future recette ou un futur outil de diagnostic (hors périmètre du Lot 5)
+    puisse retrouver ce qui avait été signalé comme douteux au moment de
+    l'import."""
+    job = _wait_for_detection(client, _upload_real_type_bc_pdf(client)["id"], timeout=30.0)
+    response = client.post(f"/api/imports/{job['id']}/commit", json={"name": "Botanical e2e"})
+    assert response.status_code == 200
+    pattern_id = response.json()["pattern_id"]
+
+    detail = client.get(f"/api/patterns/{pattern_id}").json()
+    assert detail["width"] * detail["height"] == len(job["config"]["detected_cells"])
+    dmc_entries = [entry for entry in detail["palette"] if entry["code"]]
+    assert any(entry["symbol_svg"] is not None for entry in dmc_entries)
