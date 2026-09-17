@@ -35,6 +35,13 @@ async function zoomBadgeSize(page: Page): Promise<number> {
   return Number(match[1]);
 }
 
+async function column(page: Page): Promise<number> {
+  const text = await page.getByText(/Colonne \d+/).textContent();
+  const match = text?.match(/Colonne (\d+)/);
+  if (match?.[1] === undefined) throw new Error(`Position introuvable dans : ${text}`);
+  return Number(match[1]);
+}
+
 test("la molette/le trackpad zoome le Suivi sous le curseur", async ({ page, request }) => {
   const pattern = await fetchDemoPattern(request);
   await page.goto("/");
@@ -73,22 +80,47 @@ test("le glissé horizontal du trackpad déplace la vue sans zoomer", async ({ p
   if (box === null) throw new Error("Le canvas de suivi n'a pas de boîte englobante");
   const center = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
 
-  const column = async (): Promise<number> => {
-    const text = await page.getByText(/Colonne \d+/).textContent();
-    const match = text?.match(/Colonne (\d+)/);
-    if (match?.[1] === undefined) throw new Error(`Position introuvable dans : ${text}`);
-    return Number(match[1]);
-  };
-
   const initialZoom = await zoomBadgeSize(page);
-  const initialColumn = await column();
+  const initialColumn = await column(page);
 
   await page.mouse.move(center.x, center.y);
   await page.mouse.wheel(600, 0); // glissé horizontal, pas vertical
-  await expect.poll(column).toBeGreaterThan(initialColumn);
+  await expect.poll(() => column(page)).toBeGreaterThan(initialColumn);
 
   // Le zoom, lui, ne doit pas avoir bougé — seul deltaY zoome.
   expect(await zoomBadgeSize(page)).toBe(initialZoom);
+});
+
+test("un glissé diagonal du trackpad zoome et déplace la vue à la fois", async ({
+  page,
+  request,
+}) => {
+  // Bug réel trouvé en test manuel : sur un vrai trackpad, un glissé n'est
+  // presque jamais parfaitement horizontal ou vertical — deltaX et deltaY
+  // arrivent ensemble dans le même événement. Le déplacement se faisait
+  // silencieusement écraser par le recalcul de zoom du même événement (voir
+  // `useTracker.ts::zoomTo` : l'appel `setOffset` séparé pour le
+  // déplacement partait d'une position déjà périmée par le temps que le
+  // recalcul de zoom s'exécute), ce qui donnait l'impression que l'appli
+  // « bloquait » dès qu'on essayait de zoomer et se déplacer à la fois.
+  const pattern = await fetchDemoPattern(request);
+  await page.goto("/");
+  await page.getByText(pattern.name).click();
+
+  const canvas = page.locator("canvas.track-canvas");
+  await expect(canvas).toBeVisible();
+  const box = await canvas.boundingBox();
+  if (box === null) throw new Error("Le canvas de suivi n'a pas de boîte englobante");
+  const center = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+
+  const initialZoom = await zoomBadgeSize(page);
+  const initialColumn = await column(page);
+
+  await page.mouse.move(center.x, center.y);
+  await page.mouse.wheel(300, -400); // diagonale : pan à droite + zoom avant
+
+  await expect.poll(() => zoomBadgeSize(page)).toBeGreaterThan(initialZoom);
+  await expect.poll(() => column(page)).toBeGreaterThan(initialColumn);
 });
 
 test("la molette/le trackpad zoome aussi le pinceau de l'assistant d'import", async ({ page }) => {

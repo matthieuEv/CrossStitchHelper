@@ -58,6 +58,12 @@ export interface Tracker {
     anchorScreenX: number,
     anchorScreenY: number,
     canvasRect: Pick<DOMRect, "left" | "top">,
+    /** Déplacement additionnel à appliquer dans le même geste, en cases du
+     * motif — un glissé diagonal au trackpad zoome et déplace la vue à la
+     * fois (voir TrackScreen.tsx) : sans ça, l'appel à `setOffset` séparé
+     * pour le déplacement serait aussitôt écrasé par celui, interne à
+     * `zoomTo`, qui recalcule l'origine depuis la position d'avant le geste. */
+    panDeltaX?: number,
   ) => void;
 
   tool: Tool;
@@ -255,6 +261,7 @@ export function useTracker(
       anchorScreenX: number,
       anchorScreenY: number,
       canvasRect: Pick<DOMRect, "left" | "top">,
+      panDeltaX = 0,
     ) => {
       const clampedCell = Math.max(MIN_CELL, Math.min(MAX_CELL, nextCell));
       // Case du motif actuellement sous le point d'ancrage (le point médian du
@@ -264,9 +271,11 @@ export function useTracker(
       setCell(clampedCell);
       // On replace l'origine de la vue pour que cette même case du motif se
       // retrouve toujours sous le point d'ancrage une fois la taille changée —
-      // c'est ce qui fait « zoomer sous les doigts » plutôt que vers un coin.
+      // c'est ce qui fait « zoomer sous les doigts » plutôt que vers un coin —
+      // puis on ajoute le déplacement du même geste, plutôt qu'un `setOffset`
+      // séparé qui se ferait écraser par ce calcul.
       setOffset(
-        anchorCellX - (anchorScreenX - canvasRect.left) / clampedCell,
+        anchorCellX - (anchorScreenX - canvasRect.left) / clampedCell + panDeltaX,
         anchorCellY - (anchorScreenY - canvasRect.top) / clampedCell,
       );
     },

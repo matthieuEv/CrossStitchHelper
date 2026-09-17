@@ -105,11 +105,13 @@ export function TrackScreen({ tracker, wide, onBack }: TrackScreenProps) {
       event.preventDefault();
       // Glissé horizontal du trackpad (deltaX) : déplace la vue plutôt que
       // de zoomer — demande explicite, distincte du défilement vertical
-      // (deltaY) qui zoome. Un geste en diagonale fait un peu des deux,
-      // indépendamment sur chaque axe.
-      if (event.deltaX !== 0) {
-        tracker.setOffset(view.x0 + event.deltaX / view.cell, view.y0);
-      }
+      // (deltaY) qui zoome. Un geste en diagonale fait un peu des deux à la
+      // fois : les deux doivent passer par le même appel à `zoomTo`, qui
+      // recalcule l'origine de la vue en entier — un `setOffset` séparé pour
+      // le déplacement serait aussitôt écrasé (bug réel trouvé en test
+      // manuel : le déplacement semblait bloqué dès qu'on zoomait en même
+      // temps).
+      const panDeltaX = event.deltaX !== 0 ? event.deltaX / view.cell : 0;
       if (event.deltaY !== 0) {
         const rect = canvas.getBoundingClientRect();
         // Échelle exponentielle du facteur de zoom : une molette de souris
@@ -118,7 +120,9 @@ export function TrackScreen({ tracker, wide, onBack }: TrackScreenProps) {
         // fluide dans les deux cas, comme le pincement à deux doigts déjà en
         // place.
         const factor = Math.pow(1.0015, -event.deltaY);
-        tracker.zoomTo(view.cell * factor, event.clientX, event.clientY, rect);
+        tracker.zoomTo(view.cell * factor, event.clientX, event.clientY, rect, panDeltaX);
+      } else if (panDeltaX !== 0) {
+        tracker.setOffset(view.x0 + panDeltaX, view.y0);
       }
     };
 

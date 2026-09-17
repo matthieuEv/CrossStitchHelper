@@ -48,6 +48,9 @@ export interface ImportPainter {
     anchorScreenX: number,
     anchorScreenY: number,
     canvasRect: Pick<DOMRect, "left" | "top">,
+    /** Déplacement additionnel du même geste, en cases — voir
+     * `useTracker.ts::Tracker.zoomTo` pour le détail. */
+    panDeltaX?: number,
   ) => void;
 
   cursor: CellPosition | null;
@@ -114,13 +117,16 @@ export function useImportPainter(
       anchorScreenX: number,
       anchorScreenY: number,
       canvasRect: Pick<DOMRect, "left" | "top">,
+      panDeltaX = 0,
     ) => {
       const clampedCell = Math.max(MIN_CELL, Math.min(MAX_CELL, nextCell));
       const anchorCellX = offset.x0 + (anchorScreenX - canvasRect.left) / cell;
       const anchorCellY = offset.y0 + (anchorScreenY - canvasRect.top) / cell;
       setCell(clampedCell);
+      // Ajoute le déplacement du même geste plutôt qu'un `setOffset` séparé,
+      // qui se ferait écraser par ce calcul — voir useTracker.ts::zoomTo.
       setOffset(
-        anchorCellX - (anchorScreenX - canvasRect.left) / clampedCell,
+        anchorCellX - (anchorScreenX - canvasRect.left) / clampedCell + panDeltaX,
         anchorCellY - (anchorScreenY - canvasRect.top) / clampedCell,
       );
     },

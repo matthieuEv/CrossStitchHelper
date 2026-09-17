@@ -52,14 +52,16 @@ export function ImportGridPainter({ painter, activeIndex }: ImportGridPainterPro
     const onWheel = (event: WheelEvent): void => {
       event.preventDefault();
       // Glissé horizontal du trackpad : déplace la vue plutôt que de zoomer
-      // — voir TrackScreen.tsx pour le détail du même choix.
-      if (event.deltaX !== 0) {
-        painter.setOffset(view.x0 + event.deltaX / view.cell, view.y0);
-      }
+      // — voir TrackScreen.tsx pour le détail du même choix, et pour
+      // pourquoi un geste en diagonale doit passer par le même appel à
+      // `zoomTo` plutôt qu'un `setOffset` séparé.
+      const panDeltaX = event.deltaX !== 0 ? event.deltaX / view.cell : 0;
       if (event.deltaY !== 0) {
         const rect = canvas.getBoundingClientRect();
         const factor = Math.pow(1.0015, -event.deltaY);
-        painter.zoomTo(view.cell * factor, event.clientX, event.clientY, rect);
+        painter.zoomTo(view.cell * factor, event.clientX, event.clientY, rect, panDeltaX);
+      } else if (panDeltaX !== 0) {
+        painter.setOffset(view.x0 + panDeltaX, view.y0);
       }
     };
 
