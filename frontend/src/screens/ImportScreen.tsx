@@ -375,22 +375,8 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
         {step === 2 && job !== null && (
           <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
             <div className="text-muted" style={{ fontSize: 13 }}>
-              {t("import.crop.hint")}
+              {detectedCells !== null ? t("import.crop.hintDetected") : t("import.crop.hint")}
             </div>
-
-            {job.detecting && (
-              <div
-                className="text-muted"
-                style={{
-                  padding: "12px 16px",
-                  borderRadius: 18,
-                  background: "var(--color-surface)",
-                  fontSize: 13,
-                }}
-              >
-                {t("import.detection.running")}
-              </div>
-            )}
 
             {detection !== null && (
               <div
@@ -412,6 +398,11 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
                 <div className="text-muted" style={{ fontSize: 12 }}>
                   {t("import.detection.hint")}
                 </div>
+                {detectedCells !== null && job.page_count > 1 && (
+                  <div className="text-muted" style={{ fontSize: 12 }}>
+                    {t("import.detection.multiPage", { pageCount: job.page_count })}
+                  </div>
+                )}
                 {detection.warnings.map((warning, index) => (
                   <div key={index} className="text-faint" style={{ fontSize: 11 }}>
                     ⚠ {warning}
@@ -461,48 +452,64 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
                 alt=""
                 style={{ width: "100%", height: "100%", objectFit: "contain", display: "block" }}
               />
-              <div
-                style={{
-                  position: "absolute",
-                  left: `${crop.left}%`,
-                  top: `${crop.top}%`,
-                  right: `${crop.right}%`,
-                  bottom: `${crop.bottom}%`,
-                  border: "2px solid var(--color-accent)",
-                  borderRadius: 6,
-                  boxShadow: "0 0 0 9999px rgba(20, 16, 12, 0.44)",
-                }}
-              />
-              {(["top", "bottom", "left", "right"] as const).map((edge) => (
-                <div
-                  key={edge}
-                  className="crop-handle"
-                  onPointerDown={startDrag(edge)}
-                  style={{
-                    ...(edge === "top" || edge === "bottom"
-                      ? { left: centerX, width: 64, height: 44, cursor: "ns-resize" }
-                      : { top: centerY, width: 44, height: 64, cursor: "ew-resize" }),
-                    ...(edge === "top" && { top: `${crop.top}%`, transform: "translate(-50%, -50%)" }),
-                    ...(edge === "bottom" && {
-                      bottom: `${crop.bottom}%`,
-                      transform: "translate(-50%, 50%)",
-                    }),
-                    ...(edge === "left" && { left: `${crop.left}%`, transform: "translate(-50%, -50%)" }),
-                    ...(edge === "right" && {
+              {detectedCells === null && (
+                <>
+                  <div
+                    style={{
+                      position: "absolute",
+                      left: `${crop.left}%`,
+                      top: `${crop.top}%`,
                       right: `${crop.right}%`,
-                      transform: "translate(50%, -50%)",
-                    }),
-                  }}
-                >
-                  <span
-                    style={
-                      edge === "top" || edge === "bottom"
-                        ? { width: 52, height: 8 }
-                        : { width: 8, height: 52 }
-                    }
+                      bottom: `${crop.bottom}%`,
+                      border: "2px solid var(--color-accent)",
+                      borderRadius: 6,
+                      boxShadow: "0 0 0 9999px rgba(20, 16, 12, 0.44)",
+                    }}
                   />
+                  {(["top", "bottom", "left", "right"] as const).map((edge) => (
+                    <div
+                      key={edge}
+                      className="crop-handle"
+                      onPointerDown={startDrag(edge)}
+                      style={{
+                        ...(edge === "top" || edge === "bottom"
+                          ? { left: centerX, width: 64, height: 44, cursor: "ns-resize" }
+                          : { top: centerY, width: 44, height: 64, cursor: "ew-resize" }),
+                        ...(edge === "top" && {
+                          top: `${crop.top}%`,
+                          transform: "translate(-50%, -50%)",
+                        }),
+                        ...(edge === "bottom" && {
+                          bottom: `${crop.bottom}%`,
+                          transform: "translate(-50%, 50%)",
+                        }),
+                        ...(edge === "left" && {
+                          left: `${crop.left}%`,
+                          transform: "translate(-50%, -50%)",
+                        }),
+                        ...(edge === "right" && {
+                          right: `${crop.right}%`,
+                          transform: "translate(50%, -50%)",
+                        }),
+                      }}
+                    >
+                      <span
+                        style={
+                          edge === "top" || edge === "bottom"
+                            ? { width: 52, height: 8 }
+                            : { width: 8, height: 52 }
+                        }
+                      />
+                    </div>
+                  ))}
+                </>
+              )}
+              {job.detecting && (
+                <div className="crop-stage-loading">
+                  <div className="spinner" role="status" aria-label={t("import.detection.running")} />
+                  <div style={{ fontSize: 13 }}>{t("import.detection.running")}</div>
                 </div>
-              ))}
+              )}
             </div>
 
             <div style={{ display: "flex", gap: 10 }}>

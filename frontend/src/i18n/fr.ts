@@ -42,9 +42,13 @@ export const fr = {
     "Photo : posez la grille à plat, bien éclairée, sans ombre portée. Le cadrage se corrige à l'étape suivante.",
   "import.crop.hint":
     "Faites glisser les quatre bords pour ne garder que la grille, puis indiquez ses dimensions en cases.",
+  "import.crop.hintDetected":
+    "Ce fichier a été reconnu automatiquement : chaque case vient directement de son contenu, pas d'un cadrage. Naviguez entre les pages pour vérifier si besoin.",
   "import.detection.running": "Analyse automatique en cours… Vous pouvez déjà cadrer ou saisir les dimensions à la main si vous ne voulez pas attendre.",
   "import.detection.title": "Détection automatique : type {type}, confiance {confidence} %",
   "import.detection.hint": "Vérifiez et corrigez si besoin — rien n'est jamais figé.",
+  "import.detection.multiPage":
+    "Ces dimensions couvrent le motif assemblé depuis les {pageCount} pages du fichier, pas seulement celle affichée ci-dessous.",
   "import.crop.page": "Page {page} / {total}",
   "import.crop.prevPage": "Page précédente",
   "import.crop.nextPage": "Page suivante",
