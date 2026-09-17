@@ -16,7 +16,7 @@ import { useCallback, useMemo, useState } from "react";
 
 import type { ApiImportFillZone } from "../lib/api";
 import { applyFillsLocal } from "../lib/importFills";
-import { MAX_CELL, MIN_CELL, type GridView } from "../pattern/render";
+import { MAX_CELL, MIN_CELL, panMargin, type GridView } from "../pattern/render";
 import type { PaletteEntry, Pattern } from "../pattern/types";
 
 export interface PainterSelection {
@@ -89,9 +89,11 @@ export function useImportPainter(
 
   const setOffset = useCallback(
     (x0: number, y0: number) => {
+      const marginX = panMargin(columns);
+      const marginY = panMargin(rows);
       setOffsetState({
-        x0: Math.max(-6, Math.min(columns - 4, x0)),
-        y0: Math.max(-6, Math.min(rows - 4, y0)),
+        x0: Math.max(-marginX, Math.min(columns - marginX, x0)),
+        y0: Math.max(-marginY, Math.min(rows - marginY, y0)),
       });
     },
     [columns, rows],

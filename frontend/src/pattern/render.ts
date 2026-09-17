@@ -17,6 +17,20 @@ export const GRIDLINE_MIN_CELL = 7;
 export const MIN_CELL = 4;
 export const MAX_CELL = 34;
 
+/**
+ * Marge de débord autorisée au-delà d'un bord du motif, en cases — pour
+ * qu'on puisse cocher/peindre une case de bord sans qu'elle ne reste collée
+ * à l'arête de l'écran, et plus généralement pour que la vue ne se bloque
+ * jamais pile sur le contour de la grille. Proportionnelle à la dimension
+ * (10 %) plutôt qu'un nombre de cases fixe : un petit motif peint à la main
+ * (Lot 2) et une grille de 255 cases de large ont besoin d'une marge très
+ * différente en valeur absolue pour paraître comparable — un plancher évite
+ * qu'un tout petit motif n'ait presque aucun débord.
+ */
+export function panMargin(dimension: number): number {
+  return Math.max(6, dimension * 0.1);
+}
+
 export interface GridTheme {
   /** Couleur de la toile, derrière les cases non brodées. */
   fabric: string;

@@ -10,7 +10,7 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 
 import { countByColor, summarise, type ColorCount, type PatternTotals } from "../pattern/counts";
-import { MAX_CELL, MIN_CELL, type GridView } from "../pattern/render";
+import { MAX_CELL, MIN_CELL, panMargin, type GridView } from "../pattern/render";
 import type { Pattern, Progress } from "../pattern/types";
 
 export type Tool = "stitch" | "pan" | "select";
@@ -125,8 +125,8 @@ export function useTracker(
   // ci-dessous, un petit motif peint à la main (Lot 2) s'ouvrirait sur une
   // vue entièrement vide, en dehors de sa grille.
   const [offset, setOffsetState] = useState(() => ({
-    x0: Math.max(-6, Math.min(pattern.width - 4, 30)),
-    y0: Math.max(-6, Math.min(pattern.height - 4, 24)),
+    x0: Math.max(-panMargin(pattern.width), Math.min(pattern.width - panMargin(pattern.width), 30)),
+    y0: Math.max(-panMargin(pattern.height), Math.min(pattern.height - panMargin(pattern.height), 24)),
   }));
   const [tool, setTool] = useState<Tool>("stitch");
   const [highlight, setHighlight] = useState(0);
@@ -230,11 +230,11 @@ export function useTracker(
 
   const setOffset = useCallback(
     (x0: number, y0: number) => {
-      // On autorise un léger débord pour pouvoir cocher les cases de bord
-      // sans les coller à l'arête de l'écran.
+      const marginX = panMargin(pattern.width);
+      const marginY = panMargin(pattern.height);
       setOffsetState({
-        x0: Math.max(-6, Math.min(pattern.width - 4, x0)),
-        y0: Math.max(-6, Math.min(pattern.height - 4, y0)),
+        x0: Math.max(-marginX, Math.min(pattern.width - marginX, x0)),
+        y0: Math.max(-marginY, Math.min(pattern.height - marginY, y0)),
       });
     },
     [pattern],
