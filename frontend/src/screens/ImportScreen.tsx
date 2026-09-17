@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type ChangeEvent,
@@ -72,6 +73,7 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
   const [palette, setPalette] = useState<ApiImportPaletteEntry[]>([]);
   const [fills, setFills] = useState<ApiImportFillZone[]>([]);
   const [detectedCells, setDetectedCells] = useState<number[] | null>(null);
+  const [uncertainCells, setUncertainCells] = useState<number[] | null>(null);
   const [detection, setDetection] = useState<ApiImportJob["detection"]>(null);
   const [activeIndex, setActiveIndex] = useState(1);
 
@@ -108,6 +110,7 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
     setPalette(config.palette);
     setFills(config.fills);
     setDetectedCells(config.detected_cells);
+    setUncertainCells(config.uncertain_cells);
   };
 
   const upload = async (file: File): Promise<void> => {
@@ -222,6 +225,17 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
     setJob(updated);
     setStep(3);
   };
+
+  // Filtré à la plage courante : `uncertainCells` référence les dimensions
+  // au moment de la détection, périmées dès que l'utilisateur en tape
+  // d'autres à la main avant le prochain aller-retour serveur (même risque
+  // que `detectedCells`, voir `applyFillsLocal` côté peinture).
+  const uncertainCellsSet = useMemo(() => {
+    if (uncertainCells === null || !dimensionsValid) return null;
+    const bound = columnsValue * rowsValue;
+    const filtered = uncertainCells.filter((index) => index >= 0 && index < bound);
+    return filtered.length > 0 ? new Set(filtered) : null;
+  }, [uncertainCells, dimensionsValid, columnsValue, rowsValue]);
 
   const painter = useImportPainter(
     dimensionsValid ? columnsValue : 0,
@@ -639,7 +653,17 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
                 {t("import.palette.empty")}
               </p>
             ) : (
-              <ImportGridPainter painter={painter} activeIndex={activeIndex} />
+              <ImportGridPainter
+                painter={painter}
+                activeIndex={activeIndex}
+                uncertainCells={uncertainCellsSet}
+              />
+            )}
+
+            {uncertainCellsSet !== null && (
+              <p className="text-muted" style={{ fontSize: 12, margin: 0 }}>
+                {t("import.paint.uncertainHint", { count: uncertainCellsSet.size })}
+              </p>
             )}
 
             <div

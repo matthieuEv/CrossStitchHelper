@@ -236,6 +236,10 @@ export interface ApiImportConfig {
   fills: ApiImportFillZone[];
   /** Grille détectée automatiquement (Lot 4), fond sous `fills` — voir `apply_fills`. */
   detected_cells: number[] | null;
+  /** Index dans `detected_cells` des cases signalées incertaines par la
+   * détection type B/C (Lot 5) — couleur douteuse et/ou symbole ambigu,
+   * jamais une case fausse laissée sans indication. */
+  uncertain_cells: number[] | null;
 }
 
 export interface ApiImportConfigPatch {
@@ -245,6 +249,7 @@ export interface ApiImportConfigPatch {
   palette?: ApiImportPaletteEntry[];
   fills?: ApiImportFillZone[];
   detected_cells?: number[] | null;
+  uncertain_cells?: number[] | null;
 }
 
 export interface ApiImportDetection {

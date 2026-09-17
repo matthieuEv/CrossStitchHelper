@@ -46,12 +46,15 @@ const FIXTURE_PATH = fileURLToPath(
   ),
 );
 
-/** Fixture type C (voir `fixtures/README.md`) : `detect_type_a` s'y efface
- * proprement (aucun faux positif attendu), utile pour vérifier le repli
- * manuel quand la détection ne trouve rien — contrairement à la fixture
- * type A ci-dessus, qui réussit toujours. */
-const NON_TYPE_A_FIXTURE_PATH = fileURLToPath(
-  new URL("../../fixtures/winter-wreath-dmc/PATASS117_2C_2.pdf", import.meta.url),
+/** Fixture type E (voir `fixtures/README.md`) : ni `detect_type_a` ni
+ * `detect_type_bc` (Lot 5) ne s'y appliquent (aucun faux positif attendu
+ * d'aucun des deux, vérifié dans leurs suites de tests backend respectives)
+ * — utile pour vérifier le repli manuel quand la détection ne trouve
+ * vraiment rien. Les fixtures DMC (`winter-wreath-dmc` et consorts), elles,
+ * sont désormais reconnues comme type B/C depuis le Lot 5 et ne conviennent
+ * plus à ce rôle. */
+const UNDETECTABLE_FIXTURE_PATH = fileURLToPath(
+  new URL("../../fixtures/river-and-mountains-laserarts/RiverAndMountains-CS.pdf", import.meta.url),
 );
 
 /**
@@ -204,21 +207,22 @@ test("le cadrage manuel reste bloqué pendant l'analyse automatique", async ({ p
 test("le cadrage manuel apparaît si la détection automatique ne trouve rien", async ({
   page,
 }) => {
-  // Repli explicitement demandé : un fichier qui n'est pas de type A (ou
-  // dont `detect_type_a` s'efface, voir fixtures/README.md) doit retomber
-  // sur le cadrage manuel du Lot 2 une fois l'analyse terminée — jamais
-  // pendant qu'elle tourne encore (test précédent).
+  // Repli explicitement demandé : un fichier qui ne correspond à aucun type
+  // reconnu (ni `detect_type_a`, ni `detect_type_bc` depuis le Lot 5 — voir
+  // fixtures/README.md) doit retomber sur le cadrage manuel du Lot 2 une
+  // fois l'analyse terminée — jamais pendant qu'elle tourne encore (test
+  // précédent).
   test.setTimeout(60_000);
 
   await page.goto("/");
   await page.getByRole("button", { name: "Importer", exact: true }).click();
-  await page.locator('input[type="file"][accept*="pdf"]').setInputFiles(NON_TYPE_A_FIXTURE_PATH);
+  await page.locator('input[type="file"][accept*="pdf"]').setInputFiles(UNDETECTABLE_FIXTURE_PATH);
 
   await expect(page.getByText("Colonnes")).toBeVisible();
   await expect(page.locator(".crop-stage-loading")).not.toBeVisible({
     timeout: DETECTION_TIMEOUT,
   });
-  // Jamais de bannière de détection : `detect_type_a` ne s'est pas imposé.
+  // Jamais de bannière de détection : aucun des deux connecteurs ne s'est imposé.
   await expect(page.getByText(/Détection automatique/)).not.toBeVisible();
 
   const topHandle = page.locator(".crop-handle").first();
@@ -247,7 +251,7 @@ test("le cadrage manuel est indépendant d'une page à l'autre", async ({ page }
 
   await page.goto("/");
   await page.getByRole("button", { name: "Importer", exact: true }).click();
-  await page.locator('input[type="file"][accept*="pdf"]').setInputFiles(NON_TYPE_A_FIXTURE_PATH);
+  await page.locator('input[type="file"][accept*="pdf"]').setInputFiles(UNDETECTABLE_FIXTURE_PATH);
 
   await expect(page.getByText("Colonnes")).toBeVisible();
   await expect(page.locator(".crop-stage-loading")).not.toBeVisible({
