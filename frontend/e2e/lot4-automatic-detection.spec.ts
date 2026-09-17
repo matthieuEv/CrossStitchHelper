@@ -29,6 +29,14 @@ const FIXTURE_PATH = fileURLToPath(
   ),
 );
 
+/** Fixture type C (voir `fixtures/README.md`) : `detect_type_a` s'y efface
+ * proprement (aucun faux positif attendu), utile pour vérifier le repli
+ * manuel quand la détection ne trouve rien — contrairement à la fixture
+ * type A ci-dessus, qui réussit toujours. */
+const NON_TYPE_A_FIXTURE_PATH = fileURLToPath(
+  new URL("../../fixtures/winter-wreath-dmc/PATASS117_2C_2.pdf", import.meta.url),
+);
+
 /**
  * ~10s en local (voir `backend/tests/test_type_a.py`), mais nettement plus
  * sous Docker sur les runners CI (CPU partagé, moins de coeurs) — mesuré en
@@ -158,15 +166,12 @@ test("changer des dimensions déjà détectées ne plante pas non plus", async (
   expect(pageErrors).toEqual([]);
 });
 
-test("le cadrage manuel reste utilisable pendant l'analyse, comme le message l'invite à faire", async ({
-  page,
-}) => {
-  // Bug réel trouvé en test manuel : l'overlay de chargement ajouté par-dessus
-  // l'aperçu pendant l'analyse (`crop-stage-loading`) interceptait
-  // silencieusement les glissés destinés aux poignées de cadrage en dessous
-  // — sans `pointer-events: none`, il fallait attendre la fin de l'analyse
-  // pour pouvoir cadrer, alors que le message affiché dit explicitement le
-  // contraire ("vous pouvez déjà cadrer... pendant l'attente").
+test("le cadrage manuel reste bloqué pendant l'analyse automatique", async ({ page }) => {
+  // Demande explicite de l'utilisateur : l'overlay de chargement doit rester
+  // flouté et bloquant pendant l'analyse — le repli manuel n'a de sens que
+  // si l'automatique a vraiment échoué, pas comme une option concurrente
+  // pendant l'attente (contrairement à un choix précédent, revenu en
+  // arrière ici : voir l'historique de `crop-stage-loading` dans index.css).
   test.setTimeout(60_000);
 
   await page.goto("/");
@@ -175,9 +180,32 @@ test("le cadrage manuel reste utilisable pendant l'analyse, comme le message l'i
 
   // Ne pas attendre la détection : le test vise précisément la fenêtre
   // pendant laquelle l'overlay de chargement est affiché.
-  await expect(page.getByText(/Analyse automatique en cours/)).toBeVisible();
+  await expect(page.locator(".crop-stage-loading")).toBeVisible();
+  await expect(page.locator(".crop-handle").first()).not.toBeVisible();
+});
+
+test("le cadrage manuel apparaît si la détection automatique ne trouve rien", async ({
+  page,
+}) => {
+  // Repli explicitement demandé : un fichier qui n'est pas de type A (ou
+  // dont `detect_type_a` s'efface, voir fixtures/README.md) doit retomber
+  // sur le cadrage manuel du Lot 2 une fois l'analyse terminée — jamais
+  // pendant qu'elle tourne encore (test précédent).
+  test.setTimeout(60_000);
+
+  await page.goto("/");
+  await page.getByRole("button", { name: "Importer", exact: true }).click();
+  await page.locator('input[type="file"][accept*="pdf"]').setInputFiles(NON_TYPE_A_FIXTURE_PATH);
+
+  await expect(page.getByText("Colonnes")).toBeVisible();
+  await expect(page.locator(".crop-stage-loading")).not.toBeVisible({
+    timeout: DETECTION_TIMEOUT,
+  });
+  // Jamais de bannière de détection : `detect_type_a` ne s'est pas imposé.
+  await expect(page.getByText(/Détection automatique/)).not.toBeVisible();
 
   const topHandle = page.locator(".crop-handle").first();
+  await expect(topHandle).toBeVisible();
   const before = await topHandle.boundingBox();
   if (before === null) throw new Error("La poignée de cadrage n'a pas de boîte englobante");
 
@@ -191,4 +219,51 @@ test("le cadrage manuel reste utilisable pendant l'analyse, comme le message l'i
   const after = await topHandle.boundingBox();
   if (after === null) throw new Error("La poignée de cadrage n'a pas de boîte englobante");
   expect(after.y).toBeGreaterThan(before.y + 30);
+});
+
+test("le cadrage manuel est indépendant d'une page à l'autre", async ({ page }) => {
+  // Demande explicite de l'utilisateur : un seul cadrage imposé à toutes
+  // les pages n'a pas de sens (une page peut être une légende, une autre la
+  // grille) — chaque page garde donc son propre rectangle, voir
+  // `backend/app/schemas.py::ImportConfig.crop_by_page`.
+  test.setTimeout(60_000);
+
+  await page.goto("/");
+  await page.getByRole("button", { name: "Importer", exact: true }).click();
+  await page.locator('input[type="file"][accept*="pdf"]').setInputFiles(NON_TYPE_A_FIXTURE_PATH);
+
+  await expect(page.getByText("Colonnes")).toBeVisible();
+  await expect(page.locator(".crop-stage-loading")).not.toBeVisible({
+    timeout: DETECTION_TIMEOUT,
+  });
+
+  const handle = page.locator(".crop-handle").first();
+  await expect(handle).toBeVisible();
+  const pageOneDefault = await handle.boundingBox();
+  if (pageOneDefault === null) throw new Error("La poignée de cadrage n'a pas de boîte englobante");
+
+  // Cadre la page 1 (glisse la poignée du haut vers le bas).
+  await page.mouse.move(pageOneDefault.x + pageOneDefault.width / 2, pageOneDefault.y + pageOneDefault.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(
+    pageOneDefault.x + pageOneDefault.width / 2,
+    pageOneDefault.y + pageOneDefault.height / 2 + 60,
+    { steps: 5 },
+  );
+  await page.mouse.up();
+  const pageOneCropped = await handle.boundingBox();
+  if (pageOneCropped === null) throw new Error("La poignée de cadrage n'a pas de boîte englobante");
+  expect(pageOneCropped.y).toBeGreaterThan(pageOneDefault.y + 30);
+
+  // La page 2 repart du cadrage par défaut, pas de celui de la page 1.
+  await page.getByRole("button", { name: "Page suivante" }).click();
+  const pageTwoDefault = await page.locator(".crop-handle").first().boundingBox();
+  if (pageTwoDefault === null) throw new Error("La poignée de cadrage n'a pas de boîte englobante");
+  expect(pageTwoDefault.y).toBeLessThan(pageOneCropped.y - 20);
+
+  // Revenir à la page 1 retrouve le cadrage qu'on y avait laissé.
+  await page.getByRole("button", { name: "Page précédente" }).click();
+  const pageOneAgain = await page.locator(".crop-handle").first().boundingBox();
+  if (pageOneAgain === null) throw new Error("La poignée de cadrage n'a pas de boîte englobante");
+  expect(Math.abs(pageOneAgain.y - pageOneCropped.y)).toBeLessThan(5);
 });

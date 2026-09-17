@@ -192,7 +192,14 @@ class ImportFillZone(BaseModel):
 
 
 class ImportConfig(BaseModel):
-    crop: ImportCrop | None = None
+    crop_by_page: dict[str, ImportCrop] = Field(
+        default_factory=dict,
+        description=(
+            "Cadrage manuel, par numéro de page (clé str car JSON) — une page non "
+            "présente n'a pas encore été cadrée par l'utilisateur. Repère purement "
+            "visuel pour aider à compter les cases, jamais consommé par l'extraction."
+        ),
+    )
     columns: int | None = Field(default=None, ge=1, le=1000)
     rows: int | None = Field(default=None, ge=1, le=1000)
     palette: list[ImportPaletteEntry] = Field(default_factory=list)
@@ -214,7 +221,7 @@ class ImportConfigPatch(BaseModel):
     suivi), ce qui rend une resynchronisation triviale après une navigation
     avant/arrière dans l'assistant."""
 
-    crop: ImportCrop | None = None
+    crop_by_page: dict[str, ImportCrop] | None = None
     columns: int | None = Field(default=None, ge=1, le=1000)
     rows: int | None = Field(default=None, ge=1, le=1000)
     palette: list[ImportPaletteEntry] | None = None

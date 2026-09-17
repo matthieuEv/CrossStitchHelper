@@ -38,7 +38,9 @@ export const en: Record<TranslationKey, string> = {
   "import.crop.hint": "Drag the four edges to keep only the grid, then set its size in cells.",
   "import.crop.hintDetected":
     "This file was recognized automatically: every cell comes straight from its content, not from cropping. Browse the pages to double-check if you'd like.",
-  "import.detection.running": "Automatic analysis running… You can already crop or type in the dimensions by hand if you don't want to wait.",
+  "import.crop.hintDetecting":
+    "Automatic analysis running… Manual cropping will show up here if it finds nothing.",
+  "import.detection.running": "Automatic analysis running… You can already type in the dimensions by hand if you don't want to wait.",
   "import.detection.title": "Automatic detection: type {type}, {confidence}% confidence",
   "import.detection.hint": "Check and correct as needed — nothing here is final.",
   "import.detection.multiPage":

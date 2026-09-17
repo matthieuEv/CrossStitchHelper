@@ -59,7 +59,11 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
 
-  const [crop, setCrop] = useState<Crop>(DEFAULT_CROP);
+  // Un cadrage indépendant par page — voir `import.crop.hint` et
+  // `backend/app/schemas.py::ImportConfig.crop_by_page` : une même page peut
+  // contenir la légende, une autre la grille, donc un seul cadrage imposé à
+  // toutes les pages n'aurait pas de sens.
+  const [cropByPage, setCropByPage] = useState<Record<number, Crop>>({});
   const [page, setPage] = useState(1);
   const [columns, setColumns] = useState<string>("");
   const [rows, setRows] = useState<string>("");
@@ -89,7 +93,14 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
   ];
 
   const applyConfig = (config: ApiImportConfig): void => {
-    if (config.crop !== null) setCrop(config.crop);
+    setCropByPage(
+      Object.fromEntries(
+        Object.entries(config.crop_by_page).map(([pageNumber, pageCrop]) => [
+          Number(pageNumber),
+          pageCrop,
+        ]),
+      ),
+    );
     if (config.columns !== null) setColumns(String(config.columns));
     if (config.rows !== null) setRows(String(config.rows));
     setPalette(config.palette);
@@ -152,34 +163,42 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
     event.currentTarget.setPointerCapture(event.pointerId);
   };
 
-  const onPointerMove = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
-    const edge = dragEdgeRef.current;
-    const stage = stageRef.current;
-    if (edge === null || stage === null) return;
+  const onPointerMove = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      const edge = dragEdgeRef.current;
+      const stage = stageRef.current;
+      if (edge === null || stage === null) return;
 
-    const box = stage.getBoundingClientRect();
-    const x = ((event.clientX - box.left) / box.width) * 100;
-    const y = ((event.clientY - box.top) / box.height) * 100;
-    const clamp = (value: number): number => Math.max(0, Math.min(MAX_INSET, value));
+      const box = stage.getBoundingClientRect();
+      const x = ((event.clientX - box.left) / box.width) * 100;
+      const y = ((event.clientY - box.top) / box.height) * 100;
+      const clamp = (value: number): number => Math.max(0, Math.min(MAX_INSET, value));
 
-    setCrop((current) => {
-      switch (edge) {
-        case "left":
-          return { ...current, left: clamp(x) };
-        case "right":
-          return { ...current, right: clamp(100 - x) };
-        case "top":
-          return { ...current, top: clamp(y) };
-        case "bottom":
-          return { ...current, bottom: clamp(100 - y) };
-      }
-    });
-  }, []);
+      setCropByPage((current) => {
+        const currentCrop = current[page] ?? DEFAULT_CROP;
+        const nextCrop = (() => {
+          switch (edge) {
+            case "left":
+              return { ...currentCrop, left: clamp(x) };
+            case "right":
+              return { ...currentCrop, right: clamp(100 - x) };
+            case "top":
+              return { ...currentCrop, top: clamp(y) };
+            case "bottom":
+              return { ...currentCrop, bottom: clamp(100 - y) };
+          }
+        })();
+        return { ...current, [page]: nextCrop };
+      });
+    },
+    [page],
+  );
 
   const endDrag = useCallback(() => {
     dragEdgeRef.current = null;
   }, []);
 
+  const crop = cropByPage[page] ?? DEFAULT_CROP;
   const centerX = `${crop.left + (100 - crop.left - crop.right) / 2}%`;
   const centerY = `${crop.top + (100 - crop.top - crop.bottom) / 2}%`;
 
@@ -190,7 +209,14 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
 
   const goToPalette = async (): Promise<void> => {
     if (job === null || !dimensionsValid) return;
-    const updated = await patchImportConfig(job.id, { crop, columns: columnsValue, rows: rowsValue });
+    const cropByPageForApi = Object.fromEntries(
+      Object.entries(cropByPage).map(([pageNumber, pageCrop]) => [String(pageNumber), pageCrop]),
+    );
+    const updated = await patchImportConfig(job.id, {
+      crop_by_page: cropByPageForApi,
+      columns: columnsValue,
+      rows: rowsValue,
+    });
     setJob(updated);
     setStep(3);
   };
@@ -375,7 +401,11 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
         {step === 2 && job !== null && (
           <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
             <div className="text-muted" style={{ fontSize: 13 }}>
-              {detectedCells !== null ? t("import.crop.hintDetected") : t("import.crop.hint")}
+              {job.detecting
+                ? t("import.crop.hintDetecting")
+                : detectedCells !== null
+                  ? t("import.crop.hintDetected")
+                  : t("import.crop.hint")}
             </div>
 
             {detection !== null && (
@@ -452,7 +482,7 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
                 alt=""
                 style={{ width: "100%", height: "100%", objectFit: "contain", display: "block" }}
               />
-              {detectedCells === null && (
+              {detectedCells === null && !job.detecting && (
                 <>
                   <div
                     style={{

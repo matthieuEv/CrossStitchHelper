@@ -44,7 +44,9 @@ export const fr = {
     "Faites glisser les quatre bords pour ne garder que la grille, puis indiquez ses dimensions en cases.",
   "import.crop.hintDetected":
     "Ce fichier a été reconnu automatiquement : chaque case vient directement de son contenu, pas d'un cadrage. Naviguez entre les pages pour vérifier si besoin.",
-  "import.detection.running": "Analyse automatique en cours… Vous pouvez déjà cadrer ou saisir les dimensions à la main si vous ne voulez pas attendre.",
+  "import.crop.hintDetecting":
+    "Analyse automatique en cours… Le cadrage manuel apparaîtra ici si elle ne trouve rien.",
+  "import.detection.running": "Analyse automatique en cours… Vous pouvez déjà saisir les dimensions à la main si vous ne voulez pas attendre.",
   "import.detection.title": "Détection automatique : type {type}, confiance {confidence} %",
   "import.detection.hint": "Vérifiez et corrigez si besoin — rien n'est jamais figé.",
   "import.detection.multiPage":

@@ -76,7 +76,7 @@ def test_create_import_accepts_pdf(client: TestClient) -> None:
     assert job["status"] == "ready"
     assert job["source_filename"] == "motif.pdf"
     assert job["config"] == {
-        "crop": None,
+        "crop_by_page": {},
         "columns": None,
         "rows": None,
         "palette": [],

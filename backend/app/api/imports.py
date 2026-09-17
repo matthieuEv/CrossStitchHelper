@@ -205,7 +205,7 @@ async def create_import(
         "source_ext": ext,
         "source_sha256": sha256_file(source_path),
         "config": {
-            "crop": None,
+            "crop_by_page": {},
             "columns": None,
             "rows": None,
             "palette": [],
@@ -379,8 +379,10 @@ def patch_config(
     result = _result_of(job)
     config = result["config"]
 
-    if payload.crop is not None:
-        config["crop"] = payload.crop.model_dump()
+    if payload.crop_by_page is not None:
+        config["crop_by_page"] = {
+            page: crop.model_dump() for page, crop in payload.crop_by_page.items()
+        }
     if payload.columns is not None:
         config["columns"] = payload.columns
     if payload.rows is not None:

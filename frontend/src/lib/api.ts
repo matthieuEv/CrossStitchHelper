@@ -225,7 +225,9 @@ export interface ApiImportFillZone {
 }
 
 export interface ApiImportConfig {
-  crop: ApiImportCrop | null;
+  /** Cadrage manuel par numéro de page (clé str), repère purement visuel —
+   * voir `backend/app/schemas.py::ImportConfig.crop_by_page`. */
+  crop_by_page: Record<string, ApiImportCrop>;
   columns: number | null;
   rows: number | null;
   palette: ApiImportPaletteEntry[];
@@ -235,7 +237,7 @@ export interface ApiImportConfig {
 }
 
 export interface ApiImportConfigPatch {
-  crop?: ApiImportCrop;
+  crop_by_page?: Record<string, ApiImportCrop>;
   columns?: number;
   rows?: number;
   palette?: ApiImportPaletteEntry[];
