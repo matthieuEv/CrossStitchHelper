@@ -29,10 +29,19 @@ const FIXTURE_PATH = fileURLToPath(
   ),
 );
 
+/**
+ * ~10s en local (voir `backend/tests/test_type_a.py`), mais nettement plus
+ * sous Docker sur les runners CI (CPU partagé, moins de coeurs) — mesuré en
+ * pratique : un délai de 30s faisait systématiquement échouer les deux
+ * tests qui attendent la fin de l'analyse dans le job "Image Docker + e2e"
+ * (jamais en local). Généreux plutôt que de deviner un chiffre exact.
+ */
+const DETECTION_TIMEOUT = 90_000;
+
 test("un PDF type A reconnu pré-remplit l'assistant, qu'il suffit de valider", async ({
   page,
 }) => {
-  test.setTimeout(60_000);
+  test.setTimeout(120_000);
 
   await page.goto("/");
   await page.getByRole("button", { name: "Importer", exact: true }).click();
@@ -42,7 +51,9 @@ test("un PDF type A reconnu pré-remplit l'assistant, qu'il suffit de valider", 
   // Étape Cadrage : le message d'analyse en cours apparaît, puis la bannière
   // de détection avec les dimensions déjà pré-remplies — sans aucune saisie.
   await expect(page.getByText("Colonnes")).toBeVisible();
-  await expect(page.getByText(/Détection automatique : type A/)).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText(/Détection automatique : type A/)).toBeVisible({
+    timeout: DETECTION_TIMEOUT,
+  });
 
   const [columnsInput, rowsInput] = await page.locator("input.input").all();
   await expect(columnsInput!).toHaveValue("255");
@@ -84,7 +95,7 @@ test("taper des dimensions à la main pendant l'analyse ne plante ni le client n
   // une grille détectée devenue trop longue pour les nouvelles dimensions
   // tapées) et le serveur (500 sur `PATCH /config`, même cause côté
   // `apply_fills`). Voir les commits de correction pour le détail.
-  test.setTimeout(60_000);
+  test.setTimeout(90_000);
 
   const pageErrors: Error[] = [];
   page.on("pageerror", (error) => pageErrors.push(error));
@@ -119,7 +130,7 @@ test("changer des dimensions déjà détectées ne plante pas non plus", async (
   // *puis* on corrige les dimensions — exactement le geste qui faisait
   // planter le client (`Uint8Array.set`, grille détectée devenue trop
   // longue pour 92×74) et le serveur (500 sur `PATCH /config`).
-  test.setTimeout(60_000);
+  test.setTimeout(120_000);
 
   const pageErrors: Error[] = [];
   page.on("pageerror", (error) => pageErrors.push(error));
@@ -130,7 +141,7 @@ test("changer des dimensions déjà détectées ne plante pas non plus", async (
 
   await expect(page.getByText("Colonnes")).toBeVisible();
   const [columnsInput, rowsInput] = await page.locator("input.input").all();
-  await expect(columnsInput!).toHaveValue("255", { timeout: 30_000 });
+  await expect(columnsInput!).toHaveValue("255", { timeout: DETECTION_TIMEOUT });
   await expect(rowsInput!).toHaveValue("180");
   expect(pageErrors).toEqual([]); // pas encore planté à ce stade
 
