@@ -11,6 +11,7 @@ import { ImportGridPainter } from "../components/ImportGridPainter";
 import { BackIcon, CameraIcon, UploadIcon } from "../components/Icons";
 import { PatternThumbnail } from "../components/PatternThumbnail";
 import { useT } from "../i18n";
+import { useWideLayout } from "../lib/hooks";
 import {
   ApiError,
   commitImport,
@@ -53,6 +54,7 @@ interface ImportScreenProps {
 
 export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
   const t = useT();
+  const wide = useWideLayout();
 
   const [step, setStep] = useState(1);
   const [job, setJob] = useState<ApiImportJob | null>(null);
@@ -643,7 +645,7 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
             <div
               style={{
                 display: "grid",
-                gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
+                gridTemplateColumns: wide ? "repeat(2, 1fr)" : "1fr",
                 gap: 8,
               }}
             >
