@@ -157,3 +157,38 @@ test("changer des dimensions déjà détectées ne plante pas non plus", async (
   await expect(page.getByRole("button", { name: /Ajouter une couleur/ })).toBeVisible();
   expect(pageErrors).toEqual([]);
 });
+
+test("le cadrage manuel reste utilisable pendant l'analyse, comme le message l'invite à faire", async ({
+  page,
+}) => {
+  // Bug réel trouvé en test manuel : l'overlay de chargement ajouté par-dessus
+  // l'aperçu pendant l'analyse (`crop-stage-loading`) interceptait
+  // silencieusement les glissés destinés aux poignées de cadrage en dessous
+  // — sans `pointer-events: none`, il fallait attendre la fin de l'analyse
+  // pour pouvoir cadrer, alors que le message affiché dit explicitement le
+  // contraire ("vous pouvez déjà cadrer... pendant l'attente").
+  test.setTimeout(60_000);
+
+  await page.goto("/");
+  await page.getByRole("button", { name: "Importer", exact: true }).click();
+  await page.locator('input[type="file"][accept*="pdf"]').setInputFiles(FIXTURE_PATH);
+
+  // Ne pas attendre la détection : le test vise précisément la fenêtre
+  // pendant laquelle l'overlay de chargement est affiché.
+  await expect(page.getByText(/Analyse automatique en cours/)).toBeVisible();
+
+  const topHandle = page.locator(".crop-handle").first();
+  const before = await topHandle.boundingBox();
+  if (before === null) throw new Error("La poignée de cadrage n'a pas de boîte englobante");
+
+  await page.mouse.move(before.x + before.width / 2, before.y + before.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(before.x + before.width / 2, before.y + before.height / 2 + 60, {
+    steps: 5,
+  });
+  await page.mouse.up();
+
+  const after = await topHandle.boundingBox();
+  if (after === null) throw new Error("La poignée de cadrage n'a pas de boîte englobante");
+  expect(after.y).toBeGreaterThan(before.y + 30);
+});

@@ -537,6 +537,11 @@ button.badge {
   backdrop-filter: blur(1.5px);
   text-align: center;
   padding: 0 24px;
+  /* Le message invite justement à cadrer ou taper les dimensions pendant
+     l'attente — sans ça, cet overlay (au-dessus du cadre dans l'ordre du
+     DOM) intercepterait silencieusement les glissés destinés aux poignées
+     de cadrage en dessous. */
+  pointer-events: none;
 }
 .spinner {
   width: 34px;
