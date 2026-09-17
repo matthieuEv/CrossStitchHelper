@@ -45,6 +45,8 @@ export const en: Record<TranslationKey, string> = {
   "import.detection.hint": "Check and correct as needed — nothing here is final.",
   "import.detection.multiPage":
     "These dimensions cover the pattern assembled from all {pageCount} pages of the file, not just the one shown below.",
+  "import.detection.recipeApplied":
+    "Cropping pre-filled from the \"{label}\" recipe (this file was already recognised).",
   "import.crop.page": "Page {page} / {total}",
   "import.crop.prevPage": "Previous page",
   "import.crop.nextPage": "Next page",
@@ -71,6 +73,11 @@ export const en: Record<TranslationKey, string> = {
   "import.recap.size": "Size",
   "import.recap.stitches": "Painted cells",
   "import.recap.colors": "Colours",
+  "import.recap.saveRecipe": "Save this cropping as a reusable recipe",
+  "import.recap.saveRecipe.hint":
+    "A future file from the same editor (same template) can pick up this cropping automatically. Never this pattern's colours or dimensions.",
+  "import.recap.saveRecipe.label": "Recipe name (e.g. the editor or shop)",
+  "import.recap.saveRecipe.error": "Failed to save the recipe: {message}",
   "import.back": "Back",
   "import.continue": "Continue",
   "import.finish": "Add and start",
@@ -132,6 +139,12 @@ export const en: Record<TranslationKey, string> = {
   "settings.data.restore": "Restore a backup",
   "settings.data.autoBackup": "Daily automatic backup",
   "settings.data.erase": "Erase all data",
+  "settings.recipes": "Reusable recipes",
+  "settings.recipes.hint":
+    "Cropping reused automatically on a future file from the same editor — never a pattern's colours or dimensions.",
+  "settings.recipes.empty": "No recipe saved yet.",
+  "settings.recipes.usage": "{count} use(s)",
+  "settings.recipes.delete": "Delete",
   "settings.about":
     "CrossStitchHelper {version} — free software, self-hosted. No data leaves your server. Add the app to your home screen to use it offline.",
 

@@ -57,6 +57,16 @@ function patchJson<T>(path: string, body: unknown, signal?: AbortSignal): Promis
   });
 }
 
+async function deleteRequest(path: string, signal?: AbortSignal): Promise<void> {
+  const response = await fetch(`/api${path}`, {
+    method: "DELETE",
+    ...(signal !== undefined && { signal }),
+  });
+  if (!response.ok) {
+    throw new ApiError(`Requête ${path} échouée`, response.status);
+  }
+}
+
 export function fetchHealth(signal: AbortSignal): Promise<HealthResponse> {
   return request<HealthResponse>("/health", { signal });
 }
@@ -267,6 +277,12 @@ export interface ApiImportPreview {
   palette: ApiImportPaletteEntry[];
 }
 
+/** Recette (Lot 6) dont `crop_by_page` a pré-rempli ce job — voir `ApiRecipe`. */
+export interface ApiAppliedRecipe {
+  id: string;
+  label: string;
+}
+
 export interface ApiImportJob {
   id: string;
   status: "ready" | "committed";
@@ -278,6 +294,7 @@ export interface ApiImportJob {
   preview: ApiImportPreview | null;
   detection: ApiImportDetection | null;
   detecting: boolean;
+  applied_recipe: ApiAppliedRecipe | null;
   error: string | null;
   created_at: string;
   finished_at: string | null;
@@ -323,6 +340,39 @@ export function commitImport(
   signal?: AbortSignal,
 ): Promise<ApiImportCommitResponse> {
   return postJson<ApiImportCommitResponse>(`/imports/${jobId}/commit`, payload, signal);
+}
+
+/**
+ * Bibliothèque de recettes réutilisables (Lot 6, cahier des charges §8.7).
+ *
+ * `config` ne porte que `crop_by_page` — jamais les dimensions ni la
+ * palette d'un motif, qui sont son contenu créatif (voir
+ * `backend/app/models.py::Recipe`).
+ */
+export interface ApiRecipe {
+  id: string;
+  fingerprint: string;
+  label: string;
+  grid_type: string;
+  config: { crop_by_page: Record<string, ApiImportCrop> };
+  created_at: string;
+  usage_count: number;
+}
+
+export function listRecipes(signal?: AbortSignal): Promise<ApiRecipe[]> {
+  return request<ApiRecipe[]>("/recipes", withSignal(signal));
+}
+
+export function createRecipe(
+  jobId: string,
+  label: string,
+  signal?: AbortSignal,
+): Promise<ApiRecipe> {
+  return postJson<ApiRecipe>("/recipes", { job_id: jobId, label }, signal);
+}
+
+export function deleteRecipe(recipeId: string, signal?: AbortSignal): Promise<void> {
+  return deleteRequest(`/recipes/${recipeId}`, signal);
 }
 
 export type ServerState = "checking" | "ok" | "unreachable";

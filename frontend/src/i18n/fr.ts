@@ -51,6 +51,8 @@ export const fr = {
   "import.detection.hint": "Vérifiez et corrigez si besoin — rien n'est jamais figé.",
   "import.detection.multiPage":
     "Ces dimensions couvrent le motif assemblé depuis les {pageCount} pages du fichier, pas seulement celle affichée ci-dessous.",
+  "import.detection.recipeApplied":
+    "Cadrage pré-rempli depuis la recette « {label} » (fichier déjà reconnu).",
   "import.crop.page": "Page {page} / {total}",
   "import.crop.prevPage": "Page précédente",
   "import.crop.nextPage": "Page suivante",
@@ -79,6 +81,11 @@ export const fr = {
   "import.recap.size": "Taille",
   "import.recap.stitches": "Cases peintes",
   "import.recap.colors": "Couleurs",
+  "import.recap.saveRecipe": "Enregistrer le cadrage comme recette réutilisable",
+  "import.recap.saveRecipe.hint":
+    "Un prochain fichier du même éditeur (même gabarit) pourra reprendre automatiquement ce cadrage. Jamais les couleurs ni les dimensions de ce motif.",
+  "import.recap.saveRecipe.label": "Nom de la recette (ex. l'éditeur ou la boutique)",
+  "import.recap.saveRecipe.error": "Échec de l'enregistrement de la recette : {message}",
   "import.back": "Retour",
   "import.continue": "Continuer",
   "import.finish": "Ajouter et commencer",
@@ -140,6 +147,12 @@ export const fr = {
   "settings.data.restore": "Restaurer une sauvegarde",
   "settings.data.autoBackup": "Sauvegarde automatique quotidienne",
   "settings.data.erase": "Effacer toutes les données",
+  "settings.recipes": "Recettes réutilisables",
+  "settings.recipes.hint":
+    "Cadrage réutilisé automatiquement sur un prochain fichier du même éditeur — jamais les couleurs ni les dimensions d'un motif.",
+  "settings.recipes.empty": "Aucune recette enregistrée pour l'instant.",
+  "settings.recipes.usage": "{count} utilisation(s)",
+  "settings.recipes.delete": "Supprimer",
   "settings.about":
     "CrossStitchHelper {version} — logiciel libre, auto-hébergé. Aucune donnée ne quitte votre serveur. Ajoutez l'app à l'écran d'accueil pour l'utiliser hors ligne.",
 

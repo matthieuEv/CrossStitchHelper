@@ -17,6 +17,7 @@ import {
   ApiError,
   commitImport,
   createImport,
+  createRecipe,
   extractImport,
   fetchImport,
   importPagePreviewUrl,
@@ -82,6 +83,9 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
   const [preview, setPreview] = useState<ApiImportJob["preview"] | null>(null);
   const [committing, setCommitting] = useState(false);
   const [commitError, setCommitError] = useState<string | null>(null);
+  const [saveAsRecipe, setSaveAsRecipe] = useState(false);
+  const [recipeLabel, setRecipeLabel] = useState("");
+  const [recipeError, setRecipeError] = useState<string | null>(null);
 
   const stageRef = useRef<HTMLDivElement>(null);
   const dragEdgeRef = useRef<Edge | null>(null);
@@ -292,7 +296,17 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
     if (job === null || name.trim() === "") return;
     setCommitting(true);
     setCommitError(null);
+    setRecipeError(null);
     try {
+      if (saveAsRecipe && recipeLabel.trim() !== "") {
+        try {
+          await createRecipe(job.id, recipeLabel.trim());
+        } catch (error) {
+          // Une recette ratée ne doit jamais empêcher de créer le motif —
+          // c'est un confort pour la prochaine fois, pas une étape requise.
+          setRecipeError(error instanceof ApiError ? `HTTP ${error.status}` : String(error));
+        }
+      }
       const fabric = Number.parseInt(fabricCount, 10);
       const response = await commitImport(job.id, {
         name: name.trim(),
@@ -425,6 +439,15 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
                   ? t("import.crop.hintDetected")
                   : t("import.crop.hint")}
             </div>
+
+            {job.applied_recipe !== null && (
+              <div
+                className="tag tag-accent"
+                style={{ margin: 0, alignSelf: "flex-start" }}
+              >
+                {t("import.detection.recipeApplied", { label: job.applied_recipe.label })}
+              </div>
+            )}
 
             {detection !== null && (
               <div
@@ -820,6 +843,50 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
                     </div>
                   ))}
                 </div>
+                <label
+                  style={{
+                    display: "flex",
+                    alignItems: "flex-start",
+                    gap: 10,
+                    padding: "14px 16px",
+                    borderRadius: 20,
+                    background: "var(--color-surface)",
+                    cursor: "pointer",
+                  }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={saveAsRecipe}
+                    onChange={(event) => setSaveAsRecipe(event.target.checked)}
+                    style={{ marginTop: 3, minWidth: 18, minHeight: 18 }}
+                  />
+                  <span style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                    <span style={{ fontSize: 13, fontWeight: 600 }}>
+                      {t("import.recap.saveRecipe")}
+                    </span>
+                    <span className="text-muted" style={{ fontSize: 12 }}>
+                      {t("import.recap.saveRecipe.hint")}
+                    </span>
+                  </span>
+                </label>
+                {saveAsRecipe && (
+                  <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                    <span className="text-muted" style={{ fontSize: 12 }}>
+                      {t("import.recap.saveRecipe.label")}
+                    </span>
+                    <input
+                      className="input"
+                      value={recipeLabel}
+                      onChange={(event) => setRecipeLabel(event.target.value)}
+                      style={{ minHeight: 46 }}
+                    />
+                  </label>
+                )}
+                {recipeError !== null && (
+                  <p className="tag tag-accent" style={{ margin: 0 }}>
+                    {t("import.recap.saveRecipe.error", { message: recipeError })}
+                  </p>
+                )}
                 {commitError !== null && (
                   <p className="tag tag-accent" style={{ margin: 0 }}>
                     {t("import.finish.error", { message: commitError })}
@@ -847,7 +914,11 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
               disabled={
                 (step === 2 && !dimensionsValid) ||
                 (step === 3 && palette.length === 0) ||
-                (step === 4 && (previewPattern === null || name.trim() === "" || committing))
+                (step === 4 &&
+                  (previewPattern === null ||
+                    name.trim() === "" ||
+                    committing ||
+                    (saveAsRecipe && recipeLabel.trim() === "")))
               }
               onClick={() => {
                 if (step === 2) void goToPalette();
