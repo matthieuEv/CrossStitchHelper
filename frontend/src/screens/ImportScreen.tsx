@@ -229,6 +229,8 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
       name: entry.name,
       hex: entry.rgb_hex,
       symbol: entry.symbol_key,
+      ...(entry.symbol_svg !== null &&
+        entry.symbol_svg !== undefined && { symbolSvg: entry.symbol_svg }),
     })),
     fills,
     (nextFills) => {
@@ -605,6 +607,15 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
                     className="swatch"
                     style={{ width: 18, height: 18, background: entry.rgb_hex }}
                   />
+                  {entry.symbol_svg !== null && entry.symbol_svg !== undefined && (
+                    // Symbole réel découpé du PDF (Lot 4) — voir `ColorList.tsx`
+                    // pour le même principe côté Suivi.
+                    <img
+                      src={`data:image/svg+xml;base64,${btoa(entry.symbol_svg)}`}
+                      alt=""
+                      style={{ width: 16, height: 16 }}
+                    />
+                  )}
                   {entry.code || entry.name || "—"}
                 </button>
               ))}

@@ -310,6 +310,19 @@ test("les symboles affichés sont les vrais glyphes du PDF, pas des lettres synt
   });
   await page.getByRole("button", { name: "Continuer", exact: true }).click();
   await expect(page.getByPlaceholder("Code").first()).toBeVisible();
+
+  // L'étape Palette doit elle aussi afficher les vrais symboles, pas
+  // seulement l'écran de Suivi final — bug réel trouvé en test manuel : une
+  // palette construite localement dans `ImportScreen.tsx` pour le pinceau
+  // (`ImportGridPainter`, distincte de `lib/mappers.ts`, déjà correcte)
+  // perdait `symbol_svg` en route vers `useImportPainter`. Vérifié ici sur
+  // les pastilles de sélection de couleur (de vraies balises `<img>`, pas le
+  // canvas du pinceau lui-même : son image s'y décode de façon asynchrone,
+  // trop vite et de façon trop peu fiable pour une course dans un test).
+  const paletteSwatchImages = page.locator('button.badge img[src^="data:image/svg+xml;base64,"]');
+  await expect(paletteSwatchImages.first()).toBeVisible();
+  expect(await paletteSwatchImages.count()).toBeGreaterThanOrEqual(34);
+
   await page.getByRole("button", { name: "Continuer", exact: true }).click();
 
   const nameInput = page.getByLabel("Nom du motif");
