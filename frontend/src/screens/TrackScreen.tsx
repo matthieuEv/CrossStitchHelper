@@ -92,6 +92,30 @@ export function TrackScreen({ tracker, wide, onBack }: TrackScreenProps) {
     drawOverlay(canvas, { view, accent, cursor, selection });
   }, [pattern, tracker.done, version, view, highlight, hideDone, cursor, selection, resolved, size]);
 
+  // Molette et trackpad (défilement à deux doigts, macOS comme Windows) :
+  // zoome sous le curseur plutôt que de faire défiler la page. Écouteur DOM
+  // natif plutôt que `onWheel` React : un gestionnaire React est attaché en
+  // « passive » pour cet événement, ce qui empêcherait `preventDefault()`
+  // d'agir et laisserait la page défiler derrière le canvas.
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (canvas === null) return;
+
+    const onWheel = (event: WheelEvent): void => {
+      event.preventDefault();
+      const rect = canvas.getBoundingClientRect();
+      // Échelle exponentielle du facteur de zoom : une molette de souris
+      // envoie de grands pas discrets (~100 par cran), un trackpad de petits
+      // pas continus — proportionnel au delta, le ressenti reste fluide dans
+      // les deux cas, comme le pincement à deux doigts déjà en place.
+      const factor = Math.pow(1.0015, -event.deltaY);
+      tracker.zoomTo(view.cell * factor, event.clientX, event.clientY, rect);
+    };
+
+    canvas.addEventListener("wheel", onWheel, { passive: false });
+    return () => canvas.removeEventListener("wheel", onWheel);
+  }, [tracker.zoomTo, view.cell]);
+
   const cellAt = useCallback(
     (event: ReactPointerEvent<HTMLCanvasElement>): CellPosition => {
       const canvas = event.currentTarget;
@@ -242,10 +266,15 @@ export function TrackScreen({ tracker, wide, onBack }: TrackScreenProps) {
   };
 
   const activeColor = highlight === 0 ? null : (counts[highlight - 1] ?? null);
+  // `view.cell` prend des valeurs fractionnaires en continu pendant un zoom
+  // à la molette/au trackpad ou un pincement (`zoomTo`) — arrondi seulement
+  // pour l'affichage, jamais pour le rendu lui-même (`drawGrid` s'accommode
+  // très bien d'une taille de case non entière).
+  const roundedCell = Math.round(view.cell);
   const zoomLabel =
-    view.cell >= SYMBOL_MIN_CELL
-      ? t("track.zoom.symbols", { size: view.cell })
-      : t("track.zoom.blocks", { size: view.cell });
+    roundedCell >= SYMBOL_MIN_CELL
+      ? t("track.zoom.symbols", { size: roundedCell })
+      : t("track.zoom.blocks", { size: roundedCell });
 
   const colorList = (
     <ColorList counts={counts} highlight={highlight} onToggle={tracker.toggleHighlight} />

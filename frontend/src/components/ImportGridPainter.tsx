@@ -42,6 +42,24 @@ export function ImportGridPainter({ painter, activeIndex }: ImportGridPainterPro
     drawOverlay(canvas, { view, accent, cursor, selection });
   }, [pattern, view, cursor, selection, resolved]);
 
+  // Molette/trackpad : zoome sous le curseur — voir TrackScreen.tsx pour le
+  // détail (écouteur DOM natif, pas `onWheel` React, pour que
+  // `preventDefault()` empêche vraiment le défilement de la page).
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (canvas === null) return;
+
+    const onWheel = (event: WheelEvent): void => {
+      event.preventDefault();
+      const rect = canvas.getBoundingClientRect();
+      const factor = Math.pow(1.0015, -event.deltaY);
+      painter.zoomTo(view.cell * factor, event.clientX, event.clientY, rect);
+    };
+
+    canvas.addEventListener("wheel", onWheel, { passive: false });
+    return () => canvas.removeEventListener("wheel", onWheel);
+  }, [painter.zoomTo, view.cell]);
+
   const cellAt = useCallback(
     (event: ReactPointerEvent<HTMLCanvasElement>): CellPosition => {
       const box = event.currentTarget.getBoundingClientRect();
