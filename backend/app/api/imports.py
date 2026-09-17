@@ -82,6 +82,25 @@ def _save_result(job: ImportJob, result: dict[str, Any]) -> None:
     job.result_json = json.dumps(result)
 
 
+def _detected_base(config: dict[str, Any], columns: int, rows: int) -> list[int] | None:
+    """`config["detected_cells"]` (Lot 4), seulement si elle correspond encore
+    aux dimensions courantes.
+
+    Une grille détectée automatiquement est calculée pour des dimensions
+    précises : si l'utilisateur change ensuite `columns`/`rows` à la main
+    (par exemple parce qu'il a corrigé une détection imprécise, ou tapé plus
+    vite que l'analyse en tâche de fond — voir `_run_type_a_detection`), elle
+    ne s'applique plus. `apply_fills` refuse `base` d'une mauvaise longueur
+    plutôt que de mal l'aligner en silence ; sans ce garde-fou, l'aperçu
+    plante au lieu de simplement repartir d'une grille vide pour les
+    nouvelles dimensions — un import ne doit jamais aboutir à une impasse
+    (cahier des charges §10)."""
+    detected = config.get("detected_cells")
+    if detected is None or len(detected) != columns * rows:
+        return None
+    return list(detected)
+
+
 def _compute_preview(config: dict[str, Any]) -> dict[str, Any] | None:
     columns = config.get("columns")
     rows = config.get("rows")
@@ -89,7 +108,9 @@ def _compute_preview(config: dict[str, Any]) -> dict[str, Any] | None:
     if columns is None or rows is None or not palette:
         return None
 
-    cells = apply_fills(columns, rows, config.get("fills") or [], base=config.get("detected_cells"))
+    cells = apply_fills(
+        columns, rows, config.get("fills") or [], base=_detected_base(config, columns, rows)
+    )
     filled_count = sum(1 for value in cells if value != 0)
     return {
         "width": columns,
@@ -220,21 +241,36 @@ def _run_type_a_detection(job_id: str, source_path: Path) -> None:
     mais un filet de sécurité ici garantit que le job sort toujours de l'état
     « en cours d'analyse », même face à un bug imprévu — un import qui reste
     éternellement « en cours » serait une impasse (§10 : « aucun import ne
-    doit aboutir à une impasse »)."""
+    doit aboutir à une impasse »).
+
+    L'analyse (`detect_type_a`) tourne **avant** d'ouvrir la session ou de
+    lire l'état courant du job : elle prend plusieurs secondes, largement de
+    quoi laisser l'utilisateur commencer à configurer le job à la main
+    pendant ce temps (le message affiché pendant l'attente l'y invite
+    explicitement). Lire `result["config"]` avant l'analyse plutôt qu'après
+    figerait un instantané périmé — la décision « l'utilisateur a-t-il déjà
+    commencé ? » doit se prendre sur l'état le plus frais possible, juste
+    avant d'écrire, pas sur celui d'il y a plusieurs secondes."""
+    detection_error: Exception | None = None
+    try:
+        detected = detect_type_a(source_path)
+    except Exception as error:  # pragma: no cover - filet de sécurité défensif
+        detected = None
+        detection_error = error
+
     with get_session_factory()() as session:
         job = session.get(ImportJob, job_id)
         if job is None or job.status == "committed":
             return  # Job supprimé ou déjà validé entre-temps.
 
         result = _result_of(job)
-        try:
-            detected = detect_type_a(source_path)
-        except Exception as error:  # pragma: no cover - filet de sécurité défensif
+
+        if detection_error is not None:
             result["detecting"] = False
             result["detection"] = {
                 "grid_type": "A",
                 "confidence": 0.0,
-                "warnings": [f"Échec inattendu de la détection automatique : {error}"],
+                "warnings": [f"Échec inattendu de la détection automatique : {detection_error}"],
             }
             _save_result(job, result)
             session.commit()
@@ -242,24 +278,44 @@ def _run_type_a_detection(job_id: str, source_path: Path) -> None:
 
         result["detecting"] = False
         if detected is not None:
-            result["config"]["columns"] = detected.columns
-            result["config"]["rows"] = detected.rows
-            result["config"]["detected_cells"] = detected.cells
-            result["config"]["palette"] = [
-                {
-                    "code": entry.code,
-                    "name": entry.name,
-                    "rgb_hex": entry.rgb_hex,
-                    "symbol_key": entry.symbol_key,
-                }
-                for entry in detected.palette
-            ]
+            config = result["config"]
+            # Si l'utilisateur a déjà commencé à renseigner la configuration
+            # à la main pendant que l'analyse tournait (dimensions, palette —
+            # le message affiché pendant l'attente l'invite explicitement à
+            # le faire, voir `import.detection.running` côté frontend), la
+            # proposition automatique ne doit pas écraser sa saisie en
+            # silence : elle arriverait après coup, sans qu'il l'ait vue ni
+            # validée (§4.4 : « jamais un résultat imposé »).
+            already_configured = (
+                config.get("columns") is not None
+                or config.get("rows") is not None
+                or config.get("palette")
+            )
+            if not already_configured:
+                config["columns"] = detected.columns
+                config["rows"] = detected.rows
+                config["detected_cells"] = detected.cells
+                config["palette"] = [
+                    {
+                        "code": entry.code,
+                        "name": entry.name,
+                        "rgb_hex": entry.rgb_hex,
+                        "symbol_key": entry.symbol_key,
+                    }
+                    for entry in detected.palette
+                ]
+                result["preview"] = _compute_preview(config)
             result["detection"] = {
                 "grid_type": "A",
                 "confidence": detected.confidence,
-                "warnings": detected.warnings,
+                "warnings": detected.warnings
+                if not already_configured
+                else [
+                    *detected.warnings,
+                    "Configuration déjà modifiée manuellement avant la fin de "
+                    "l'analyse : la proposition automatique n'a pas été appliquée.",
+                ],
             }
-            result["preview"] = _compute_preview(result["config"])
         _save_result(job, result)
         session.commit()
 
@@ -336,6 +392,14 @@ def patch_config(
     if payload.detected_cells is not None:
         config["detected_cells"] = payload.detected_cells
 
+    # Ne garde une grille détectée que si elle correspond encore aux
+    # dimensions courantes (voir `_detected_base`) — pas seulement pour la
+    # lecture ici, mais pour ne pas trimballer indéfiniment un blob de
+    # plusieurs dizaines de milliers d'entiers devenu sans objet.
+    columns, rows = config.get("columns"), config.get("rows")
+    if columns is not None and rows is not None and _detected_base(config, columns, rows) is None:
+        config["detected_cells"] = None
+
     result["preview"] = _compute_preview(config)
     _save_result(job, result)
     session.commit()
@@ -390,7 +454,7 @@ def commit(
         columns,
         rows,
         result["config"].get("fills") or [],
-        base=result["config"].get("detected_cells"),
+        base=_detected_base(result["config"], columns, rows),
     )
 
     pattern = Pattern(

@@ -132,6 +132,35 @@ def test_manual_fills_override_detected_cells(client: TestClient) -> None:
     assert layer[3] == 1
 
 
+def test_changing_dimensions_drops_a_now_mismatched_detected_base(client: TestClient) -> None:
+    """Bug réel trouvé en test manuel (Lot 4) : si `detected_cells` a été
+    posée pour une taille (ici 2x2, comme la tâche de fond le ferait pour de
+    vraies dimensions détectées) puis que l'utilisateur change `columns`/
+    `rows` sans renvoyer `detected_cells` — exactement ce qu'envoie
+    l'assistant en cliquant Continuer avec ses propres dimensions tapées à
+    la main — `apply_fills` recevait un `base` de la mauvaise longueur et
+    l'API répondait 500 au lieu de simplement repartir d'une grille vide
+    pour les nouvelles dimensions."""
+    job = _upload_pdf(client)
+    job_id = job["id"]
+    _wait_for_detection(client, job_id)
+
+    client.patch(
+        f"/api/imports/{job_id}/config",
+        json={"columns": 2, "rows": 2, "palette": _SAMPLE_PALETTE, "detected_cells": [1, 1, 1, 1]},
+    )
+
+    response = client.patch(
+        f"/api/imports/{job_id}/config",
+        json={"columns": 3, "rows": 3},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["config"]["detected_cells"] is None  # plus de sens pour 3x3
+    assert body["preview"]["cell_count"] == 9
+    assert body["preview"]["filled_count"] == 0  # repart d'une grille vide, pas d'un plantage
+
+
 def test_create_import_accepts_image(client: TestClient) -> None:
     job = _upload_image(client)
     assert job["kind"] == "image"
@@ -334,6 +363,27 @@ def test_commit_removes_the_staged_source_file(client: TestClient) -> None:
     assert not job_dir.exists()
 
 
+_TYPE_A_FIXTURE = (
+    Path(__file__).resolve().parents[2]
+    / "fixtures"
+    / "cafe-brasserie-charting-export"
+    / "CaffeBrasseriecoloursymbols.pdf"
+)
+
+
+def _upload_real_type_a_pdf(client: TestClient) -> dict[str, Any]:
+    if not _TYPE_A_FIXTURE.is_file():
+        pytest.skip(f"fixture manquante : {_TYPE_A_FIXTURE}")
+    with _TYPE_A_FIXTURE.open("rb") as handle:
+        response = client.post(
+            "/api/imports",
+            files={"file": ("CaffeBrasseriecoloursymbols.pdf", handle, "application/pdf")},
+        )
+    assert response.status_code == 200
+    result: dict[str, Any] = response.json()
+    return result
+
+
 def test_create_import_of_real_type_a_pdf_prefills_config_from_detection(
     client: TestClient,
 ) -> None:
@@ -345,22 +395,7 @@ def test_create_import_of_real_type_a_pdf_prefills_config_from_detection(
     attendu, voir `tests/test_type_a.py` pour la vérification exhaustive de
     la justesse de l'extraction elle-même — ce test-ci ne vérifie que le
     branchement dans l'API d'import."""
-    fixture_path = (
-        Path(__file__).resolve().parents[2]
-        / "fixtures"
-        / "cafe-brasserie-charting-export"
-        / "CaffeBrasseriecoloursymbols.pdf"
-    )
-    if not fixture_path.is_file():
-        pytest.skip(f"fixture manquante : {fixture_path}")
-
-    with fixture_path.open("rb") as handle:
-        response = client.post(
-            "/api/imports",
-            files={"file": ("CaffeBrasseriecoloursymbols.pdf", handle, "application/pdf")},
-        )
-    assert response.status_code == 200
-    job = _wait_for_detection(client, response.json()["id"], timeout=30.0)
+    job = _wait_for_detection(client, _upload_real_type_a_pdf(client)["id"], timeout=30.0)
 
     assert job["detecting"] is False
     assert job["detection"]["grid_type"] == "A"
@@ -382,3 +417,52 @@ def test_create_import_of_real_type_a_pdf_prefills_config_from_detection(
     # exploitable sans qu'aucune zone n'ait été peinte à la main.
     assert job["preview"] is not None
     assert job["preview"]["filled_count"] > 0
+
+
+def test_manual_config_started_before_detection_finishes_is_not_overwritten(
+    client: TestClient,
+) -> None:
+    """Bug réel trouvé en test manuel (Lot 4) : le message affiché pendant
+    l'analyse invite explicitement l'utilisateur à cadrer ou saisir les
+    dimensions à la main en attendant (`import.detection.running`). Si la
+    tâche de fond termine après coup, elle ne doit pas écraser cette saisie
+    en silence — sans quoi le client, qui a cessé d'appliquer les réponses
+    du serveur dès qu'il a détecté une modification manuelle
+    (`manualEditRef` côté frontend), renvoie ensuite ses propres dimensions
+    par-dessus une `detected_cells` désormais incohérente, plantant l'API
+    (voir `test_changing_dimensions_drops_a_now_mismatched_detected_base`).
+
+    Le minutage réel de la tâche de fond programmée par `POST /api/imports`
+    n'est pas garanti (ni par le serveur réel, ni par `TestClient`) : plutôt
+    que de deviner une fenêtre de course, ce test construit un job déjà
+    entièrement stabilisé (upload d'un PDF trivial, dont la détection se
+    termine quasi instantanément et ne modifie rien), y substitue le vrai
+    fichier de référence, corrige la configuration à la main, puis invoque
+    `_run_type_a_detection` directement — reproduisant exactement l'ordre
+    des opérations du bug sans dépendre d'aucun minutage."""
+    from app.api.imports import _run_type_a_detection
+    from app.config import get_settings
+
+    if not _TYPE_A_FIXTURE.is_file():
+        pytest.skip(f"fixture manquante : {_TYPE_A_FIXTURE}")
+
+    job = _upload_pdf(client)
+    job_id = job["id"]
+    _wait_for_detection(client, job_id)  # PDF trivial : rien à détecter, config reste vierge
+
+    source_path = get_settings().imports_dir / job_id / "source.pdf"
+    source_path.write_bytes(_TYPE_A_FIXTURE.read_bytes())
+
+    # L'utilisateur corrige à la main — l'équivalent de ce qu'il aurait tapé
+    # en attendant, s'il avait été plus rapide que l'analyse sur un vrai
+    # serveur.
+    client.patch(f"/api/imports/{job_id}/config", json={"columns": 92, "rows": 74})
+
+    _run_type_a_detection(job_id, source_path)
+
+    job = client.get(f"/api/imports/{job_id}").json()
+    assert "modifiée manuellement" in " ".join(job["detection"]["warnings"])
+    config = job["config"]
+    assert config["columns"] == 92  # jamais réécrasé par la détection
+    assert config["rows"] == 74
+    assert config["detected_cells"] is None  # jamais posée par-dessus une saisie déjà en cours
