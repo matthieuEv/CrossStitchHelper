@@ -1,13 +1,14 @@
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 
 /**
- * Zoomer/dézoomer à la molette ou au trackpad (défilement à deux doigts),
- * plutôt que seulement par les boutons +/- ou le pincement à deux doigts —
- * demande explicite de l'utilisateur, pas un critère du roadmap. Vérifié sur
- * les deux canvas concernés : le Suivi (`TrackScreen`) et le pinceau de
- * l'assistant d'import (`ImportGridPainter`), qui partagent le même geste
- * (`state/useTracker.ts` et `state/useImportPainter.ts`, toutes deux via
- * `zoomTo`).
+ * Zoomer/dézoomer à la molette ou au trackpad (défilement vertical, deltaY),
+ * et se déplacer horizontalement par glissé du trackpad (défilement
+ * horizontal, deltaX) — plutôt que seulement par les boutons +/-, le
+ * pincement à deux doigts ou le glissé à la souris, demandes explicites de
+ * l'utilisateur, pas un critère du roadmap. Vérifié sur les deux canvas
+ * concernés : le Suivi (`TrackScreen`) et le pinceau de l'assistant d'import
+ * (`ImportGridPainter`), qui partagent le même geste (`state/useTracker.ts`
+ * et `state/useImportPainter.ts`, toutes deux via `zoomTo`/`setOffset`).
  */
 
 interface PatternSummary {
@@ -59,6 +60,35 @@ test("la molette/le trackpad zoome le Suivi sous le curseur", async ({ page, req
   // `preventDefault()` sur l'écouteur natif, elle le ferait.
   const scrollY = await page.evaluate(() => window.scrollY);
   expect(scrollY).toBe(0);
+});
+
+test("le glissé horizontal du trackpad déplace la vue sans zoomer", async ({ page, request }) => {
+  const pattern = await fetchDemoPattern(request);
+  await page.goto("/");
+  await page.getByText(pattern.name).click();
+
+  const canvas = page.locator("canvas.track-canvas");
+  await expect(canvas).toBeVisible();
+  const box = await canvas.boundingBox();
+  if (box === null) throw new Error("Le canvas de suivi n'a pas de boîte englobante");
+  const center = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+
+  const column = async (): Promise<number> => {
+    const text = await page.getByText(/Colonne \d+/).textContent();
+    const match = text?.match(/Colonne (\d+)/);
+    if (match?.[1] === undefined) throw new Error(`Position introuvable dans : ${text}`);
+    return Number(match[1]);
+  };
+
+  const initialZoom = await zoomBadgeSize(page);
+  const initialColumn = await column();
+
+  await page.mouse.move(center.x, center.y);
+  await page.mouse.wheel(600, 0); // glissé horizontal, pas vertical
+  await expect.poll(column).toBeGreaterThan(initialColumn);
+
+  // Le zoom, lui, ne doit pas avoir bougé — seul deltaY zoome.
+  expect(await zoomBadgeSize(page)).toBe(initialZoom);
 });
 
 test("la molette/le trackpad zoome aussi le pinceau de l'assistant d'import", async ({ page }) => {

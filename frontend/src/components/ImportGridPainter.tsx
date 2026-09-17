@@ -51,14 +51,21 @@ export function ImportGridPainter({ painter, activeIndex }: ImportGridPainterPro
 
     const onWheel = (event: WheelEvent): void => {
       event.preventDefault();
-      const rect = canvas.getBoundingClientRect();
-      const factor = Math.pow(1.0015, -event.deltaY);
-      painter.zoomTo(view.cell * factor, event.clientX, event.clientY, rect);
+      // Glissé horizontal du trackpad : déplace la vue plutôt que de zoomer
+      // — voir TrackScreen.tsx pour le détail du même choix.
+      if (event.deltaX !== 0) {
+        painter.setOffset(view.x0 + event.deltaX / view.cell, view.y0);
+      }
+      if (event.deltaY !== 0) {
+        const rect = canvas.getBoundingClientRect();
+        const factor = Math.pow(1.0015, -event.deltaY);
+        painter.zoomTo(view.cell * factor, event.clientX, event.clientY, rect);
+      }
     };
 
     canvas.addEventListener("wheel", onWheel, { passive: false });
     return () => canvas.removeEventListener("wheel", onWheel);
-  }, [painter.zoomTo, view.cell]);
+  }, [painter.zoomTo, painter.setOffset, view.cell, view.x0]);
 
   const cellAt = useCallback(
     (event: ReactPointerEvent<HTMLCanvasElement>): CellPosition => {

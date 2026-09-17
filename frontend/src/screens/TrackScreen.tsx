@@ -103,18 +103,28 @@ export function TrackScreen({ tracker, wide, onBack }: TrackScreenProps) {
 
     const onWheel = (event: WheelEvent): void => {
       event.preventDefault();
-      const rect = canvas.getBoundingClientRect();
-      // Échelle exponentielle du facteur de zoom : une molette de souris
-      // envoie de grands pas discrets (~100 par cran), un trackpad de petits
-      // pas continus — proportionnel au delta, le ressenti reste fluide dans
-      // les deux cas, comme le pincement à deux doigts déjà en place.
-      const factor = Math.pow(1.0015, -event.deltaY);
-      tracker.zoomTo(view.cell * factor, event.clientX, event.clientY, rect);
+      // Glissé horizontal du trackpad (deltaX) : déplace la vue plutôt que
+      // de zoomer — demande explicite, distincte du défilement vertical
+      // (deltaY) qui zoome. Un geste en diagonale fait un peu des deux,
+      // indépendamment sur chaque axe.
+      if (event.deltaX !== 0) {
+        tracker.setOffset(view.x0 + event.deltaX / view.cell, view.y0);
+      }
+      if (event.deltaY !== 0) {
+        const rect = canvas.getBoundingClientRect();
+        // Échelle exponentielle du facteur de zoom : une molette de souris
+        // envoie de grands pas discrets (~100 par cran), un trackpad de
+        // petits pas continus — proportionnel au delta, le ressenti reste
+        // fluide dans les deux cas, comme le pincement à deux doigts déjà en
+        // place.
+        const factor = Math.pow(1.0015, -event.deltaY);
+        tracker.zoomTo(view.cell * factor, event.clientX, event.clientY, rect);
+      }
     };
 
     canvas.addEventListener("wheel", onWheel, { passive: false });
     return () => canvas.removeEventListener("wheel", onWheel);
-  }, [tracker.zoomTo, view.cell]);
+  }, [tracker.zoomTo, tracker.setOffset, view.cell, view.x0]);
 
   const cellAt = useCallback(
     (event: ReactPointerEvent<HTMLCanvasElement>): CellPosition => {
