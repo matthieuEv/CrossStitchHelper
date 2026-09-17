@@ -40,6 +40,15 @@ export interface ImportPainter {
   setOffset: (x0: number, y0: number) => void;
   zoomIn: () => void;
   zoomOut: () => void;
+  /** Comme `useTracker.zoomTo` : zoome vers `nextCell` en gardant le point du
+   * motif sous `(anchorScreenX, anchorScreenY)` ancré au même endroit — pour
+   * la molette/le trackpad plutôt que des boutons +/- centrés. */
+  zoomTo: (
+    nextCell: number,
+    anchorScreenX: number,
+    anchorScreenY: number,
+    canvasRect: Pick<DOMRect, "left" | "top">,
+  ) => void;
 
   cursor: CellPosition | null;
   setCursor: (cursor: CellPosition | null) => void;
@@ -97,6 +106,25 @@ export function useImportPainter(
     [],
   );
 
+  const zoomTo = useCallback(
+    (
+      nextCell: number,
+      anchorScreenX: number,
+      anchorScreenY: number,
+      canvasRect: Pick<DOMRect, "left" | "top">,
+    ) => {
+      const clampedCell = Math.max(MIN_CELL, Math.min(MAX_CELL, nextCell));
+      const anchorCellX = offset.x0 + (anchorScreenX - canvasRect.left) / cell;
+      const anchorCellY = offset.y0 + (anchorScreenY - canvasRect.top) / cell;
+      setCell(clampedCell);
+      setOffset(
+        anchorCellX - (anchorScreenX - canvasRect.left) / clampedCell,
+        anchorCellY - (anchorScreenY - canvasRect.top) / clampedCell,
+      );
+    },
+    [cell, offset, setOffset],
+  );
+
   const paint = useCallback(
     (paletteIndex: number) => {
       if (selection === null) return;
@@ -122,6 +150,7 @@ export function useImportPainter(
     setOffset,
     zoomIn,
     zoomOut,
+    zoomTo,
     cursor,
     setCursor,
     selection,
