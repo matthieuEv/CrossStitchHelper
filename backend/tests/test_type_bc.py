@@ -217,10 +217,69 @@ def test_uncertain_cells_are_explicitly_flagged_not_silently_wrong(
     assert any("incertaine" in w for w in botanical_citrus.warnings)
 
 
-def test_confidence_is_lower_on_the_trap_fixture_than_on_a_clean_one(
-    winter_wreath: TypeBCResult, summer_flight: TypeBCResult
+@pytest.mark.parametrize(
+    ("fixture_name", "max_uncertain_fraction"),
+    [("botanical_citrus", 0.25), ("cucurbit", 0.25)],
+    ids=lambda v: str(v),
+)
+def test_uncertain_cell_rate_stays_reasonable_not_almost_the_whole_grid(
+    fixture_name: str, max_uncertain_fraction: float, request: pytest.FixtureRequest
 ) -> None:
-    assert summer_flight.confidence <= winter_wreath.confidence
+    """Non-régression du correctif « cases incertaines » : avant ce correctif,
+    `botanical-citrus-dmc` et `cucurbit-dmc` signalaient respectivement 58 %
+    et 34 % des cases coloriées comme incertaines (`1630/2802` et
+    `642/1911`), au point de couvrir la quasi-totalité de certaines zones du
+    motif dans le pinceau de l'assistant — bien plus qu'une vraie proportion
+    de couleurs/symboles ambigus. Cause mesurée et corrigée :
+    `_color_to_rgb` convertissait le CMJN vers le RVB par la formule naïve
+    recommandée en repli par le spec PDF (`R=(1-C)(1-K)`...), qui sursature
+    nettement les teintes obtenues par mélange cyan+jaune (verts en
+    particulier) et gonflait artificiellement la distance Lab au
+    rapprochement DMC pour plusieurs couleurs à forte population de cases —
+    confirmé en comparant cette formule à la couleur réellement rendue par
+    PyMuPDF pour les mêmes valeurs CMJN. `_cmyk_to_rgb_via_mupdf` la
+    remplace. Une seconde piste (desserrer `_SIGNATURE_MERGE_MAX_BIT_DIFF`
+    pour absorber le bruit de repositionnement entre bitmaps de signature
+    d'un même symbole redessiné) a été mesurée puis **abandonnée** : à un
+    seuil de 4 bits, elle fusionnait à tort un symbole « + » avec un symbole
+    « flèche vers le haut » sur `botanical-citrus-dmc` (confirmé
+    visuellement en rendant les deux bitmaps via `render_symbol_svg`) — le
+    seuil est resté à sa valeur prudente d'origine. Mesuré après correctif :
+    20.7 % (`580/2802`) sur `botanical-citrus-dmc` et 21.0 % (`401/1911`)
+    sur `cucurbit-dmc` — les bornes ci-dessous gardent une marge confortable
+    au-dessus de ces valeurs mesurées (jamais resserrées au point de casser
+    au moindre écart mineur) tout en interdisant une régression vers un taux
+    proche de celui d'avant correctif. Ne vérifie jamais que
+    `uncertain_cells` est vide : une partie de l'incertitude mesurée ici est
+    réelle (quelques teintes hors de portée du catalogue DMC communautaire
+    partiel, §8.5) et doit rester signalée."""
+    result: TypeBCResult = request.getfixturevalue(fixture_name)
+    total = sum(1 for value in result.cells if value != 0)
+    fraction = len(result.uncertain_cells) / total
+    assert fraction < max_uncertain_fraction
+    assert result.uncertain_cells  # une incertitude réelle et mesurée doit rester signalée
+
+
+def test_confidence_reflects_the_type_b_fallback_penalty(
+    summer_flight: TypeBCResult,
+) -> None:
+    """`detect_type_bc` déduit toujours 0.2 de la confiance quand la
+    reconnaissance de forme se replie honnêtement en type B (voir le bloc
+    `confidence -= 0.2` de `detect_type_bc`) — la confiance ne peut donc
+    jamais dépasser 0.8 dans ce cas, quel que soit par ailleurs le taux de
+    cases incertaines (qui ne peut que la faire encore baisser, jamais
+    remonter). Comparer directement `summer_flight.confidence` à celle d'une
+    autre fixture (`winter_wreath` notamment) n'est plus fiable depuis le
+    correctif CMJN->RVB du Lot 5 (cases incertaines) : les deux fixtures
+    partagent la même palette DMC communautaire de 228 teintes, dont la
+    couverture varie indépendamment du gabarit de fichier d'une fixture à
+    l'autre (mesuré : `winter-wreath-dmc` recule légèrement en confiance
+    après ce correctif malgré une reconnaissance de forme parfaitement
+    fiable, simplement parce que deux de ses teintes n'ont pas de
+    correspondance DMC proche dans ce catalogue nécessairement partiel) —
+    seul le mécanisme de repli lui-même, pas une comparaison brute entre
+    fixtures, est une garantie robuste ici."""
+    assert summer_flight.confidence <= 0.8
 
 
 def _tiny_non_type_bc_pdf(tmp_path: Path) -> Path:

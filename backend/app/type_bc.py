@@ -29,10 +29,12 @@ from __future__ import annotations
 import statistics
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, Literal
 
 import pdfplumber
+import pymupdf
 from pdfplumber.page import Page
 
 from app.dmc_catalog import lab_distance, nearest_dmc, rgb_to_lab
@@ -98,7 +100,21 @@ _UNCERTAIN_COLOR_DISTANCE = 12.0
 _SIGNATURE_GRID = 6
 # Nombre de bits de différence toléré entre deux signatures pour les
 # considérer comme le même symbole redessiné (bruit d'arrondi), voir
-# `_merge_near_duplicate_signatures`.
+# `_merge_near_duplicate_signatures`. Une piste explorée pendant le
+# correctif « cases incertaines » du Lot 5 (élargir ce seuil de 3 à 4-6, sur
+# la foi d'un histogramme de distances par couleur qui semblait montrer deux
+# régimes bien séparés) a été abandonnée après vérification visuelle : sur
+# `botanical-citrus-dmc`, un seuil de 4 fusionne à tort un symbole « + » et
+# un symbole « flèche vers le haut » (confirmé en rendant les deux bitmaps
+# via `render_symbol_svg` — visuellement différents), qui ne partagent que 4
+# bits d'écart dans la grille de signature 6x6 malgré des formes distinctes.
+# L'écart mesuré entre bruit de repositionnement et vraie différence de
+# symbole n'est donc **pas** uniformément séparé sur tout le fichier — le
+# resserrer prendrait le risque de fusionner silencieusement deux symboles
+# réellement différents (règle impérative : jamais de case fausse cachée).
+# Valeur laissée à sa prudence d'origine ; la baisse mesurée du taux de
+# cases incertaines vient entièrement du correctif de conversion CMJN->RVB
+# ci-dessous (`_cmyk_to_rgb_via_mupdf`), voir `backend/tests/test_type_bc.py`.
 _SIGNATURE_MERGE_MAX_BIT_DIFF = 3
 # Nombre de regroupements distincts / nombre de cases coloriées au-delà
 # duquel la reconnaissance de forme est jugée trop peu fiable pour tout le
@@ -602,13 +618,37 @@ def _normalize_color(raw: Any) -> Color:
     return (0.0, 0.0, 0.0)
 
 
+@lru_cache(maxsize=4096)
+def _cmyk_to_rgb_via_mupdf(cmyk: tuple[float, float, float, float]) -> tuple[float, float, float]:
+    """Convertit du CMJN vers du RVB via la conversion colorimétrique de
+    PyMuPDF (déjà une dépendance du projet, §7.2 du cahier des charges) au
+    lieu de la formule naïve `R=(1-C)(1-K)` recommandée en repli par la
+    spécification PDF. Mesuré (Lot 5, correctif cases incertaines) : sur les
+    grilles vectorielles DMC, une bonne partie des remplissages sont en CMJN,
+    et la formule naïve sursature nettement les teintes obtenues par mélange
+    cyan+jaune (verts en particulier) — jusqu'à ~25 points de distance Lab
+    d'écart avec la couleur réellement rendue pour une même teinte, largement
+    au-dessus de `_UNCERTAIN_COLOR_DISTANCE`, ce qui faisait basculer à tort
+    la quasi-totalité des cases d'une couleur en incertaines au rapprochement
+    DMC (confirmé en comparant les deux formules à la couleur réellement
+    rendue par PyMuPDF sur `botanical-citrus-dmc` et `cucurbit-dmc`). Mis en
+    cache : le nombre de teintes CMJN distinctes par fichier est de l'ordre
+    de la dizaine, très inférieur au nombre de cases."""
+    c, m, y, k = (max(0.0, min(1.0, v)) for v in cmyk)
+    samples = bytes([round(c * 255), round(m * 255), round(y * 255), round(k * 255)])
+    pixmap_cmyk = pymupdf.Pixmap(pymupdf.csCMYK, 1, 1, samples, False)  # type: ignore[no-untyped-call]
+    pixmap_rgb = pymupdf.Pixmap(pymupdf.csRGB, pixmap_cmyk)  # type: ignore[no-untyped-call]
+    r, g, b = pixmap_rgb.pixel(0, 0)[:3]  # type: ignore[no-untyped-call]
+    return r / 255, g / 255, b / 255
+
+
 def _color_to_rgb(color: Color) -> tuple[float, float, float]:
     """Convertit une couleur normalisée (RVB, CMJN ou gris) en RVB 0-1."""
     if len(color) == 3:
         return color[0], color[1], color[2]
     if len(color) == 4:
         c, m, y, k = color
-        return (1 - c) * (1 - k), (1 - m) * (1 - k), (1 - y) * (1 - k)
+        return _cmyk_to_rgb_via_mupdf((c, m, y, k))
     if len(color) == 1:
         v = color[0]
         return v, v, v
