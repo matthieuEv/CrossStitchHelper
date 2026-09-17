@@ -36,6 +36,7 @@ from typing import Any, Literal
 import pdfplumber
 import pymupdf
 from pdfplumber.page import Page
+from PIL import Image
 
 from app.dmc_catalog import lab_distance, nearest_dmc, rgb_to_lab
 from app.type_a import SymbolGlyphLocation, detect_type_a
@@ -96,33 +97,154 @@ _COLOR_MERGE_LAB_EPSILON = 2.5
 # Au-delà de cette distance Lab, le rapprochement DMC le plus proche est
 # jugé douteux et signalé (cahier des charges §8.5).
 _UNCERTAIN_COLOR_DISTANCE = 12.0
-# Résolution de la signature de forme (grille N x N par case).
-_SIGNATURE_GRID = 6
-# Nombre de bits de différence toléré entre deux signatures pour les
-# considérer comme le même symbole redessiné (bruit d'arrondi), voir
-# `_merge_near_duplicate_signatures`. Une piste explorée pendant le
-# correctif « cases incertaines » du Lot 5 (élargir ce seuil de 3 à 4-6, sur
-# la foi d'un histogramme de distances par couleur qui semblait montrer deux
-# régimes bien séparés) a été abandonnée après vérification visuelle : sur
-# `botanical-citrus-dmc`, un seuil de 4 fusionne à tort un symbole « + » et
-# un symbole « flèche vers le haut » (confirmé en rendant les deux bitmaps
-# via `render_symbol_svg` — visuellement différents), qui ne partagent que 4
-# bits d'écart dans la grille de signature 6x6 malgré des formes distinctes.
-# L'écart mesuré entre bruit de repositionnement et vraie différence de
-# symbole n'est donc **pas** uniformément séparé sur tout le fichier — le
-# resserrer prendrait le risque de fusionner silencieusement deux symboles
-# réellement différents (règle impérative : jamais de case fausse cachée).
-# Valeur laissée à sa prudence d'origine ; la baisse mesurée du taux de
-# cases incertaines vient entièrement du correctif de conversion CMJN->RVB
-# ci-dessous (`_cmyk_to_rgb_via_mupdf`), voir `backend/tests/test_type_bc.py`.
-_SIGNATURE_MERGE_MAX_BIT_DIFF = 3
+# Correctif « cases incertaines » du Lot 5 (suite) : une première piste
+# (desserrer un seuil de différence de bits sur l'ancien bitmap grossier
+# 6x6, construit à partir des quelques points de tracé vectoriel de chaque
+# case, de 3 à 4-6) avait été abandonnée après vérification visuelle sur
+# `botanical-citrus-dmc` — à 4 bits d'écart, elle fusionnait à tort un
+# symbole « + » et un symbole « flèche vers le haut ». Un second diagnostic,
+# plus poussé, a montré pourquoi aucun seuil global sur ce bitmap ne
+# pouvait marcher : sur `cucurbit-dmc`, des cases portant des symboles
+# réellement différents (un rond, une flèche, une croix — confirmé en
+# rendant les cases via `render_symbol_svg`) pouvaient tomber sur le
+# *même* bitmap 6x6 (aliasing pur, faute de résolution avec seulement 4 à 6
+# points de tracé source par case) — un problème d'identité dès le
+# regroupement exact initial, pas seulement de tolérance de fusion.
+#
+# `_build_symbol_signatures` construit donc désormais l'empreinte de chaque
+# case (`_raster_fingerprint`) à partir du rendu raster réel de la page de
+# symboles (page rendue une seule fois par fichier via PyMuPDF, cf.
+# `_render_symbol_page_gray`) plutôt que des points de tracé vectoriels —
+# ~256 pixels par case contre ~4-6 points, un risque d'aliasing bien plus
+# faible. `_merge_near_duplicate_signatures` compare ensuite ces empreintes
+# avec une tolérance de petit décalage de quelques pixels (le bruit de
+# redessin observé est bien une translation, pas un changement de forme) et
+# un garde-fou supplémentaire sur l'aire d'encre (une vraie différence de
+# forme, même à faible distance de recouvrement post-décalage, change
+# presque toujours la quantité d'encre — utile par exemple contre un
+# symbole qui serait un sous-ensemble strict d'un autre). Seuils mesurés sur
+# les 4 fixtures DMC (voir `backend/tests/test_type_bc.py`) avant d'être
+# fixés, jamais devinés — voir le détail sous chaque seuil ci-dessous.
+#
+# Troisième diagnostic (régression `winter-wreath-dmc`, 22 % -> 35 % de
+# cases incertaines après le passage au rendu raster) : rendu visuel
+# (`render_symbol_svg`) de plusieurs cases d'une même couleur canonique
+# (vert olive) réparties sur toute la grille, pas seulement près de
+# l'origine — deux cases portant le même symbole (une barre diagonale)
+# tombaient dans deux regroupements différents. La différence n'était pas
+# un fragment de la case voisine (hypothèse initiale) mais **un trait de
+# quadrillage majeur** (une ligne « décade », tracée tous les 10 cases,
+# bien plus épaisse que le quadrillage mineur — mesuré directement sur les
+# `lines` vectorielles de la page : ~0.13-0.27 pt pour le quadrillage
+# mineur contre jusqu'à 1.07-1.34 pt pour les lignes décade, soit jusqu'à
+# ~6 px de large une fois rendu au zoom utilisé ici). Avec l'ancienne marge
+# de 4 px, les cases adjacentes à une ligne décade gardaient un fragment de
+# cette ligne épaisse dans leur recadrage — et seulement elles, ce qui
+# explique pourquoi seule une fraction des cases d'une même couleur
+# basculait dans un second regroupement (confirmé : les positions de grille
+# des cases mal groupées se concentrent near des colonnes/lignes multiples
+# de 10, pas uniformément sur la grille comme l'aurait produit une imprécision
+# de recalage systématique).
+#
+# `river-and-mountains-laserarts` mis à part (type E, jamais éligible ici),
+# les pages symboles de `botanical-citrus-dmc` et `cucurbit-dmc` portent
+# elles aussi des lignes de ~6 px de large au même zoom, mais en bien plus
+# petit nombre (quelques dizaines, probablement le rectangle de bordure et
+# quelques repères, pas un quadrillage décade complet superposé à toute la
+# grille comme sur `winter-wreath-dmc`) — ce qui explique qu'elles n'aient
+# jamais montré ce symptôme avant que `winter-wreath-dmc` ne soit mesuré
+# spécifiquement.
+#
+# `_RASTER_CORE_MARGIN_PX` a donc été élargie de 4 à 5 px et mesurée sur les
+# 4 fixtures DMC de référence (jamais seulement sur celle qui régressait,
+# cf. `CLAUDE.md`) : le taux de cases incertaines de `winter-wreath-dmc`
+# tombe à 17.7 % (611/3460), sous son taux d'avant même le passage au rendu
+# raster (~22 %), tandis que `botanical-citrus-dmc` (0.8 %) et
+# `cucurbit-dmc` (3.7 %) restent identiques à leur valeur mesurée à 4 px —
+# voir `backend/tests/test_type_bc.py`. Un balayage plus large (5 à 10 px)
+# montre un comportement non monotone au-delà de 6 px (la résolution utile
+# commence à se dégrader : `cucurbit-dmc` remonte à 17.7 % d'incertaines à
+# 8 px) — 5 px est la valeur la plus basse qui élimine la contamination
+# mesurée sur `winter-wreath-dmc`, jamais desserrée au-delà de ce qui est
+# nécessaire. Le reliquat de cases incertaines sur `winter-wreath-dmc` après
+# ce correctif (611 cases) vient très majoritairement (592/611, mesuré) de
+# deux teintes sans correspondance DMC proche dans le catalogue communautaire
+# partiel (§8.5) — une incertitude réelle et déjà attendue, indépendante de
+# la reconnaissance de forme, jamais quelque chose que ce correctif doit ou
+# peut faire disparaître.
+_RASTER_CELL_PX = 24
+"""Résolution du rendu de la page de symboles : pixels par case (zoom non
+uniforme si le pas n'est pas parfaitement carré, cf. `_render_symbol_page_gray`).
+Assez fin pour distinguer des formes de quelques pixels de large, sans
+gonfler inutilement le temps de rendu d'une page entière."""
+_RASTER_CORE_MARGIN_PX = 5
+"""Marge retirée de chaque côté de la case avant comparaison — exclut le
+quadrillage imprimé, qui longe exactement la frontière de case et
+fausserait sinon toute comparaison de recouvrement (mesuré : sans cette
+marge, la quasi-totalité des cases d'un même fichier se ressemblent à
+cause du quadrillage commun, pas du symbole).
+
+Élargie de 4 à 5 px (Lot 5, troisième correctif « cases incertaines »,
+régression `winter-wreath-dmc`) : à 4 px, les cases adjacentes à une ligne
+de quadrillage « décade » (tracée tous les 10 cases, bien plus épaisse que
+le quadrillage mineur — jusqu'à ~6 px de large une fois rendue) gardaient
+un fragment de cette ligne dans leur recadrage, ce qui faisait dériver leur
+empreinte raster et cassait le regroupement de symboles pourtant
+identiques. Voir le commentaire détaillé au-dessus de `_RASTER_CELL_PX`
+pour le diagnostic complet et les mesures sur les 4 fixtures DMC."""
+_RASTER_SHIFT_TOLERANCE_PX = 4
+"""Décalage maximal (en pixels, dans chaque direction) toléré pour aligner
+deux cases avant de les comparer — absorbe le bruit de sous-position
+observé (redessin légèrement décalé du même symbole), mesuré suffisant sur
+les 4 fixtures DMC de référence sans avoir besoin d'être élargi davantage
+(le desserrer ne réduit plus la distance mesurée sur les cas de test au-delà
+de ce seuil, cf. rapport de tâche)."""
+_RASTER_INK_DELTA = 40
+"""Un pixel est considéré comme de l'encre s'il est au moins ce nombre de
+niveaux de gris plus sombre que la couleur dominante (le fond) de la case —
+jamais un seuil de luminosité absolu : la couleur de fond d'une case type
+B/C n'est pas toujours blanche (page couleur+symboles combinée, cas
+`winter-wreath-dmc`), un seuil absolu classerait alors tout l'aplat de
+couleur comme « encre » et ferait strictement tout fusionner (mesuré :
+52 fusions erronées sur `winter-wreath-dmc` avec un seuil absolu, contre 3
+avec ce seuil relatif à la couleur dominante locale)."""
+_RASTER_MERGE_MAX_JACCARD = 0.40
+"""Distance de Jaccard (1 - aire d'intersection / aire d'union, meilleur
+décalage toléré) en dessous de laquelle deux cases sont regroupées. Mesuré
+sur `cucurbit-dmc` (positions de grille (24,29)/(22,31)/(23,29)/(21,31), le
+même rond redessiné) : distance maximale 0.369 entre les 4 cases. Mesuré sur
+`botanical-citrus-dmc` (« + » contre flèche) : 0.475. Seuil placé à mi-chemin
+avec une marge confortable des deux côtés — jamais resserré au point de
+casser au moindre écart mineur, jamais desserré au point d'engloutir la
+paire « + »/flèche."""
+_RASTER_MERGE_MIN_AREA_RATIO = 0.75
+"""Ratio (aire d'encre la plus petite / la plus grande) en dessous duquel
+deux cases ne sont jamais regroupées, même à faible distance de Jaccard —
+garde-fou indépendant contre un vrai symbole qui serait un sous-ensemble
+strict d'un autre (un trait simple contenu dans un symbole plus riche, par
+exemple) : ce cas de figure peut faire chuter la distance de Jaccard sans
+que les deux formes soient réellement identiques, la distance de Jaccard
+seule ne suffit donc pas toujours. Sur les 4 fixtures DMC de référence, les
+regroupements réellement effectués ont tous un ratio d'aire d'au moins
+0.938 (paire « + »/flèche de `botanical-citrus-dmc`, qui elle reste
+distincte grâce à la distance de Jaccard, pas à ce garde-fou) à 0.943 (rond
+redessiné de `cucurbit-dmc`, qui lui fusionne) — ce seuil n'est donc jamais
+le facteur déterminant sur ces quatre fichiers précis, mais reste une
+protection mesurée comme peu coûteuse (elle ne bloque aucun regroupement
+correct observé) contre un cas non couvert par ces fixtures."""
 # Nombre de regroupements distincts / nombre de cases coloriées au-delà
 # duquel la reconnaissance de forme est jugée trop peu fiable pour tout le
-# fichier (repli en type B) — mesuré très bas (0.005-0.012) sur les trois
-# fixtures DMC à reconnaissance fiable contre ~0.9 sur le cas piège
-# `summer-flight-dmc` (illustration richement nuancée, §4.3) : large marge
-# entre les deux régimes observés.
-_MAX_SIGNATURE_FRAGMENTATION = 0.3
+# fichier (repli en type B). Mesuré avec l'empreinte raster (voir plus haut) :
+# 0.006-0.014 sur les trois fixtures DMC à reconnaissance fiable contre
+# 0.290 sur le cas piège `summer-flight-dmc` (illustration richement
+# nuancée, §4.3) — grande marge entre les deux régimes, mais nettement plus
+# bas qu'avec l'ancien bitmap vectoriel (où le même cas piège atteignait
+# ~0.9) : l'empreinte raster, beaucoup moins bruitée, regroupe aussi mieux
+# les fragments de l'illustration nuancée de `summer-flight-dmc` sans pour
+# autant les rendre fiables (194 regroupements distincts sur 668 cases
+# coloriées reste bien plus qu'un catalogue de symboles plausible) — ce
+# seuil a donc dû être resserré en conséquence, pas seulement recopié.
+_MAX_SIGNATURE_FRAGMENTATION = 0.1
 
 
 @dataclass
@@ -237,7 +359,7 @@ def detect_type_bc(pdf_path: Path) -> TypeBCResult | None:
                     symbol_page, grid
                 )
                 cell_signature, representative_bbox = _build_symbol_signatures(
-                    symbol_page, sym_grid, set(cell_color_id)
+                    symbol_page, sym_grid, set(cell_color_id), pdf_path
                 )
                 if not any(cell_signature.values()):
                     # Densité mesurée suffisante mais aucune forme exploitable
@@ -812,17 +934,38 @@ def _build_symbol_signatures(
     symbol_page: _PageInfo,
     sym_grid: _GridGeometry,
     colored_cells: set[tuple[int, int]],
+    pdf_path: Path,
 ) -> tuple[dict[tuple[int, int], int], dict[int, Bbox]]:
-    """Signature de forme par case (bitmap `_SIGNATURE_GRID` x
-    `_SIGNATURE_GRID`, un bit par cellule occupée par un point de tracé,
-    invariant par translation puisque normalisé sur l'origine de *la case*
-    plutôt que sur le tracé lui-même) — permet de regrouper les cases
-    portant le même symbole sans connaître à l'avance le catalogue de
-    symboles possibles (règle impérative : jamais de liste de symboles figée
-    en dur, cf. Lot 4). Index spatial par case avant tout regroupement
-    (comme `_build_rect_index` de `app/type_a.py`) : indispensable ici aussi
-    — `summer-flight-dmc` porte plus de 10 000 rectangles et 2 000 tracés
-    par page, une comparaison naïve tracé x case serait bien trop lente.
+    """Signature de forme par case : une empreinte issue du rendu raster
+    réel de la case (voir `_raster_fingerprint`), jamais d'un bitmap dérivé
+    des points de tracé vectoriels — permet de regrouper les cases portant
+    le même symbole sans connaître à l'avance le catalogue de symboles
+    possibles (règle impérative : jamais de liste de symboles figée en dur,
+    cf. Lot 4).
+
+    Une première version de ce module dérivait cette empreinte d'un bitmap
+    grossier (grille 6x6) construit directement à partir des quelques points
+    de tracé vectoriels de la case. Diagnostic (Lot 5, second correctif
+    « cases incertaines ») : sur `cucurbit-dmc`, ce bitmap grossier
+    *aliasait* parfois des symboles réellement différents (confirmé
+    visuellement via `render_symbol_svg` : un rond, une flèche et une croix
+    partageaient le même bitmap 6x6, faute de résolution suffisante avec
+    aussi peu de points source) — un problème d'*identité* dès le
+    regroupement exact initial, en amont de toute tolérance de fusion.
+    Utiliser directement le rendu raster (bien plus riche : ~256 pixels
+    contre ~4-6 points vectoriels par case) élimine ce risque d'aliasing à
+    la source.
+
+    Les tracés vectoriels (rectangles/courbes/lignes hors quadrillage)
+    restent utilisés, mais seulement pour deux choses indépendantes de la
+    forme exacte : détecter *si* une case porte un symbole (case vide vs
+    case marquée) et fournir la bbox réelle affichée par l'assistant
+    (`SymbolGlyphLocation`, coordonnées PDF précises, plus fidèles qu'un
+    recadrage dérivé du rendu raster). Index spatial par case avant tout
+    traitement (comme `_build_rect_index` de `app/type_a.py`) : indispensable
+    ici aussi — `summer-flight-dmc` porte plus de 10 000 rectangles et 2 000
+    tracés par page, une comparaison naïve tracé x case serait bien trop
+    lente.
 
     `sym_grid` est la géométrie déjà recalée sur `symbol_page` (voir
     `_symbol_grid_for` et son site d'appel) — jamais recalculée ici, pour
@@ -842,58 +985,219 @@ def _build_symbol_signatures(
             continue
         _bucket_object(line, sym_grid, buckets)
 
-    signatures: dict[tuple[int, int], int] = {}
-    representative_bbox: dict[int, Bbox] = {}
+    # Bbox vectorielle des cases marquées (coordonnées PDF, pour
+    # `SymbolGlyphLocation`) — sert aussi de test de présence (case vide vs
+    # marquée), indépendant de l'identité exacte de la forme.
+    vector_bbox: dict[tuple[int, int], Bbox] = {}
     for pos in colored_cells:
         objs = buckets.get(pos)
         if not objs:
-            signatures[pos] = 0
             continue
-        origin_x, origin_top = sym_grid.cell_origin(*pos)
-        bitmap = 0
         xs: list[float] = []
         ys: list[float] = []
         for obj in objs:
             for px, py in obj.get("pts") or ():
                 xs.append(px)
                 ys.append(py)
-                nx = (px - origin_x) / sym_grid.pitch_x
-                ny = (py - origin_top) / sym_grid.pitch_y
-                if not (0.0 <= nx <= 1.0 and 0.0 <= ny <= 1.0):
-                    continue
-                ix = min(_SIGNATURE_GRID - 1, max(0, int(nx * _SIGNATURE_GRID)))
-                iy = min(_SIGNATURE_GRID - 1, max(0, int(ny * _SIGNATURE_GRID)))
-                bitmap |= 1 << (iy * _SIGNATURE_GRID + ix)
-        signatures[pos] = bitmap
-        if bitmap != 0 and bitmap not in representative_bbox and xs and ys:
-            representative_bbox[bitmap] = (min(xs), min(ys), max(xs), max(ys))
+        if xs and ys:
+            vector_bbox[pos] = (min(xs), min(ys), max(xs), max(ys))
 
-    return _merge_near_duplicate_signatures(signatures, representative_bbox)
+    if not vector_bbox:
+        return {pos: 0 for pos in colored_cells}, {}
+
+    gray, origin_px, origin_py = _render_symbol_page_gray(pdf_path, symbol_page.index + 1, sym_grid)
+
+    signatures: dict[tuple[int, int], int] = {}
+    representative_bbox: dict[int, Bbox] = {}
+    representative_pos: dict[int, tuple[int, int]] = {}
+    for pos in colored_cells:
+        if pos not in vector_bbox:
+            signatures[pos] = 0
+            continue
+        fingerprint = _raster_fingerprint(gray, origin_px, origin_py, pos)
+        signatures[pos] = fingerprint
+        if fingerprint != 0 and fingerprint not in representative_bbox:
+            representative_bbox[fingerprint] = vector_bbox[pos]
+            representative_pos[fingerprint] = pos
+
+    return _merge_near_duplicate_signatures(
+        signatures, representative_bbox, representative_pos, gray, origin_px, origin_py
+    )
+
+
+def _render_symbol_page_gray(
+    pdf_path: Path, page_number: int, sym_grid: _GridGeometry
+) -> tuple[Image.Image, int, int]:
+    """Rend toute la page de symboles en niveaux de gris, une seule fois par
+    fichier, à une résolution où chaque case de `sym_grid` occupe exactement
+    `_RASTER_CELL_PX` x `_RASTER_CELL_PX` pixels (zoom non uniforme si le pas
+    n'est pas parfaitement carré). Rendre la page entière plutôt qu'un
+    fragment par case est indispensable pour rester dans le budget de temps
+    (cahier des charges §10) : `_merge_near_duplicate_signatures` ne compare
+    ensuite que les quelques dizaines de bitmaps *distincts* observés dans le
+    fichier, jamais chacune des cases coloriées (qui peuvent se compter en
+    milliers)."""
+    zoom_x = _RASTER_CELL_PX / sym_grid.pitch_x
+    zoom_y = _RASTER_CELL_PX / sym_grid.pitch_y
+    matrix = pymupdf.Matrix(zoom_x, zoom_y)  # type: ignore[no-untyped-call]
+    with pymupdf.open(pdf_path) as doc:  # type: ignore[no-untyped-call]
+        page = doc[page_number - 1]
+        pixmap = page.get_pixmap(matrix=matrix, alpha=False)
+        image = Image.frombytes("RGB", (pixmap.width, pixmap.height), pixmap.samples).convert("L")
+    origin_px = round(sym_grid.origin_x * zoom_x)
+    origin_py = round(sym_grid.origin_top * zoom_y)
+    return image, origin_px, origin_py
+
+
+def _cell_ink_grid(
+    gray: Image.Image,
+    origin_px: int,
+    origin_py: int,
+    pos: tuple[int, int],
+    pad: int,
+) -> list[list[int]]:
+    """Grille d'encre binaire (0/1) pour la case `pos`, recadrée avec une
+    marge de `_RASTER_CORE_MARGIN_PX` (exclut le quadrillage imprimé, cf.
+    `_RASTER_CORE_MARGIN_PX`) et un supplément `pad` de chaque côté pour
+    permettre la recherche de décalage (`_best_shifted_jaccard_distance`).
+    Les pixels hors de l'image (case près du bord de page) valent blanc,
+    jamais noir : `Image.crop` remplirait sinon la zone hors bornes en noir,
+    ce qui ferait passer un simple bord de page pour de l'encre.
+
+    Seuil d'encre relatif à la couleur dominante *de cette case précise*
+    (`_RASTER_INK_DELTA`), jamais un seuil de luminosité absolu — voir sa
+    docstring pour la raison (page couleur+symboles combinée où le fond
+    n'est pas blanc, cas `winter-wreath-dmc`)."""
+    row0, col0 = pos
+    width, height = gray.size
+    x0 = origin_px + col0 * _RASTER_CELL_PX + _RASTER_CORE_MARGIN_PX - pad
+    y0 = origin_py + row0 * _RASTER_CELL_PX + _RASTER_CORE_MARGIN_PX - pad
+    size = (_RASTER_CELL_PX - 2 * _RASTER_CORE_MARGIN_PX) + 2 * pad
+    pixels = gray.load()
+    assert pixels is not None
+    values: list[list[int]] = [[255] * size for _ in range(size)]
+    for y in range(size):
+        py = y0 + y
+        if not (0 <= py < height):
+            continue
+        for x in range(size):
+            px = x0 + x
+            if 0 <= px < width:
+                # Image en mode "L" (niveaux de gris) : la valeur est
+                # toujours un entier malgré le type large des stubs PIL
+                # (partagé avec les tuples RVB des autres modes).
+                values[y][x] = int(pixels[px, py])  # type: ignore[arg-type]
+    background = Counter(v for row in values for v in row).most_common(1)[0][0]
+    return [[1 if background - v >= _RASTER_INK_DELTA else 0 for v in row] for row in values]
+
+
+def _raster_fingerprint(
+    gray: Image.Image, origin_px: int, origin_py: int, pos: tuple[int, int]
+) -> int:
+    """Empreinte entière (un bit par pixel d'encre) du rendu raster réel
+    d'une case, sans marge de décalage — clé de regroupement exact utilisée
+    par `_build_symbol_signatures` (deux cases dont le rendu est identique
+    au pixel près obtiennent la même empreinte). Bien plus fin que l'ancien
+    bitmap 6x6 dérivé des points de tracé (voir la docstring de
+    `_build_symbol_signatures`), donc beaucoup moins sujet à l'aliasing de
+    deux symboles réellement différents sur la même empreinte."""
+    grid = _cell_ink_grid(gray, origin_px, origin_py, pos, 0)
+    fingerprint = 0
+    bit = 0
+    for row in grid:
+        for value in row:
+            if value:
+                fingerprint |= 1 << bit
+            bit += 1
+    return fingerprint
+
+
+def _best_shifted_jaccard_distance(
+    core: list[list[int]], padded: list[list[int]], max_shift: int
+) -> float:
+    """Distance de Jaccard entre `core` (case de référence, sans marge
+    supplémentaire) et `padded` (même case comparée, avec `max_shift` pixels
+    de marge de chaque côté), en essayant tous les petits décalages dans
+    cette marge et en gardant le meilleur (le plus petit) — absorbe le bruit
+    de sous-position d'un symbole redessiné (voir `_RASTER_SHIFT_TOLERANCE_PX`).
+    `core` et `padded` sont déjà des grilles 0/1 (`_cell_ink_grid`)."""
+    h, w = len(core), len(core[0])
+    best = 1.0
+    for dy in range(-max_shift, max_shift + 1):
+        for dx in range(-max_shift, max_shift + 1):
+            intersection = 0
+            union = 0
+            for y in range(h):
+                padded_row = padded[y + max_shift + dy]
+                core_row = core[y]
+                for x in range(w):
+                    a = core_row[x]
+                    b = padded_row[x + max_shift + dx]
+                    if a or b:
+                        union += 1
+                        if a and b:
+                            intersection += 1
+            distance = 0.0 if union == 0 else 1 - intersection / union
+            if distance < best:
+                best = distance
+    return best
 
 
 def _merge_near_duplicate_signatures(
-    signatures: dict[tuple[int, int], int], representative_bbox: dict[int, Bbox]
+    signatures: dict[tuple[int, int], int],
+    representative_bbox: dict[int, Bbox],
+    representative_pos: dict[int, tuple[int, int]],
+    gray: Image.Image,
+    origin_px: int,
+    origin_py: int,
 ) -> tuple[dict[tuple[int, int], int], dict[int, Bbox]]:
-    """Fusionne les signatures qui ne diffèrent que de quelques bits
-    (`_SIGNATURE_MERGE_MAX_BIT_DIFF`) — le même symbole, redessiné à
-    plusieurs endroits, tombe rarement sur un bitmap strictement identique
-    (léger bruit d'arrondi au moment de la normalisation par case). Fusion
-    gloutonne, du bitmap le plus fréquent au moins fréquent, jamais entre
-    deux bitmaps déjà fréquents l'un et l'autre (signe de deux symboles
-    réellement distincts plutôt que d'une variante bruitée d'un seul)."""
+    """Fusionne les empreintes qui représentent le même symbole redessiné à
+    un léger décalage près (bruit de sous-position), en comparant le rendu
+    raster réel des cases avec une petite tolérance de décalage — voir la
+    docstring de `_RASTER_MERGE_MAX_JACCARD` et consorts pour le diagnostic
+    complet qui a mené à ces seuils. Fusion gloutonne, de l'empreinte la plus
+    fréquente à la moins fréquente, jamais entre deux empreintes déjà
+    fréquentes l'une et l'autre (signe de deux symboles réellement distincts
+    plutôt que d'une variante bruitée d'un seul). `gray`/`origin_px`/
+    `origin_py` sont le rendu déjà produit par `_build_symbol_signatures`
+    (`_render_symbol_page_gray`) — jamais recalculés ici, un rendu de page
+    entière par fichier suffit (cahier des charges §10)."""
     counts = Counter(signatures.values())
-    # Le bitmap 0 (aucune encre détectée) n'est jamais fusionné avec un
+    # L'empreinte 0 (aucune encre détectée) n'est jamais fusionnée avec un
     # symbole réel : un vrai symbole absent est une information en soi, pas
     # un bruit d'un symbole présent.
     ordered = sorted((b for b in counts if b != 0), key=lambda b: -counts[b])
-    canonical: list[int] = []
     remap: dict[int, int] = {0: 0}
+    if not ordered:
+        return dict(signatures), {}
+
+    core_of = {
+        b: _cell_ink_grid(gray, origin_px, origin_py, representative_pos[b], 0) for b in ordered
+    }
+    padded_of = {
+        b: _cell_ink_grid(
+            gray, origin_px, origin_py, representative_pos[b], _RASTER_SHIFT_TOLERANCE_PX
+        )
+        for b in ordered
+    }
+    area_of = {b: sum(sum(row) for row in core_of[b]) for b in ordered}
+
+    canonical: list[int] = []
     for bitmap in ordered:
         merged_into: int | None = None
         for existing in canonical:
             if counts[existing] < counts[bitmap]:
                 continue
-            if bin(bitmap ^ existing).count("1") <= _SIGNATURE_MERGE_MAX_BIT_DIFF:
+            area_a, area_b = area_of[bitmap], area_of[existing]
+            if area_a == 0 or area_b == 0:
+                continue
+            area_ratio = min(area_a, area_b) / max(area_a, area_b)
+            if area_ratio < _RASTER_MERGE_MIN_AREA_RATIO:
+                continue
+            distance = _best_shifted_jaccard_distance(
+                core_of[bitmap], padded_of[existing], _RASTER_SHIFT_TOLERANCE_PX
+            )
+            if distance <= _RASTER_MERGE_MAX_JACCARD:
                 merged_into = existing
                 break
         if merged_into is None:

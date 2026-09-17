@@ -219,45 +219,161 @@ def test_uncertain_cells_are_explicitly_flagged_not_silently_wrong(
 
 @pytest.mark.parametrize(
     ("fixture_name", "max_uncertain_fraction"),
-    [("botanical_citrus", 0.25), ("cucurbit", 0.25)],
+    [("botanical_citrus", 0.05), ("cucurbit", 0.10), ("winter_wreath", 0.25)],
     ids=lambda v: str(v),
 )
 def test_uncertain_cell_rate_stays_reasonable_not_almost_the_whole_grid(
     fixture_name: str, max_uncertain_fraction: float, request: pytest.FixtureRequest
 ) -> None:
-    """Non-régression du correctif « cases incertaines » : avant ce correctif,
-    `botanical-citrus-dmc` et `cucurbit-dmc` signalaient respectivement 58 %
-    et 34 % des cases coloriées comme incertaines (`1630/2802` et
-    `642/1911`), au point de couvrir la quasi-totalité de certaines zones du
-    motif dans le pinceau de l'assistant — bien plus qu'une vraie proportion
-    de couleurs/symboles ambigus. Cause mesurée et corrigée :
-    `_color_to_rgb` convertissait le CMJN vers le RVB par la formule naïve
-    recommandée en repli par le spec PDF (`R=(1-C)(1-K)`...), qui sursature
-    nettement les teintes obtenues par mélange cyan+jaune (verts en
-    particulier) et gonflait artificiellement la distance Lab au
-    rapprochement DMC pour plusieurs couleurs à forte population de cases —
-    confirmé en comparant cette formule à la couleur réellement rendue par
-    PyMuPDF pour les mêmes valeurs CMJN. `_cmyk_to_rgb_via_mupdf` la
-    remplace. Une seconde piste (desserrer `_SIGNATURE_MERGE_MAX_BIT_DIFF`
-    pour absorber le bruit de repositionnement entre bitmaps de signature
-    d'un même symbole redessiné) a été mesurée puis **abandonnée** : à un
-    seuil de 4 bits, elle fusionnait à tort un symbole « + » avec un symbole
-    « flèche vers le haut » sur `botanical-citrus-dmc` (confirmé
-    visuellement en rendant les deux bitmaps via `render_symbol_svg`) — le
-    seuil est resté à sa valeur prudente d'origine. Mesuré après correctif :
-    20.7 % (`580/2802`) sur `botanical-citrus-dmc` et 21.0 % (`401/1911`)
-    sur `cucurbit-dmc` — les bornes ci-dessous gardent une marge confortable
-    au-dessus de ces valeurs mesurées (jamais resserrées au point de casser
-    au moindre écart mineur) tout en interdisant une régression vers un taux
-    proche de celui d'avant correctif. Ne vérifie jamais que
-    `uncertain_cells` est vide : une partie de l'incertitude mesurée ici est
-    réelle (quelques teintes hors de portée du catalogue DMC communautaire
-    partiel, §8.5) et doit rester signalée."""
+    """Non-régression des trois correctifs successifs « cases incertaines »
+    du Lot 5. Avant le premier, `botanical-citrus-dmc` et `cucurbit-dmc`
+    signalaient respectivement 58 % et 34 % des cases coloriées comme
+    incertaines (`1630/2802` et `642/1911`), au point de couvrir la
+    quasi-totalité de certaines zones du motif dans le pinceau de
+    l'assistant — bien plus qu'une vraie proportion de couleurs/symboles
+    ambigus. Cause mesurée et corrigée : `_color_to_rgb` convertissait le
+    CMJN vers le RVB par la formule naïve recommandée en repli par le spec
+    PDF (`R=(1-C)(1-K)`...), qui sursature nettement les teintes obtenues
+    par mélange cyan+jaune (verts en particulier) et gonflait
+    artificiellement la distance Lab au rapprochement DMC pour plusieurs
+    couleurs à forte population de cases — confirmé en comparant cette
+    formule à la couleur réellement rendue par PyMuPDF pour les mêmes
+    valeurs CMJN. `_cmyk_to_rgb_via_mupdf` la remplace. Une piste explorée à
+    l'époque (desserrer le seuil de différence de bits du bitmap 6x6 alors
+    utilisé par `_build_symbol_signatures` pour absorber le bruit de
+    repositionnement entre signatures d'un même symbole redessiné) a été
+    **abandonnée** : à un seuil de 4 bits, elle fusionnait à tort un symbole
+    « + » avec un symbole « flèche vers le haut » sur `botanical-citrus-dmc`
+    (confirmé visuellement en rendant les deux bitmaps via
+    `render_symbol_svg`).
+
+    Un second diagnostic, plus poussé, a montré *pourquoi* aucun seuil sur
+    ce bitmap 6x6 ne pouvait marcher : sur `cucurbit-dmc`, des cases portant
+    des symboles réellement différents (confirmé visuellement) pouvaient
+    tomber sur le *même* bitmap 6x6, faute de résolution suffisante avec
+    seulement 4 à 6 points de tracé vectoriel par case — un problème
+    d'aliasing dès le regroupement exact initial, pas seulement de tolérance
+    de fusion. `_build_symbol_signatures` construit désormais l'empreinte de
+    chaque case à partir du rendu raster réel de la page de symboles
+    (~256 pixels par case, cf. `_raster_fingerprint`/`_render_symbol_page_gray`)
+    plutôt que de ces quelques points vectoriels, et
+    `_merge_near_duplicate_signatures` compare ces empreintes avec une
+    tolérance de décalage de quelques pixels et un garde-fou sur l'aire
+    d'encre. Mesuré après ce second correctif : 0.8 % (`23/2802`) sur
+    `botanical-citrus-dmc` et 3.7 % (`71/1911`) sur `cucurbit-dmc` — chute
+    nette par rapport aux 20.7 %/21.0 % mesurés après le seul correctif
+    CMJN->RVB. Mais ce second correctif faisait régresser `winter-wreath-dmc`
+    de ~22 % à 35 % (`1221/3460`), non mesuré à l'époque faute de test dédié
+    sur ce fichier précis.
+
+    Troisième diagnostic (celui qui a ajouté `winter_wreath` à cette
+    paramétrisation) : `winter-wreath-dmc` est le seul des 4 fichiers DMC de
+    référence où la page couleur porte déjà elle-même ses symboles (page
+    couleur+symboles combinée, cases adjacentes collées, pas de page blanche
+    séparée superposée). Rendu visuel (`render_symbol_svg`) de plusieurs
+    cases d'une même couleur canonique réparties sur toute la grille : deux
+    cases portant le même symbole tombaient dans deux regroupements
+    différents à cause d'un fragment de **ligne de quadrillage « décade »**
+    (tracée tous les 10 cases, bien plus épaisse que le quadrillage mineur —
+    mesuré directement sur les `lines` vectorielles de la page : jusqu'à
+    ~6 px de large une fois rendue, contre 4 px de marge retirée par
+    `_RASTER_CORE_MARGIN_PX` à l'époque) qui subsistait dans le recadrage
+    des cases adjacentes à une ligne décade, et seulement elles — voir la
+    docstring de `_RASTER_CORE_MARGIN_PX` dans `app/type_bc.py` pour le
+    détail complet des mesures. Élargie de 4 à 5 px, cette marge fait tomber
+    `winter-wreath-dmc` à 17.7 % (`611/3460`) — sous son taux d'avant même le
+    passage au rendu raster — sans changer `botanical-citrus-dmc` ni
+    `cucurbit-dmc` d'un seul cas (toujours 0.8 %/3.7 %, mesuré). Le reliquat
+    de `winter-wreath-dmc` (611 cases) vient très majoritairement (592/611,
+    mesuré) de deux teintes sans correspondance DMC proche dans le
+    catalogue communautaire partiel (§8.5) — une incertitude réelle,
+    indépendante de la reconnaissance de forme, que ce correctif ne peut ni
+    ne doit faire disparaître, d'où une borne (0.25) nettement plus large
+    que celle de `botanical-citrus-dmc`/`cucurbit-dmc`.
+
+    Les bornes ci-dessous gardent une marge confortable au-dessus de ces
+    valeurs mesurées (jamais resserrées au point de casser au moindre écart
+    mineur) tout en interdisant une régression vers un taux proche de celui
+    d'avant chaque correctif. Ne vérifie jamais que `uncertain_cells` est
+    vide : une partie de l'incertitude mesurée ici est réelle (quelques
+    teintes hors de portée du catalogue DMC communautaire partiel, §8.5) et
+    doit rester signalée."""
     result: TypeBCResult = request.getfixturevalue(fixture_name)
     total = sum(1 for value in result.cells if value != 0)
     fraction = len(result.uncertain_cells) / total
     assert fraction < max_uncertain_fraction
     assert result.uncertain_cells  # une incertitude réelle et mesurée doit rester signalée
+
+
+def _cell_index(result: TypeBCResult, row0: int, col0: int) -> int:
+    return row0 * result.columns + col0
+
+
+def test_cucurbit_redrawn_round_symbol_merges_despite_repositioning_noise(
+    cucurbit: TypeBCResult,
+) -> None:
+    """Verrou de non-régression du second correctif « cases incertaines »
+    (comparaison raster tolérante au décalage plutôt que bitmap 6x6, voir
+    `_merge_near_duplicate_signatures` dans `app/type_bc.py`). Les 4 cases
+    ci-dessous portent, mesuré et vérifié visuellement (`render_symbol_svg`),
+    le même rond « O » redessiné à un léger bruit de sous-position près, sur
+    la couleur canonique quasi-blanche — elles doivent obtenir la même
+    entrée de palette (même combinaison couleur+symbole), pas 4 entrées
+    distinctes signalées comme incertaines faute de correspondance
+    dominante."""
+    positions = [(24, 29), (22, 31), (23, 29), (21, 31)]
+    indices = [_cell_index(cucurbit, row0, col0) for row0, col0 in positions]
+    values = {cucurbit.cells[idx] for idx in indices}
+    assert all(v != 0 for v in values), "ces 4 cases doivent être coloriées"
+    assert len(values) == 1, (
+        "les 4 cases du même rond redessiné doivent partager la même entrée de "
+        f"palette, obtenu : {[cucurbit.cells[idx] for idx in indices]}"
+    )
+
+
+def test_botanical_citrus_plus_and_arrow_symbols_never_merge(
+    botanical_citrus: TypeBCResult,
+) -> None:
+    """Verrou symétrique du test précédent : un symbole « + » et un symbole
+    « flèche vers le haut », confirmés visuellement distincts
+    (`render_symbol_svg`) et à la même distance de bits (4) que le rond
+    redessiné de `cucurbit-dmc` sur l'ancien bitmap 6x6 — la comparaison
+    raster tolérante au décalage ne doit jamais les fusionner, quel que soit
+    le réglage futur des seuils de `_merge_near_duplicate_signatures`."""
+    plus_idx = _cell_index(botanical_citrus, 93, 52)
+    arrow_idx = _cell_index(botanical_citrus, 89, 54)
+    plus_value = botanical_citrus.cells[plus_idx]
+    arrow_value = botanical_citrus.cells[arrow_idx]
+    assert plus_value != 0
+    assert arrow_value != 0
+    assert plus_value != arrow_value, (
+        "« + » et « flèche vers le haut » ne doivent jamais partager la même "
+        "entrée de palette"
+    )
+
+
+def test_winter_wreath_diagonal_bar_merges_across_decade_gridline(
+    winter_wreath: TypeBCResult,
+) -> None:
+    """Verrou de non-régression du troisième correctif « cases incertaines »
+    (marge de recadrage raster élargie de 4 à 5 px, voir la docstring de
+    `_RASTER_CORE_MARGIN_PX` dans `app/type_bc.py`). Les 4 cases ci-dessous
+    portent, mesuré et vérifié visuellement (`render_symbol_svg`), la même
+    barre diagonale sur la même couleur canonique (vert olive) — deux d'entre
+    elles sont adjacentes à une ligne de quadrillage « décade » (colonne 10,
+    bien plus épaisse que le quadrillage mineur) dont un fragment
+    contaminait leur recadrage avant ce correctif, les faisant basculer dans
+    un second regroupement distinct malgré un symbole identique. Les 4
+    doivent obtenir la même entrée de palette."""
+    positions = [(33, 4), (58, 4), (44, 9), (31, 10)]
+    indices = [_cell_index(winter_wreath, row0, col0) for row0, col0 in positions]
+    values = {winter_wreath.cells[idx] for idx in indices}
+    assert all(v != 0 for v in values), "ces 4 cases doivent être coloriées"
+    assert len(values) == 1, (
+        "les 4 cases de la même barre diagonale redessinée doivent partager la même "
+        f"entrée de palette, obtenu : {[winter_wreath.cells[idx] for idx in indices]}"
+    )
+    assert not (set(indices) & set(winter_wreath.uncertain_cells))
 
 
 def test_confidence_reflects_the_type_b_fallback_penalty(
