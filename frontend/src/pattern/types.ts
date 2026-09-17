@@ -6,8 +6,13 @@ export interface PaletteEntry {
   name: string;
   /** Couleur d'affichage, en hexadécimal `#rrggbb`. */
   hex: string;
-  /** Symbole affiché dans la case au zoom élevé. */
+  /** Symbole affiché dans la case au zoom élevé — repli textuel tant que
+   * `symbolSvg` n'est pas disponible ou pas encore chargé. */
   symbol: string;
+  /** Symbole réel découpé depuis le PDF source (Lot 4), un `<svg>` autonome
+   * prêt à être affiché — voir `pattern/render.ts` pour le rendu et le
+   * cache d'images. Absent pour une palette saisie à la main (Lot 2). */
+  symbolSvg?: string;
 }
 
 /**

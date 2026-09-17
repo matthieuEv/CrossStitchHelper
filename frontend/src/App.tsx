@@ -16,7 +16,10 @@ import { usePatternActivity } from "./state/usePatternActivity";
 import { usePatternLibrary } from "./state/usePatternLibrary";
 import { useSyncedTracker, type SyncedTracker } from "./state/useSyncedTracker";
 
-const FALLBACK_VERSION = "0.1.0";
+// Repli hors-ligne (serveur injoignable) — tenu à jour avec
+// `backend/app/__init__.py::__version__`, la source de vérité une fois le
+// serveur joignable.
+const FALLBACK_VERSION = "0.1.0 · Lot 4";
 
 /**
  * Détient l'état de suivi d'un motif et le prête aux écrans qui en ont besoin.

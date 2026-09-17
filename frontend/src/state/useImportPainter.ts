@@ -16,7 +16,7 @@ import { useCallback, useMemo, useState } from "react";
 
 import type { ApiImportFillZone } from "../lib/api";
 import { applyFillsLocal } from "../lib/importFills";
-import { MAX_CELL, MIN_CELL, type GridView } from "../pattern/render";
+import { MAX_CELL, MIN_CELL, panMargin, type GridView } from "../pattern/render";
 import type { PaletteEntry, Pattern } from "../pattern/types";
 
 export interface PainterSelection {
@@ -40,6 +40,18 @@ export interface ImportPainter {
   setOffset: (x0: number, y0: number) => void;
   zoomIn: () => void;
   zoomOut: () => void;
+  /** Comme `useTracker.zoomTo` : zoome vers `nextCell` en gardant le point du
+   * motif sous `(anchorScreenX, anchorScreenY)` ancré au même endroit — pour
+   * la molette/le trackpad plutôt que des boutons +/- centrés. */
+  zoomTo: (
+    nextCell: number,
+    anchorScreenX: number,
+    anchorScreenY: number,
+    canvasRect: Pick<DOMRect, "left" | "top">,
+    /** Déplacement additionnel du même geste, en cases — voir
+     * `useTracker.ts::Tracker.zoomTo` pour le détail. */
+    panDeltaX?: number,
+  ) => void;
 
   cursor: CellPosition | null;
   setCursor: (cursor: CellPosition | null) => void;
@@ -58,13 +70,17 @@ export function useImportPainter(
   fills: readonly ApiImportFillZone[],
   onFillsChange: (fills: ApiImportFillZone[]) => void,
   name: string,
+  detectedCells?: readonly number[] | null,
 ): ImportPainter {
   const [cell, setCell] = useState(16);
   const [offset, setOffsetState] = useState({ x0: -2, y0: -2 });
   const [cursor, setCursor] = useState<CellPosition | null>(null);
   const [selection, setSelection] = useState<PainterSelection | null>(null);
 
-  const cells = useMemo(() => applyFillsLocal(columns, rows, fills), [columns, rows, fills]);
+  const cells = useMemo(
+    () => applyFillsLocal(columns, rows, fills, detectedCells),
+    [columns, rows, fills, detectedCells],
+  );
   const filledCount = useMemo(() => cells.reduce((sum, value) => sum + (value !== 0 ? 1 : 0), 0), [
     cells,
   ]);
@@ -76,9 +92,11 @@ export function useImportPainter(
 
   const setOffset = useCallback(
     (x0: number, y0: number) => {
+      const marginX = panMargin(columns);
+      const marginY = panMargin(rows);
       setOffsetState({
-        x0: Math.max(-6, Math.min(columns - 4, x0)),
-        y0: Math.max(-6, Math.min(rows - 4, y0)),
+        x0: Math.max(-marginX, Math.min(columns - marginX, x0)),
+        y0: Math.max(-marginY, Math.min(rows - marginY, y0)),
       });
     },
     [columns, rows],
@@ -91,6 +109,28 @@ export function useImportPainter(
   const zoomOut = useCallback(
     () => setCell((value) => Math.max(MIN_CELL, Math.round(value / 1.45))),
     [],
+  );
+
+  const zoomTo = useCallback(
+    (
+      nextCell: number,
+      anchorScreenX: number,
+      anchorScreenY: number,
+      canvasRect: Pick<DOMRect, "left" | "top">,
+      panDeltaX = 0,
+    ) => {
+      const clampedCell = Math.max(MIN_CELL, Math.min(MAX_CELL, nextCell));
+      const anchorCellX = offset.x0 + (anchorScreenX - canvasRect.left) / cell;
+      const anchorCellY = offset.y0 + (anchorScreenY - canvasRect.top) / cell;
+      setCell(clampedCell);
+      // Ajoute le déplacement du même geste plutôt qu'un `setOffset` séparé,
+      // qui se ferait écraser par ce calcul — voir useTracker.ts::zoomTo.
+      setOffset(
+        anchorCellX - (anchorScreenX - canvasRect.left) / clampedCell + panDeltaX,
+        anchorCellY - (anchorScreenY - canvasRect.top) / clampedCell,
+      );
+    },
+    [cell, offset, setOffset],
   );
 
   const paint = useCallback(
@@ -118,6 +158,7 @@ export function useImportPainter(
     setOffset,
     zoomIn,
     zoomOut,
+    zoomTo,
     cursor,
     setCursor,
     selection,

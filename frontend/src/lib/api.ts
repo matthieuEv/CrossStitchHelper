@@ -214,6 +214,8 @@ export interface ApiImportPaletteEntry {
   name: string;
   rgb_hex: string;
   symbol_key: string;
+  /** Symbole réel découpé depuis le PDF (Lot 4) — voir `ApiPaletteEntry`. */
+  symbol_svg?: string | null;
 }
 
 export interface ApiImportFillZone {
@@ -225,19 +227,30 @@ export interface ApiImportFillZone {
 }
 
 export interface ApiImportConfig {
-  crop: ApiImportCrop | null;
+  /** Cadrage manuel par numéro de page (clé str), repère purement visuel —
+   * voir `backend/app/schemas.py::ImportConfig.crop_by_page`. */
+  crop_by_page: Record<string, ApiImportCrop>;
   columns: number | null;
   rows: number | null;
   palette: ApiImportPaletteEntry[];
   fills: ApiImportFillZone[];
+  /** Grille détectée automatiquement (Lot 4), fond sous `fills` — voir `apply_fills`. */
+  detected_cells: number[] | null;
 }
 
 export interface ApiImportConfigPatch {
-  crop?: ApiImportCrop;
+  crop_by_page?: Record<string, ApiImportCrop>;
   columns?: number;
   rows?: number;
   palette?: ApiImportPaletteEntry[];
   fills?: ApiImportFillZone[];
+  detected_cells?: number[] | null;
+}
+
+export interface ApiImportDetection {
+  grid_type: string;
+  confidence: number;
+  warnings: string[];
 }
 
 export interface ApiImportPreview {
@@ -258,6 +271,8 @@ export interface ApiImportJob {
   pattern_id: string | null;
   config: ApiImportConfig;
   preview: ApiImportPreview | null;
+  detection: ApiImportDetection | null;
+  detecting: boolean;
   error: string | null;
   created_at: string;
   finished_at: string | null;

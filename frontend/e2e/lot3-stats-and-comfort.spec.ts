@@ -15,15 +15,20 @@ interface PatternSummary {
   cell_count: number;
 }
 
-/** Même repli que lot1-persistence.spec.ts : d'autres specs créent leurs
- * propres motifs dans la même base, le plus grand est toujours le motif de
- * démonstration seedé. */
+/** `backend/app/seed.py` — identifiant stable, jamais régénéré. */
+const DEMO_PATTERN_ID = "demo-perf-255x180";
+
+/**
+ * Même repli que lot1-persistence.spec.ts, mais par identifiant plutôt que
+ * par taille : le Lot 4 importe un vrai motif de mêmes dimensions
+ * (255×180) dans la même base, donc `cell_count` seul ne distingue plus le
+ * motif seedé d'un motif importé.
+ */
 async function fetchDemoPattern(request: APIRequestContext): Promise<PatternSummary> {
   const response = await request.get("/api/patterns");
   const patterns = (await response.json()) as PatternSummary[];
-  const sorted = [...patterns].sort((a, b) => b.cell_count - a.cell_count);
-  const demo = sorted[0];
-  if (demo === undefined) throw new Error("Aucun motif en base");
+  const demo = patterns.find((pattern) => pattern.id === DEMO_PATTERN_ID);
+  if (demo === undefined) throw new Error("Motif de démonstration introuvable en base");
   return demo;
 }
 
@@ -98,10 +103,11 @@ test("masquer les cases déjà brodées les vide visuellement", async ({ page, r
   await expect(canvas).toBeVisible();
 
   // Dézoome jusqu'à la borne (MIN_CELL) puis déplace la vue jusqu'à sa borne
-  // opposée (-6 cases, voir useTracker.ts `setOffset`) : quel que soit le
-  // nombre exact de clics/la distance du glissé, on atterrit systématiquement
-  // au même endroit — l'angle du motif, dont la bordure (cases 310, noir)
-  // est intégralement brodée dès le seed (voir `backend/app/seed.py`).
+  // opposée (-panMargin(255) cases, voir pattern/render.ts `panMargin` et son
+  // usage dans useTracker.ts `setOffset`) : quel que soit le nombre exact de
+  // clics/la distance du glissé, on atterrit systématiquement au même
+  // endroit — l'angle du motif, dont la bordure (cases 310, noir) est
+  // intégralement brodée dès le seed (voir `backend/app/seed.py`).
   const zoomOut = page.getByRole("button", { name: "Dézoomer" });
   for (let i = 0; i < 10; i++) await zoomOut.click();
 
@@ -111,18 +117,19 @@ test("masquer les cases déjà brodées les vide visuellement", async ({ page, r
   const center = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
   await page.mouse.move(center.x, center.y);
   await page.mouse.down();
-  await page.mouse.move(center.x + 1000, center.y + 1000, { steps: 8 });
+  await page.mouse.move(center.x + 3000, center.y + 3000, { steps: 8 });
   await page.mouse.up();
 
   // Case (0,0) du motif : bordure noire, 100 % brodée depuis le seed. Avec
-  // MIN_CELL = 4px et l'origine de vue calée à -6, elle occupe le pixel
-  // (24-28, 24-28) du canvas — sans quadrillage ni symbole à cette taille
-  // (sous GRIDLINE_MIN_CELL/SYMBOL_MIN_CELL), un aplat de couleur pur.
+  // MIN_CELL = 4px et panMargin(255) = max(6, 255*0.1) = 25.5 cases de
+  // débord, son coin haut-gauche occupe le pixel (25.5*4 = 102, 102) du
+  // canvas — sans quadrillage ni symbole à cette taille (sous
+  // GRIDLINE_MIN_CELL/SYMBOL_MIN_CELL), un aplat de couleur pur.
   const sample = (): Promise<[number, number, number]> =>
     canvas.evaluate((element) => {
       const ctx = (element as HTMLCanvasElement).getContext("2d");
       if (ctx === null) throw new Error("pas de contexte 2d");
-      const data = ctx.getImageData(26, 26, 1, 1).data;
+      const data = ctx.getImageData(104, 104, 1, 1).data;
       return [data[0] ?? 0, data[1] ?? 0, data[2] ?? 0];
     });
 

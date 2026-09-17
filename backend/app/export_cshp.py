@@ -74,6 +74,7 @@ def build_cshp_archive(
                 "name": entry.name,
                 "rgb_hex": entry.rgb_hex,
                 "symbol_key": entry.symbol_key,
+                "symbol_svg": entry.symbol_svg,
                 "strands_full": entry.strands_full,
                 "strands_back": entry.strands_back,
                 "count_full": entry.count_full,

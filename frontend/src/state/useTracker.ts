@@ -10,7 +10,7 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 
 import { countByColor, summarise, type ColorCount, type PatternTotals } from "../pattern/counts";
-import { MAX_CELL, MIN_CELL, type GridView } from "../pattern/render";
+import { MAX_CELL, MIN_CELL, panMargin, type GridView } from "../pattern/render";
 import type { Pattern, Progress } from "../pattern/types";
 
 export type Tool = "stitch" | "pan" | "select";
@@ -58,6 +58,12 @@ export interface Tracker {
     anchorScreenX: number,
     anchorScreenY: number,
     canvasRect: Pick<DOMRect, "left" | "top">,
+    /** Déplacement additionnel à appliquer dans le même geste, en cases du
+     * motif — un glissé diagonal au trackpad zoome et déplace la vue à la
+     * fois (voir TrackScreen.tsx) : sans ça, l'appel à `setOffset` séparé
+     * pour le déplacement serait aussitôt écrasé par celui, interne à
+     * `zoomTo`, qui recalcule l'origine depuis la position d'avant le geste. */
+    panDeltaX?: number,
   ) => void;
 
   tool: Tool;
@@ -125,8 +131,8 @@ export function useTracker(
   // ci-dessous, un petit motif peint à la main (Lot 2) s'ouvrirait sur une
   // vue entièrement vide, en dehors de sa grille.
   const [offset, setOffsetState] = useState(() => ({
-    x0: Math.max(-6, Math.min(pattern.width - 4, 30)),
-    y0: Math.max(-6, Math.min(pattern.height - 4, 24)),
+    x0: Math.max(-panMargin(pattern.width), Math.min(pattern.width - panMargin(pattern.width), 30)),
+    y0: Math.max(-panMargin(pattern.height), Math.min(pattern.height - panMargin(pattern.height), 24)),
   }));
   const [tool, setTool] = useState<Tool>("stitch");
   const [highlight, setHighlight] = useState(0);
@@ -230,11 +236,11 @@ export function useTracker(
 
   const setOffset = useCallback(
     (x0: number, y0: number) => {
-      // On autorise un léger débord pour pouvoir cocher les cases de bord
-      // sans les coller à l'arête de l'écran.
+      const marginX = panMargin(pattern.width);
+      const marginY = panMargin(pattern.height);
       setOffsetState({
-        x0: Math.max(-6, Math.min(pattern.width - 4, x0)),
-        y0: Math.max(-6, Math.min(pattern.height - 4, y0)),
+        x0: Math.max(-marginX, Math.min(pattern.width - marginX, x0)),
+        y0: Math.max(-marginY, Math.min(pattern.height - marginY, y0)),
       });
     },
     [pattern],
@@ -255,6 +261,7 @@ export function useTracker(
       anchorScreenX: number,
       anchorScreenY: number,
       canvasRect: Pick<DOMRect, "left" | "top">,
+      panDeltaX = 0,
     ) => {
       const clampedCell = Math.max(MIN_CELL, Math.min(MAX_CELL, nextCell));
       // Case du motif actuellement sous le point d'ancrage (le point médian du
@@ -264,9 +271,11 @@ export function useTracker(
       setCell(clampedCell);
       // On replace l'origine de la vue pour que cette même case du motif se
       // retrouve toujours sous le point d'ancrage une fois la taille changée —
-      // c'est ce qui fait « zoomer sous les doigts » plutôt que vers un coin.
+      // c'est ce qui fait « zoomer sous les doigts » plutôt que vers un coin —
+      // puis on ajoute le déplacement du même geste, plutôt qu'un `setOffset`
+      // séparé qui se ferait écraser par ce calcul.
       setOffset(
-        anchorCellX - (anchorScreenX - canvasRect.left) / clampedCell,
+        anchorCellX - (anchorScreenX - canvasRect.left) / clampedCell + panDeltaX,
         anchorCellY - (anchorScreenY - canvasRect.top) / clampedCell,
       );
     },

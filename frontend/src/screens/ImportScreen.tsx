@@ -1,5 +1,6 @@
 import {
   useCallback,
+  useEffect,
   useRef,
   useState,
   type ChangeEvent,
@@ -10,11 +11,13 @@ import { ImportGridPainter } from "../components/ImportGridPainter";
 import { BackIcon, CameraIcon, UploadIcon } from "../components/Icons";
 import { PatternThumbnail } from "../components/PatternThumbnail";
 import { useT } from "../i18n";
+import { useWideLayout } from "../lib/hooks";
 import {
   ApiError,
   commitImport,
   createImport,
   extractImport,
+  fetchImport,
   importPagePreviewUrl,
   patchImportConfig,
   type ApiImportConfig,
@@ -51,18 +54,25 @@ interface ImportScreenProps {
 
 export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
   const t = useT();
+  const wide = useWideLayout();
 
   const [step, setStep] = useState(1);
   const [job, setJob] = useState<ApiImportJob | null>(null);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
 
-  const [crop, setCrop] = useState<Crop>(DEFAULT_CROP);
+  // Un cadrage indépendant par page — voir `import.crop.hint` et
+  // `backend/app/schemas.py::ImportConfig.crop_by_page` : une même page peut
+  // contenir la légende, une autre la grille, donc un seul cadrage imposé à
+  // toutes les pages n'aurait pas de sens.
+  const [cropByPage, setCropByPage] = useState<Record<number, Crop>>({});
   const [page, setPage] = useState(1);
   const [columns, setColumns] = useState<string>("");
   const [rows, setRows] = useState<string>("");
   const [palette, setPalette] = useState<ApiImportPaletteEntry[]>([]);
   const [fills, setFills] = useState<ApiImportFillZone[]>([]);
+  const [detectedCells, setDetectedCells] = useState<number[] | null>(null);
+  const [detection, setDetection] = useState<ApiImportJob["detection"]>(null);
   const [activeIndex, setActiveIndex] = useState(1);
 
   const [name, setName] = useState("");
@@ -73,6 +83,9 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
 
   const stageRef = useRef<HTMLDivElement>(null);
   const dragEdgeRef = useRef<Edge | null>(null);
+  /** Passe à `true` dès que l'utilisateur tape ses propres dimensions —
+   * plus aucun sondage de détection ne doit alors venir écraser sa saisie. */
+  const manualEditRef = useRef(false);
 
   const stepLabels = [
     t("import.step.file"),
@@ -82,11 +95,19 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
   ];
 
   const applyConfig = (config: ApiImportConfig): void => {
-    if (config.crop !== null) setCrop(config.crop);
+    setCropByPage(
+      Object.fromEntries(
+        Object.entries(config.crop_by_page).map(([pageNumber, pageCrop]) => [
+          Number(pageNumber),
+          pageCrop,
+        ]),
+      ),
+    );
     if (config.columns !== null) setColumns(String(config.columns));
     if (config.rows !== null) setRows(String(config.rows));
     setPalette(config.palette);
     setFills(config.fills);
+    setDetectedCells(config.detected_cells);
   };
 
   const upload = async (file: File): Promise<void> => {
@@ -94,8 +115,10 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
     setUploadError(null);
     try {
       const created = await createImport(file);
+      manualEditRef.current = false;
       setJob(created);
       applyConfig(created.config);
+      setDetection(created.detection);
       setName(file.name.replace(/\.(pdf|png|jpe?g)$/i, ""));
       setPage(1);
       setStep(2);
@@ -105,6 +128,30 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
       setUploading(false);
     }
   };
+
+  // Détection automatique (Lot 4) : tourne en tâche de fond côté serveur —
+  // on sonde tant qu'elle n'est pas terminée, sans jamais écraser une
+  // saisie manuelle déjà commencée (`manualEditRef`).
+  useEffect(() => {
+    if (job === null || !job.detecting) return;
+    const jobId = job.id;
+    let cancelled = false;
+    const timer = setInterval(() => {
+      void fetchImport(jobId).then((updated) => {
+        if (cancelled) return;
+        setJob(updated);
+        if (!manualEditRef.current) {
+          applyConfig(updated.config);
+          setDetection(updated.detection);
+        }
+      });
+    }, 1200);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [job?.id, job?.detecting]);
 
   const onFileChosen = (event: ChangeEvent<HTMLInputElement>): void => {
     const file = event.target.files?.[0];
@@ -118,34 +165,42 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
     event.currentTarget.setPointerCapture(event.pointerId);
   };
 
-  const onPointerMove = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
-    const edge = dragEdgeRef.current;
-    const stage = stageRef.current;
-    if (edge === null || stage === null) return;
+  const onPointerMove = useCallback(
+    (event: ReactPointerEvent<HTMLDivElement>) => {
+      const edge = dragEdgeRef.current;
+      const stage = stageRef.current;
+      if (edge === null || stage === null) return;
 
-    const box = stage.getBoundingClientRect();
-    const x = ((event.clientX - box.left) / box.width) * 100;
-    const y = ((event.clientY - box.top) / box.height) * 100;
-    const clamp = (value: number): number => Math.max(0, Math.min(MAX_INSET, value));
+      const box = stage.getBoundingClientRect();
+      const x = ((event.clientX - box.left) / box.width) * 100;
+      const y = ((event.clientY - box.top) / box.height) * 100;
+      const clamp = (value: number): number => Math.max(0, Math.min(MAX_INSET, value));
 
-    setCrop((current) => {
-      switch (edge) {
-        case "left":
-          return { ...current, left: clamp(x) };
-        case "right":
-          return { ...current, right: clamp(100 - x) };
-        case "top":
-          return { ...current, top: clamp(y) };
-        case "bottom":
-          return { ...current, bottom: clamp(100 - y) };
-      }
-    });
-  }, []);
+      setCropByPage((current) => {
+        const currentCrop = current[page] ?? DEFAULT_CROP;
+        const nextCrop = (() => {
+          switch (edge) {
+            case "left":
+              return { ...currentCrop, left: clamp(x) };
+            case "right":
+              return { ...currentCrop, right: clamp(100 - x) };
+            case "top":
+              return { ...currentCrop, top: clamp(y) };
+            case "bottom":
+              return { ...currentCrop, bottom: clamp(100 - y) };
+          }
+        })();
+        return { ...current, [page]: nextCrop };
+      });
+    },
+    [page],
+  );
 
   const endDrag = useCallback(() => {
     dragEdgeRef.current = null;
   }, []);
 
+  const crop = cropByPage[page] ?? DEFAULT_CROP;
   const centerX = `${crop.left + (100 - crop.left - crop.right) / 2}%`;
   const centerY = `${crop.top + (100 - crop.top - crop.bottom) / 2}%`;
 
@@ -156,7 +211,14 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
 
   const goToPalette = async (): Promise<void> => {
     if (job === null || !dimensionsValid) return;
-    const updated = await patchImportConfig(job.id, { crop, columns: columnsValue, rows: rowsValue });
+    const cropByPageForApi = Object.fromEntries(
+      Object.entries(cropByPage).map(([pageNumber, pageCrop]) => [String(pageNumber), pageCrop]),
+    );
+    const updated = await patchImportConfig(job.id, {
+      crop_by_page: cropByPageForApi,
+      columns: columnsValue,
+      rows: rowsValue,
+    });
     setJob(updated);
     setStep(3);
   };
@@ -169,6 +231,8 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
       name: entry.name,
       hex: entry.rgb_hex,
       symbol: entry.symbol_key,
+      ...(entry.symbol_svg !== null &&
+        entry.symbol_svg !== undefined && { symbolSvg: entry.symbol_svg }),
     })),
     fills,
     (nextFills) => {
@@ -176,6 +240,7 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
       if (job !== null) void patchImportConfig(job.id, { fills: nextFills });
     },
     name,
+    detectedCells,
   );
 
   const addPaletteEntry = (): void => {
@@ -340,8 +405,45 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
         {step === 2 && job !== null && (
           <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
             <div className="text-muted" style={{ fontSize: 13 }}>
-              {t("import.crop.hint")}
+              {job.detecting
+                ? t("import.crop.hintDetecting")
+                : detectedCells !== null
+                  ? t("import.crop.hintDetected")
+                  : t("import.crop.hint")}
             </div>
+
+            {detection !== null && (
+              <div
+                style={{
+                  padding: "12px 16px",
+                  borderRadius: 18,
+                  background: "var(--color-surface)",
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 6,
+                }}
+              >
+                <div style={{ fontSize: 13, fontWeight: 600 }}>
+                  {t("import.detection.title", {
+                    type: detection.grid_type,
+                    confidence: Math.round(detection.confidence * 100),
+                  })}
+                </div>
+                <div className="text-muted" style={{ fontSize: 12 }}>
+                  {t("import.detection.hint")}
+                </div>
+                {detectedCells !== null && job.page_count > 1 && (
+                  <div className="text-muted" style={{ fontSize: 12 }}>
+                    {t("import.detection.multiPage", { pageCount: job.page_count })}
+                  </div>
+                )}
+                {detection.warnings.map((warning, index) => (
+                  <div key={index} className="text-faint" style={{ fontSize: 11 }}>
+                    ⚠ {warning}
+                  </div>
+                ))}
+              </div>
+            )}
 
             {job.page_count > 1 && (
               <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 14 }}>
@@ -384,48 +486,64 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
                 alt=""
                 style={{ width: "100%", height: "100%", objectFit: "contain", display: "block" }}
               />
-              <div
-                style={{
-                  position: "absolute",
-                  left: `${crop.left}%`,
-                  top: `${crop.top}%`,
-                  right: `${crop.right}%`,
-                  bottom: `${crop.bottom}%`,
-                  border: "2px solid var(--color-accent)",
-                  borderRadius: 6,
-                  boxShadow: "0 0 0 9999px rgba(20, 16, 12, 0.44)",
-                }}
-              />
-              {(["top", "bottom", "left", "right"] as const).map((edge) => (
-                <div
-                  key={edge}
-                  className="crop-handle"
-                  onPointerDown={startDrag(edge)}
-                  style={{
-                    ...(edge === "top" || edge === "bottom"
-                      ? { left: centerX, width: 64, height: 44, cursor: "ns-resize" }
-                      : { top: centerY, width: 44, height: 64, cursor: "ew-resize" }),
-                    ...(edge === "top" && { top: `${crop.top}%`, transform: "translate(-50%, -50%)" }),
-                    ...(edge === "bottom" && {
-                      bottom: `${crop.bottom}%`,
-                      transform: "translate(-50%, 50%)",
-                    }),
-                    ...(edge === "left" && { left: `${crop.left}%`, transform: "translate(-50%, -50%)" }),
-                    ...(edge === "right" && {
+              {detectedCells === null && !job.detecting && (
+                <>
+                  <div
+                    style={{
+                      position: "absolute",
+                      left: `${crop.left}%`,
+                      top: `${crop.top}%`,
                       right: `${crop.right}%`,
-                      transform: "translate(50%, -50%)",
-                    }),
-                  }}
-                >
-                  <span
-                    style={
-                      edge === "top" || edge === "bottom"
-                        ? { width: 52, height: 8 }
-                        : { width: 8, height: 52 }
-                    }
+                      bottom: `${crop.bottom}%`,
+                      border: "2px solid var(--color-accent)",
+                      borderRadius: 6,
+                      boxShadow: "0 0 0 9999px rgba(20, 16, 12, 0.44)",
+                    }}
                   />
+                  {(["top", "bottom", "left", "right"] as const).map((edge) => (
+                    <div
+                      key={edge}
+                      className="crop-handle"
+                      onPointerDown={startDrag(edge)}
+                      style={{
+                        ...(edge === "top" || edge === "bottom"
+                          ? { left: centerX, width: 64, height: 44, cursor: "ns-resize" }
+                          : { top: centerY, width: 44, height: 64, cursor: "ew-resize" }),
+                        ...(edge === "top" && {
+                          top: `${crop.top}%`,
+                          transform: "translate(-50%, -50%)",
+                        }),
+                        ...(edge === "bottom" && {
+                          bottom: `${crop.bottom}%`,
+                          transform: "translate(-50%, 50%)",
+                        }),
+                        ...(edge === "left" && {
+                          left: `${crop.left}%`,
+                          transform: "translate(-50%, -50%)",
+                        }),
+                        ...(edge === "right" && {
+                          right: `${crop.right}%`,
+                          transform: "translate(50%, -50%)",
+                        }),
+                      }}
+                    >
+                      <span
+                        style={
+                          edge === "top" || edge === "bottom"
+                            ? { width: 52, height: 8 }
+                            : { width: 8, height: 52 }
+                        }
+                      />
+                    </div>
+                  ))}
+                </>
+              )}
+              {job.detecting && (
+                <div className="crop-stage-loading">
+                  <div className="spinner" role="status" aria-label={t("import.detection.running")} />
+                  <div style={{ fontSize: 13 }}>{t("import.detection.running")}</div>
                 </div>
-              ))}
+              )}
             </div>
 
             <div style={{ display: "flex", gap: 10 }}>
@@ -437,7 +555,10 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
                   className="input"
                   inputMode="numeric"
                   value={columns}
-                  onChange={(event) => setColumns(event.target.value.replace(/[^0-9]/g, ""))}
+                  onChange={(event) => {
+                    manualEditRef.current = true;
+                    setColumns(event.target.value.replace(/[^0-9]/g, ""));
+                  }}
                   style={{ minHeight: 46 }}
                 />
               </label>
@@ -449,7 +570,10 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
                   className="input"
                   inputMode="numeric"
                   value={rows}
-                  onChange={(event) => setRows(event.target.value.replace(/[^0-9]/g, ""))}
+                  onChange={(event) => {
+                    manualEditRef.current = true;
+                    setRows(event.target.value.replace(/[^0-9]/g, ""));
+                  }}
                   style={{ minHeight: 46 }}
                 />
               </label>
@@ -485,6 +609,15 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
                     className="swatch"
                     style={{ width: 18, height: 18, background: entry.rgb_hex }}
                   />
+                  {entry.symbol_svg !== null && entry.symbol_svg !== undefined && (
+                    // Symbole réel découpé du PDF (Lot 4) — voir `ColorList.tsx`
+                    // pour le même principe côté Suivi.
+                    <img
+                      src={`data:image/svg+xml;base64,${btoa(entry.symbol_svg)}`}
+                      alt=""
+                      style={{ width: 16, height: 16 }}
+                    />
+                  )}
                   {entry.code || entry.name || "—"}
                 </button>
               ))}
@@ -509,63 +642,86 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
               <ImportGridPainter painter={painter} activeIndex={activeIndex} />
             )}
 
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              {palette.map((entry, index) => (
-                <div
-                  key={index}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 8,
-                    padding: "8px 10px",
-                    borderRadius: 14,
-                    background:
-                      activeIndex === index + 1 ? "var(--color-surface)" : "transparent",
-                  }}
-                >
-                  <input
-                    type="color"
-                    value={entry.rgb_hex}
-                    onChange={(event) => updatePaletteEntry(index, { rgb_hex: event.target.value })}
-                    onBlur={commitPaletteEdits}
-                    style={{ width: 34, height: 34, flex: "none", border: 0, background: "none" }}
-                    aria-label={t("import.legend.color")}
-                  />
-                  <input
-                    className="input"
-                    style={{ width: 90 }}
-                    placeholder={t("import.legend.code")}
-                    value={entry.code}
-                    onChange={(event) => updatePaletteEntry(index, { code: event.target.value })}
-                    onBlur={commitPaletteEdits}
-                  />
-                  <input
-                    className="input"
-                    style={{ flex: 1, minWidth: 0 }}
-                    placeholder={t("import.legend.name")}
-                    value={entry.name}
-                    onChange={(event) => updatePaletteEntry(index, { name: event.target.value })}
-                    onBlur={commitPaletteEdits}
-                  />
-                  <input
-                    className="input"
-                    style={{ width: 44, textAlign: "center", flex: "none" }}
-                    maxLength={2}
-                    placeholder={t("import.legend.symbol")}
-                    value={entry.symbol_key}
-                    onChange={(event) => updatePaletteEntry(index, { symbol_key: event.target.value })}
-                    onBlur={commitPaletteEdits}
-                  />
-                  <button
-                    type="button"
-                    className="btn btn-icon btn-ghost"
-                    aria-label={t("import.palette.remove")}
-                    onClick={() => removePaletteEntry(index)}
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: wide ? "repeat(2, 1fr)" : "1fr",
+                gap: 8,
+              }}
+            >
+              {palette.map((entry, index) => {
+                const hasRealSymbol = entry.symbol_svg !== null && entry.symbol_svg !== undefined;
+                return (
+                  <div
+                    key={index}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
+                      padding: "8px 10px",
+                      borderRadius: 14,
+                      background:
+                        activeIndex === index + 1 ? "var(--color-surface)" : "transparent",
+                    }}
                   >
-                    ✕
-                  </button>
-                </div>
-              ))}
+                    <input
+                      type="color"
+                      value={entry.rgb_hex}
+                      onChange={(event) => updatePaletteEntry(index, { rgb_hex: event.target.value })}
+                      onBlur={commitPaletteEdits}
+                      style={{ width: 34, height: 34, flex: "none", border: 0, background: "none" }}
+                      aria-label={t("import.legend.color")}
+                    />
+                    {hasRealSymbol ? (
+                      // Symbole réel découpé du PDF (Lot 4) : la clé interne
+                      // (`symbol_key`) n'a alors plus besoin d'être visible ni
+                      // modifiable — ce symbole-ci vient du fichier, jamais
+                      // d'elle.
+                      <img
+                        src={`data:image/svg+xml;base64,${btoa(entry.symbol_svg as string)}`}
+                        alt=""
+                        style={{ width: 28, height: 28, flex: "none" }}
+                      />
+                    ) : (
+                      <input
+                        className="input"
+                        style={{ width: 44, textAlign: "center", flex: "none" }}
+                        maxLength={2}
+                        placeholder={t("import.legend.symbol")}
+                        value={entry.symbol_key}
+                        onChange={(event) =>
+                          updatePaletteEntry(index, { symbol_key: event.target.value })
+                        }
+                        onBlur={commitPaletteEdits}
+                      />
+                    )}
+                    <input
+                      className="input"
+                      style={{ width: 90 }}
+                      placeholder={t("import.legend.code")}
+                      value={entry.code}
+                      onChange={(event) => updatePaletteEntry(index, { code: event.target.value })}
+                      onBlur={commitPaletteEdits}
+                    />
+                    <input
+                      className="input"
+                      style={{ flex: 1, minWidth: 0 }}
+                      placeholder={t("import.legend.name")}
+                      value={entry.name}
+                      onChange={(event) => updatePaletteEntry(index, { name: event.target.value })}
+                      onBlur={commitPaletteEdits}
+                    />
+                    <button
+                      type="button"
+                      className="btn btn-icon btn-ghost"
+                      aria-label={t("import.palette.remove")}
+                      onClick={() => removePaletteEntry(index)}
+                    >
+                      ✕
+                    </button>
+                  </div>
+                );
+              })}
             </div>
           </div>
         )}
