@@ -38,8 +38,24 @@ export function ColorList({ counts, highlight, onToggle, hideFinished = false }:
           <span style={{ flex: "none", width: 22, textAlign: "center", opacity: 0.75 }}>
             {count.symbol}
           </span>
-          <span style={{ flex: 1, minWidth: 0 }}>
-            <span style={{ display: "block", fontSize: 14, fontWeight: 600 }}>
+          {/* `overflow: hidden` ici aussi, pas seulement sur chaque ligne : sans
+              ça, un nom de fil long (les vraies légendes DMC du Lot 4 sont bien
+              plus longues que les noms de démonstration) peut pousser ce bloc à
+              une largeur négative une fois les colonnes voisines (pastille,
+              symbole, compteur) comptées — le texte débordait alors sans points
+              de suspension jusqu'à être coupé net par le conteneur défilant du
+              panneau, plusieurs niveaux plus haut. */}
+          <span style={{ flex: 1, minWidth: 0, overflow: "hidden" }}>
+            <span
+              style={{
+                display: "block",
+                fontSize: 14,
+                fontWeight: 600,
+                whiteSpace: "nowrap",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+              }}
+            >
               DMC {count.code}
             </span>
             <span
