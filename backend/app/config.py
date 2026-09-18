@@ -51,6 +51,14 @@ class Settings(BaseSettings):
     import_max_upload_mb: int = 40
     """Taille maximale d'un fichier déposé dans l'assistant d'import (Lot 2)."""
 
+    run_auto_backup_loop: bool = True
+    """Démarre la boucle de sauvegarde automatique quotidienne (Lot 8,
+    `app/auto_backup.py`) au lancement du processus.
+
+    Vrai par défaut, sur le même principe que ``run_migrations_on_startup`` :
+    seuls les tests la désactivent, pour ne pas faire tourner une boucle de
+    fond dans chacun d'eux."""
+
     @property
     def database_path(self) -> Path:
         return self.data_dir / self.database_filename
@@ -69,9 +77,18 @@ class Settings(BaseSettings):
         """
         return self.data_dir / "imports"
 
+    @property
+    def backups_dir(self) -> Path:
+        """Instantanés écrits par la sauvegarde automatique quotidienne (Lot
+        8, `app/auto_backup.py`) — dans le même volume unique que le reste
+        (`database_path`), pour que sauvegarder `data_dir` (README) les
+        couvre aussi sans configuration supplémentaire."""
+        return self.data_dir / "backups"
+
     def ensure_directories(self) -> None:
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self.imports_dir.mkdir(parents=True, exist_ok=True)
+        self.backups_dir.mkdir(parents=True, exist_ok=True)
 
 
 @lru_cache

@@ -11,7 +11,6 @@ from __future__ import annotations
 import json
 from datetime import UTC
 from typing import Annotated
-from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
@@ -28,6 +27,7 @@ from app.codec import (
 )
 from app.db import get_session
 from app.export_cshp import build_cshp_archive
+from app.http import content_disposition
 from app.models import Pattern, Progress, ProgressEvent
 from app.schemas import (
     GridOut,
@@ -352,16 +352,5 @@ def export_pattern(
     return Response(
         content=archive,
         media_type="application/zip",
-        headers={"Content-Disposition": _content_disposition(f"{pattern.name}.cshp")},
+        headers={"Content-Disposition": content_disposition(f"{pattern.name}.cshp")},
     )
-
-
-def _content_disposition(filename: str) -> str:
-    """Un nom de motif est arbitraire (accents, tirets cadratins, etc.) — les
-    en-têtes HTTP, eux, ne le sont pas : latin-1 strict. RFC 6266 fournit le
-    repli standard (``filename`` ASCII + ``filename*`` UTF-8 pourcent-encodé)
-    plutôt que de dégrader silencieusement le nom affiché au téléchargement.
-    """
-    safe = filename.replace("/", "-").encode("ascii", errors="replace").decode("ascii")
-    encoded = quote(filename.replace("/", "-"), safe="")
-    return f'attachment; filename="{safe}"; filename*=UTF-8\'\'{encoded}'

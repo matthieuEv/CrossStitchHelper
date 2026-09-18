@@ -149,8 +149,18 @@ export const fr = {
   "settings.data": "Données",
   "settings.data.export": "Exporter (.json)",
   "settings.data.restore": "Restaurer une sauvegarde",
+  "settings.data.restore.confirm":
+    "Restaurer ce fichier remplacera TOUS les motifs, toute la progression et toutes les recettes actuellement sur ce serveur — action irréversible. Continuer ?",
+  "settings.data.restore.invalidFile":
+    "Ce fichier n'est pas un JSON valide — vérifiez qu'il s'agit bien d'un export CrossStitchHelper.",
+  "settings.data.restore.success": "{patterns} motif(s) et {recipes} recette(s) restauré(s).",
+  "settings.data.restore.error": "Restauration impossible : {message}",
   "settings.data.autoBackup": "Sauvegarde automatique quotidienne",
+  "settings.data.autoBackup.error": "Réglage indisponible hors ligne.",
   "settings.data.erase": "Effacer toutes les données",
+  "settings.data.erase.confirm":
+    "Effacer définitivement tous les motifs, toute la progression et toutes les recettes de ce serveur — action irréversible. Continuer ?",
+  "settings.data.erase.done": "Toutes les données ont été effacées.",
   "settings.recipes": "Recettes réutilisables",
   "settings.recipes.hint":
     "Cadrage réutilisé automatiquement sur un prochain fichier du même éditeur — jamais les couleurs ni les dimensions d'un motif.",

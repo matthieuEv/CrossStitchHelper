@@ -118,3 +118,15 @@ export async function getPendingOps(patternId: string): Promise<PendingOp[]> {
 export async function clearPendingOps(ids: readonly number[]): Promise<void> {
   await db.pendingOps.bulkDelete(ids as number[]);
 }
+
+/**
+ * Vide tout le cache hors-ligne (Lot 8, `SettingsScreen.tsx` — restauration
+ * d'une sauvegarde). Après une restauration serveur, motifs/progression
+ * mis en cache ici référencent un état qui n'existe plus : les garder
+ * risquerait de rafficher de vieilles données avant la prochaine synchro,
+ * ou pire, de rejouer une `pendingOps` obsolète par-dessus les données
+ * fraîchement restaurées.
+ */
+export async function clearOfflineCache(): Promise<void> {
+  await Promise.all([db.patterns.clear(), db.progress.clear(), db.pendingOps.clear()]);
+}

@@ -9,6 +9,7 @@ absent : le serveur Vite sert le frontend et ce processus ne répond que sur
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import mimetypes
 from collections.abc import AsyncIterator
@@ -19,11 +20,14 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 
 from app import __version__
+from app.api.backup import router as backup_router
 from app.api.health import router as health_router
 from app.api.imports import router as imports_router
 from app.api.patterns import router as patterns_router
 from app.api.recipes import router as recipes_router
+from app.auto_backup import run_auto_backup_loop
 from app.config import get_settings
+from app.db import get_session_factory
 from app.migrations import upgrade_to_head
 
 logger = logging.getLogger(__name__)
@@ -46,7 +50,18 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     if settings.run_migrations_on_startup:
         upgrade_to_head()
     logger.info("CrossStitchHelper %s prêt — données dans %s", __version__, settings.data_dir)
+
+    task: asyncio.Task[None] | None = None
+    if settings.run_auto_backup_loop:
+        task = asyncio.create_task(
+            run_auto_backup_loop(get_session_factory(), settings.backups_dir)
+        )
+
     yield
+
+    if task is not None:
+        task.cancel()
+        await task
 
 
 def _cache_headers(relative_path: str) -> dict[str, str]:
@@ -101,6 +116,7 @@ def create_app() -> FastAPI:
     app.include_router(patterns_router, prefix="/api")
     app.include_router(imports_router, prefix="/api")
     app.include_router(recipes_router, prefix="/api")
+    app.include_router(backup_router, prefix="/api")
 
     # Enregistré en dernier : la route attrape-tout ne doit jamais masquer
     # une route d'API.
