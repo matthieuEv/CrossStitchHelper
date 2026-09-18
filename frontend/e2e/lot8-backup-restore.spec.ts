@@ -155,7 +155,12 @@ test.describe("Lot 8 — sauvegarde/restauration des données", () => {
     page,
     request,
   }) => {
-    const before = await fetchBackupDocument(request);
+    // Capturé juste avant l'effacement, pas supposé : les autres fichiers de
+    // spec de ce dépôt (imports type A/B/C/E, recettes…) peuvent avoir déjà
+    // créé d'autres motifs que la démonstration sur cette même base partagée
+    // — combien exactement dépend de l'ordre d'exécution des fichiers, donc
+    // jamais une valeur codée en dur ici.
+    const before = (await fetchBackupDocument(request)) as { patterns: Array<{ id: string }> };
 
     await page.goto("/");
     await page.getByRole("button", { name: "Réglages", exact: true }).click();
@@ -171,7 +176,9 @@ test.describe("Lot 8 — sauvegarde/restauration des données", () => {
     const restoreResponse = await request.post("/api/backup/restore", { data: before });
     expect(restoreResponse.ok()).toBe(true);
     const restoredPatterns = (await (await request.get("/api/patterns")).json()) as PatternSummary[];
-    expect(restoredPatterns).toHaveLength(1);
-    expect(restoredPatterns[0]?.id).toBe(DEMO_PATTERN_ID);
+    expect(restoredPatterns.map((pattern) => pattern.id).sort()).toEqual(
+      before.patterns.map((pattern) => pattern.id).sort(),
+    );
+    expect(restoredPatterns.some((pattern) => pattern.id === DEMO_PATTERN_ID)).toBe(true);
   });
 });
