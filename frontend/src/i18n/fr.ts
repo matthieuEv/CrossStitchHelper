@@ -37,9 +37,6 @@ export const fr = {
   "import.drop.choose": "Choisir un fichier",
   "import.drop.uploading": "Envoi en cours…",
   "import.drop.error": "Échec de l'envoi : {message}",
-  "import.photo": "Prendre une photo",
-  "import.photo.hint":
-    "Photo : posez la grille à plat, bien éclairée, sans ombre portée. Le cadrage se corrige à l'étape suivante.",
   "import.crop.hint":
     "Faites glisser les quatre bords pour ne garder que la grille, puis indiquez ses dimensions en cases.",
   "import.crop.hintDetected":

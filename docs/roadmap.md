@@ -39,17 +39,19 @@ Chaque lot est indépendamment livrable et utilisable : il n'y a pas de lot "inu
 
 ---
 
-## Lot 2 — Import assisté universel (type D)
+## Lot 2 — Import assisté universel
 
-- [x] Assistant : dépôt de fichier (PDF ou photo) — sélection ou appareil photo mobile, envoyé à `POST /api/imports` (`backend/app/api/imports.py`)
-- [x] Aperçu de la page et recadrage manuel de la grille — aperçu raster réel (PyMuPDF pour un PDF, redimensionnement Pillow pour une photo), poignées de cadrage inchangées
+- [x] Assistant : dépôt de fichier (PDF ou image) — sélection, envoyé à `POST /api/imports` (`backend/app/api/imports.py`)
+- [x] Aperçu de la page et recadrage manuel de la grille — aperçu raster réel (PyMuPDF pour un PDF, redimensionnement Pillow pour une image), poignées de cadrage inchangées
 - [x] Calibrage manuel des dimensions (colonnes/lignes)
 - [x] Saisie manuelle de la palette et remplissage des couleurs par zone — éditeur de palette + `frontend/src/components/ImportGridPainter.tsx` (sélection rectangulaire puis peinture, réutilise le rendu canvas du suivi)
 - [x] Export `.cshp` (format ouvert documenté) — `GET /api/patterns/{id}/export`, archive ZIP autonome (`backend/app/export_cshp.py`), lien direct depuis l'écran Statistiques
 
 > Aucun moteur de détection automatique ici (ni type de grille, ni dimensions, ni couleurs, ni symboles) — c'est tout le sujet des Lots 4 à 7. L'assistant du Lot 2 pré-remplit ce qu'il peut techniquement (l'aperçu de la page), l'utilisateur fait le reste à la main, comme n'importe quel éditeur de grille papier assisté par ordinateur.
 
-**Terminé quand :** n'importe quel PDF ou photo peut être transformé en motif suivable, entièrement à la main. À ce stade, l'application est déjà une alternative crédible à Pattern Keeper. **Fait** — vérifié de bout en bout (dépôt réel → cadrage → dimensions → palette → peinture par zone → motif suivable et synchronisé) par `frontend/e2e/lot2-manual-import.spec.ts` contre un vrai backend, pas seulement en tests unitaires.
+**Terminé quand :** n'importe quel PDF ou image peut être transformé en motif suivable, entièrement à la main. À ce stade, l'application est déjà une alternative crédible à Pattern Keeper. **Fait** — vérifié de bout en bout (dépôt réel → cadrage → dimensions → palette → peinture par zone → motif suivable et synchronisé) par `frontend/e2e/lot2-manual-import.spec.ts` contre un vrai backend, pas seulement en tests unitaires.
+
+> **Modifié au Lot 7 :** le bouton de prise de photo (accès direct à l'appareil photo mobile) a été retiré de l'assistant, avec l'abandon du type D — voir plus bas et `docs/cahier-des-charges.md` §4.4/§13. Déposer une image déjà existante (sélection de fichier) reste possible et continue de suivre exactement ce parcours manuel.
 
 ---
 
@@ -111,22 +113,17 @@ Une recette (`backend/app/models.py::Recipe`, `backend/app/api/recipes.py`) ne p
 
 ---
 
-## Lot 7 — Scan, photo et grilles en images réutilisées (types D et E)
+## Lot 7 — Grilles en images bitmap réutilisées (type E)
 
-**Type D — scan/photo libre :**
-- [ ] Détection de grille par vision par ordinateur
-- [ ] Correction de perspective
-- [ ] Quantification des couleurs par case
-- [ ] Classification des symboles
-- [ ] Validation manuelle obligatoire des zones à faible confiance
+Le type D (scan/photo libre, vision par ordinateur en plein cadre) a été retiré de ce lot et abandonné avant tout début d'implémentation — voir `docs/cahier-des-charges.md` §4.4/§13 (décision du 18/09/2026) : aucun fichier de référence réel pour le vérifier, contrairement à tous les autres types, et un problème de vision nettement plus ouvert que le reste du moteur d'extraction. Le bouton de prise de photo est retiré de l'assistant (Lot 2) ; l'import manuel universel reste disponible pour toute image déposée par ailleurs.
 
 **Type E — grilles composées d'images bitmap réutilisées** (voir `docs/cahier-des-charges.md` §4.3 et §4.4, cas River And Mountains) :
 - [ ] Détection et exclusion des pages de prévisualisation photoréaliste (pas des grilles de travail)
 - [ ] Extraction du catalogue d'images distinctes réutilisées sur les pages de grille (généralement quelques centaines, pas des milliers)
-- [ ] Classification de chaque image du catalogue en (couleur, symbole) — un problème fermé, plus simple que la vision libre du type D
+- [ ] Classification de chaque image du catalogue en (couleur, symbole) — un problème fermé de classification sur un petit catalogue, plus simple qu'une reconnaissance libre
 - [ ] Repositionnement de chaque case à partir des placements de ces images
 
-**Terminé quand :** une photo correcte d'une grille papier (type D) et le PDF `fixtures/river-and-mountains/` (type E) produisent chacun une proposition exploitable, l'utilisateur n'ayant plus qu'à corriger les erreurs signalées.
+**Terminé quand :** le PDF `fixtures/river-and-mountains-laserarts/` s'importe avec ses couleurs et symboles corrects, sans que sa page de prévisualisation photoréaliste ne soit prise pour une page de grille.
 
 ---
 

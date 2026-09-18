@@ -4,7 +4,7 @@ Ce fichier est le point d'entrée pour toute session Claude Code travaillant sur
 
 ## En une phrase
 
-CrossStitchHelper est une webapp (PWA) gratuite, open source et **auto-hébergée** qui transforme un PDF (ou une photo) de grille de point de croix en motif suivable, avec cochage des cases, couleur exacte par case et statistiques. Cible principale : iPhone/iPad via Safari.
+CrossStitchHelper est une webapp (PWA) gratuite, open source et **auto-hébergée** qui transforme un PDF de grille de point de croix en motif suivable, avec cochage des cases, couleur exacte par case et statistiques. Cible principale : iPhone/iPad via Safari.
 
 ## Documents de référence (à lire dans cet ordre)
 

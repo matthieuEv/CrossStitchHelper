@@ -146,15 +146,6 @@ export function UploadIcon(props: IconProps) {
   );
 }
 
-export function CameraIcon(props: IconProps) {
-  return (
-    <Svg {...props}>
-      <path d="M3 8.5A2 2 0 0 1 5 6.5h2l1.5-2h7L19 6.5a2 2 0 0 1 2 2V18a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
-      <circle cx="12" cy="12.8" r="3.4" />
-    </Svg>
-  );
-}
-
 /** Œil barré : masque les cases déjà brodées pour ne montrer que le reste à faire. */
 export function EyeOffIcon(props: IconProps) {
   return (

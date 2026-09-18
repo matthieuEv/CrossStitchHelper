@@ -32,9 +32,6 @@ export const en: Record<TranslationKey, string> = {
   "import.drop.choose": "Choose a file",
   "import.drop.uploading": "Uploading…",
   "import.drop.error": "Upload failed: {message}",
-  "import.photo": "Take a photo",
-  "import.photo.hint":
-    "Photo: lay the chart flat, well lit, with no shadow across it. You can fix the framing in the next step.",
   "import.crop.hint": "Drag the four edges to keep only the grid, then set its size in cells.",
   "import.crop.hintDetected":
     "This file was recognized automatically: every cell comes straight from its content, not from cropping. Browse the pages to double-check if you'd like.",

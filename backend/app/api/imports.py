@@ -363,8 +363,8 @@ def _run_auto_detection(job_id: str, source_path: Path) -> None:
         result["detecting"] = False
 
         # Lot 6 : indépendant du type A/B/C (une recette aide même un fichier
-        # qu'aucun des deux ne reconnaît, cas type D) — seul `crop_by_page`
-        # en est tiré, jamais réécrit s'il a déjà été cadré à la main.
+        # qu'aucun des deux ne reconnaît) — seul `crop_by_page` en est tiré,
+        # jamais réécrit s'il a déjà été cadré à la main.
         if fingerprint is not None and not result["config"].get("crop_by_page"):
             recipe = find_matching_recipe(session, fingerprint)
             if recipe is not None:
