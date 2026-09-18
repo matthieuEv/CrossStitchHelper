@@ -137,7 +137,8 @@ Le type D (scan/photo libre, vision par ordinateur en plein cadre) a été retir
 - [ ] Sauvegarde/restauration des données
 - [ ] Thème sombre
 - [ ] Traductions FR/EN complètes
-- [ ] Partage communautaire des recettes (éventuel, sous conditions strictes — voir cahier des charges §8.7)
+
+> **Partage communautaire des recettes retiré du périmètre (décision du 18/09/2026) :** évoqué comme une possibilité éventuelle au cahier des charges §8.7, jamais un engagement. L'utilisateur n'en a pas l'usage — la bibliothèque de recettes reste locale (Lot 6), point final.
 
 ---
 
@@ -158,4 +159,3 @@ Repéré en testant le Lot 5 en vrai sur `cafe-brasserie-charting-export` : cert
 ## Décisions encore ouvertes (à trancher avant certains lots)
 
 - Licence open source (MIT vs AGPL) — à trancher avant toute publication publique, indépendamment des lots.
-- Partage communautaire des recettes (Lot 8) — sous conditions légales strictes à définir.

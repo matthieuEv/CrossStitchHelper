@@ -318,7 +318,7 @@ Une empreinte est calculée à partir de la structure du fichier — polices emb
 
 Pour la même raison, la configuration enregistrée dans une recette (Lot 6) se limite au cadrage (`crop_by_page`) — jamais les dimensions ni la palette, qui sont le contenu propre à chaque motif et diffèrent toujours d'un fichier à l'autre, même au sein d'un même éditeur (§4.1). Ces deux-là restent produites, à chaque import, par la détection automatique (Lots 4-5) sur le fichier lui-même.
 
-Cette bibliothèque est locale en V2. Un partage communautaire, limité aux paramètres géométriques et structurels, est envisageable ensuite : c'est ce qui permet de résorber progressivement le problème d'hétérogénéité des formats sans coder un connecteur par éditeur.
+Cette bibliothèque reste strictement locale. Un partage communautaire avait été envisagé comme piste ouverte, mais retiré du périmètre (décision du 18/09/2026, §13) — l'usage visé n'en a pas besoin.
 
 ---
 
@@ -413,7 +413,7 @@ Détection et exclusion des pages de prévisualisation photoréaliste, extractio
 
 ### Lot 8 — Finitions
 
-Points fractionnés et spéciaux complets dans l'interface de suivi, sauvegarde/restauration, thème sombre, traductions, éventuel partage communautaire des recettes. Suppose que `backstitch_json`/`french_knots_json` (§6.2) sont déjà renseignés — voir Lot 9 pour leur extraction réelle depuis le PDF.
+Points fractionnés et spéciaux complets dans l'interface de suivi, sauvegarde/restauration, thème sombre, traductions. Suppose que `backstitch_json`/`french_knots_json` (§6.2) sont déjà renseignés — voir Lot 9 pour leur extraction réelle depuis le PDF.
 
 ### Lot 9 — Extraction des points spéciaux (arrière, nœuds, fractionnés)
 
@@ -454,4 +454,4 @@ Les lots 0 à 3 constituent la **V1 utilisable** et devraient être menés d'un 
 | 14/09/2026 | Ajout du **type E** (grilles en images bitmap réutilisées) à la typologie, après analyse de 4 PDF supplémentaires — hors périmètre du Lot 5, à repositionner dans la roadmap |
 | 18/09/2026 | **Abandon du type D** (reconnaissance automatique par vision par ordinateur sur photo libre) et retrait du bouton de prise de photo de l'assistant, avant tout début d'implémentation — voir §4.4. L'import manuel universel (Lot 2) reste le filet de sécurité pour tout fichier, image comprise, qu'aucun connecteur automatique ne reconnaît |
 | À trancher | Licence open source (MIT pour la diffusion, AGPL pour garantir l'ouverture des forks) |
-| À trancher | Partage communautaire des recettes (V3, sous conditions strictes) |
+| 18/09/2026 | **Partage communautaire des recettes retiré du périmètre** — évoqué comme piste éventuelle au §8.7, jamais un engagement ; l'usage visé n'en a pas besoin |
