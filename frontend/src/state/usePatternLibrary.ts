@@ -24,24 +24,64 @@ import {
   fetchProgress,
   type ApiPatternSummary,
 } from "../lib/api";
-import { cachePattern, cacheProgress, db, getPendingOps } from "../lib/db";
-import { patternFromApi, progressFromApi } from "../lib/mappers";
-import type { Pattern, Progress } from "../pattern/types";
+import { cachePattern, cacheProgress, db, getPendingOps, type PendingOp } from "../lib/db";
+import { patternFromApi, progressFromApi, specialProgressFromApi } from "../lib/mappers";
+import type { Pattern, Progress, SpecialProgress } from "../pattern/types";
 
 export interface LibraryPattern {
   pattern: Pattern;
   progress: Progress;
+  special: SpecialProgress;
   version: number;
   hoursAgo: number;
 }
 
 export type LibrarySource = "loading" | "server" | "cache" | "demo";
 
-async function applyPending(patternId: string, progress: Progress): Promise<Progress> {
+interface LayeredBase {
+  full: Progress;
+  special: SpecialProgress;
+}
+
+/**
+ * Rejoue les opérations encore en file (pas encore confirmées par le
+ * serveur) par-dessus une progression de base, pour ne jamais faire
+ * « reculer » l'affichage après un rechargement pendant une coupure réseau —
+ * les cinq catégories de points (Lot 8) à la fois, une opération en file
+ * porte toujours sa propre `layer`.
+ */
+async function applyPending(patternId: string, base: LayeredBase): Promise<LayeredBase> {
   const pending = await getPendingOps(patternId);
-  if (pending.length === 0) return progress;
-  const next = progress.slice();
-  for (const op of pending) next[op.index] = op.stitched ? 1 : 0;
+  if (pending.length === 0) return base;
+  const next: LayeredBase = {
+    full: base.full.slice(),
+    special: {
+      half: base.special.half.slice(),
+      quarter: base.special.quarter.slice(),
+      backstitch: base.special.backstitch.slice(),
+      knot: base.special.knot.slice(),
+    },
+  };
+  const targetFor = (op: PendingOp): Uint8Array => {
+    // Une opération mise en file avant le Lot 8 n'a pas de `layer` : elle ne
+    // peut être qu'un point entier, même défaut que côté serveur.
+    switch (op.layer ?? "full") {
+      case "half":
+        return next.special.half;
+      case "quarter":
+        return next.special.quarter;
+      case "backstitch":
+        return next.special.backstitch;
+      case "knot":
+        return next.special.knot;
+      default:
+        return next.full;
+    }
+  };
+  for (const op of pending) {
+    const target = targetFor(op);
+    if (op.index >= 0 && op.index < target.length) target[op.index] = op.stitched ? 1 : 0;
+  }
   return next;
 }
 
@@ -56,14 +96,18 @@ async function loadEntryFromServer(summary: ApiPatternSummary): Promise<LibraryP
     fetchProgress(summary.id),
   ]);
   const pattern = patternFromApi(detail, grid);
-  const done = await applyPending(summary.id, progressFromApi(progress));
+  const merged = await applyPending(summary.id, {
+    full: progressFromApi(progress),
+    special: specialProgressFromApi(grid, progress),
+  });
 
   await cachePattern(pattern);
-  await cacheProgress(summary.id, done, progress.version, progress.stitched_count);
+  await cacheProgress(summary.id, merged.full, progress.version, progress.stitched_count, merged.special);
 
   return {
     pattern,
-    progress: done,
+    progress: merged.full,
+    special: merged.special,
     version: progress.version,
     hoursAgo: hoursAgoFrom(summary.updated_at),
   };
@@ -74,11 +118,21 @@ async function loadEntriesFromCache(): Promise<LibraryPattern[]> {
   const entries: LibraryPattern[] = [];
   for (const row of cachedPatterns) {
     const cachedProgress = await db.progress.get(row.id);
-    const base = cachedProgress?.done ?? new Uint8Array(row.pattern.width * row.pattern.height);
-    const done = await applyPending(row.id, base);
+    const cellCount = row.pattern.width * row.pattern.height;
+    const base: LayeredBase = {
+      full: cachedProgress?.done ?? new Uint8Array(cellCount),
+      special: {
+        half: cachedProgress?.half ?? new Uint8Array(cellCount),
+        quarter: cachedProgress?.quarter ?? new Uint8Array(cellCount),
+        backstitch: cachedProgress?.backstitch ?? new Uint8Array(row.pattern.backstitch.length),
+        knot: cachedProgress?.knot ?? new Uint8Array(row.pattern.frenchKnots.length),
+      },
+    };
+    const merged = await applyPending(row.id, base);
     entries.push({
       pattern: row.pattern,
-      progress: done,
+      progress: merged.full,
+      special: merged.special,
       version: cachedProgress?.version ?? 0,
       hoursAgo: (Date.now() - row.cachedAt) / 3_600_000,
     });

@@ -158,6 +158,13 @@ export function createDemoPattern(): Pattern {
     width: DEMO_WIDTH,
     height: DEMO_HEIGHT,
     cells: buildCells(),
+    // Motif de démonstration purement local (Lot 1) : aucun point spécial
+    // (Lot 8), qui suppose un vrai backend — voir `Pattern.cellsHalf` pour la
+    // convention « couche toujours présente, éventuellement vide ».
+    cellsHalf: new Uint8Array(DEMO_WIDTH * DEMO_HEIGHT),
+    cellsQuarter: new Uint8Array(DEMO_WIDTH * DEMO_HEIGHT),
+    backstitch: [],
+    frenchKnots: [],
     palette: DEMO_PALETTE,
   };
 }

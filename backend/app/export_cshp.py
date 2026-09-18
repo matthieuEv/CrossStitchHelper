@@ -15,7 +15,7 @@ from datetime import datetime
 
 from app.models import Grid, PaletteEntry, Pattern, Progress
 
-FORMAT_VERSION = 1
+FORMAT_VERSION = 2
 
 _README = f"""CrossStitchHelper — archive .cshp (format ouvert, version {FORMAT_VERSION})
 
@@ -26,22 +26,35 @@ particulier pour être relue.
 Fichiers :
 
 - pattern.json   Métadonnées, palette et segments (point arrière, nœuds),
-                  en JSON. Décrit aussi le format des deux fichiers binaires
-                  ci-dessous (largeur, hauteur, encodage).
+                  en JSON. Décrit aussi le format des fichiers binaires
+                  ci-dessous (largeur, hauteur, encodage), et lequel de ces
+                  fichiers est présent dans cette archive précise.
 
-- grid.bin        La grille, une case par valeur : un entier non signé sur
-                  16 bits, little-endian, ligne par ligne de haut en bas et
-                  de gauche à droite. 0 = case vide ; sinon, l'entier est
-                  l'index (1-based) de la couleur dans `pattern.json`
-                  (palette[index - 1]).
+- grid.bin        La grille des points entiers, une case par valeur : un
+                  entier non signé sur 16 bits, little-endian, ligne par
+                  ligne de haut en bas et de gauche à droite. 0 = case vide ;
+                  sinon, l'entier est l'index (1-based) de la couleur dans
+                  `pattern.json` (palette[index - 1]).
 
-- progress.bin    Votre progression, un bit par case, même ordre de parcours
-                  que grid.bin (bit de poids faible en premier dans chaque
-                  octet). 1 = case brodée.
+- grid_half.bin, grid_quarter.bin (Lot 8, présents seulement si ce motif a
+                  des points 1/2 ou 1/4) — même format que grid.bin.
 
-Pour re-générer la grille en une matrice lisible depuis grid.bin et
-pattern.json, à peu près n'importe quel langage suffit : lire les entiers en
-uint16 little-endian, `width * height` d'entre eux, et les reformer en
+- progress.bin    Votre progression sur les points entiers, un bit par case,
+                  même ordre de parcours que grid.bin (bit de poids faible en
+                  premier dans chaque octet). 1 = case brodée.
+
+- progress_half.bin, progress_quarter.bin (Lot 8, présents avec les fichiers
+                  grid_*.bin correspondants) — même format que progress.bin.
+
+- progress_backstitch.bin, progress_knots.bin (Lot 8, présents si ce motif a
+                  des segments de point arrière / des nœuds) — un bit par
+                  élément de `pattern.json` → `segments.backstitch` /
+                  `segments.french_knots`, dans le même ordre (jamais un bit
+                  par case : ce ne sont pas des grilles).
+
+Pour re-générer une grille en une matrice lisible depuis un fichier grid*.bin
+et pattern.json, à peu près n'importe quel langage suffit : lire les entiers
+en uint16 little-endian, `width * height` d'entre eux, et les reformer en
 `height` lignes de `width` valeurs.
 """
 
@@ -96,11 +109,19 @@ def build_cshp_archive(
             "width": pattern.width,
             "height": pattern.height,
             "version": grid.version,
+            "half_file": "grid_half.bin" if grid.layer_half is not None else None,
+            "quarter_file": "grid_quarter.bin" if grid.layer_quarter is not None else None,
         },
         "progress": {
             "file": "progress.bin",
             "version": progress.version,
             "stitched_count": progress.stitched_count,
+            "half_file": "progress_half.bin" if progress.bitmap_half is not None else None,
+            "quarter_file": "progress_quarter.bin" if progress.bitmap_quarter is not None else None,
+            "backstitch_file": "progress_backstitch.bin"
+            if progress.bitmap_backstitch is not None
+            else None,
+            "knots_file": "progress_knots.bin" if progress.bitmap_knots is not None else None,
         },
     }
 
@@ -109,6 +130,18 @@ def build_cshp_archive(
         archive.writestr("pattern.json", json.dumps(pattern_json, ensure_ascii=False, indent=2))
         archive.writestr("grid.bin", grid.layer_full)
         archive.writestr("progress.bin", progress.bitmap)
+        if grid.layer_half is not None:
+            archive.writestr("grid_half.bin", grid.layer_half)
+        if grid.layer_quarter is not None:
+            archive.writestr("grid_quarter.bin", grid.layer_quarter)
+        if progress.bitmap_half is not None:
+            archive.writestr("progress_half.bin", progress.bitmap_half)
+        if progress.bitmap_quarter is not None:
+            archive.writestr("progress_quarter.bin", progress.bitmap_quarter)
+        if progress.bitmap_backstitch is not None:
+            archive.writestr("progress_backstitch.bin", progress.bitmap_backstitch)
+        if progress.bitmap_knots is not None:
+            archive.writestr("progress_knots.bin", progress.bitmap_knots)
         archive.writestr("README.txt", _README)
     return buffer.getvalue()
 

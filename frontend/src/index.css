@@ -461,6 +461,35 @@ button.badge {
 .toolbar button[aria-pressed="true"] { background: var(--color-accent); color: var(--color-bg); }
 .toolbar .sep { width: 1px; height: 30px; background: var(--color-divider); margin: 0 4px; }
 
+/* Catégorie de point (Lot 8) — barre compacte distincte de `.toolbar`
+   principale : cinq boutons de plus l'auraient fait déborder sur un écran
+   étroit (voir `TrackScreen.tsx`). */
+.toolbar-layers {
+  position: absolute;
+  bottom: 78px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 5px;
+  border-radius: 999px;
+  background: var(--color-surface);
+  box-shadow: var(--shadow-lg);
+}
+.toolbar-layers button {
+  width: 38px;
+  height: 38px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+}
+.toolbar-layers button[aria-pressed="true"] { background: var(--color-accent); color: var(--color-bg); }
+.toolbar-layers button:disabled { opacity: 0.32; cursor: not-allowed; }
+
 /* — panneau / tiroir des couleurs — */
 .color-row {
   width: 100%;

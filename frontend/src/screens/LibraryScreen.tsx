@@ -3,7 +3,7 @@ import { PlusIcon } from "../components/Icons";
 import { useT } from "../i18n";
 import { useRelativeTime } from "../lib/format";
 import { summarise, countByColor } from "../pattern/counts";
-import type { Pattern, Progress } from "../pattern/types";
+import type { Pattern, Progress, SpecialProgress } from "../pattern/types";
 
 export interface LibraryEntry {
   pattern: Pattern;
@@ -11,6 +11,10 @@ export interface LibraryEntry {
   hoursAgo: number;
   /** Version de progression connue du serveur ; absente pour un motif purement local. */
   version?: number;
+  /** Progression des points spéciaux (Lot 8) ; absente pour un motif de
+   * démonstration purement local (`demo/`), qui n'en a jamais — voir
+   * `emptySpecialProgress` pour le repli côté `App.tsx`. */
+  special?: SpecialProgress;
 }
 
 interface LibraryScreenProps {

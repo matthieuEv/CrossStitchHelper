@@ -198,14 +198,18 @@ grids (
   layer_full BLOB,        -- Uint16Array w*h, 0 = case vide, n = index palette
   layer_half BLOB NULL,
   layer_quarter BLOB NULL,
-  backstitch_json,        -- [{x1,y1,x2,y2,palette_index}]
-  french_knots_json,      -- [{x,y,palette_index}]
+  backstitch_json,        -- [{x1,y1,x2,y2,palette_index}], coordonnées en coins de case
+  french_knots_json,      -- [{x,y,palette_index}], coordonnées en centre de case
   encoding, version
 )
 
 progress (
   pattern_id PRIMARY KEY,
-  bitmap BLOB,            -- 1 bit par case
+  bitmap BLOB,            -- 1 bit par case (points entiers) — fait foi pour stitched_count
+  bitmap_half BLOB NULL,       -- 1 bit par case, même forme que bitmap (Lot 8)
+  bitmap_quarter BLOB NULL,    -- idem
+  bitmap_backstitch BLOB NULL, -- 1 bit par élément de grids.backstitch_json, pas par case
+  bitmap_knots BLOB NULL,      -- 1 bit par élément de grids.french_knots_json
   version INTEGER,        -- incrémenté à chaque delta appliqué
   stitched_count, updated_at
 )
@@ -233,7 +237,7 @@ Pour 255 × 180 : 91,8 ko bruts, typiquement 10–20 ko compressés. Aucun besoi
 
 ### 6.4 Format « fichier machine » exportable
 
-Un export ouvert et documenté doit être disponible dès le lot 2, pour que l'utilisateur ne soit jamais captif de l'application (leçon de Cross Stitch Markup) : archive `.cshp` (ZIP) contenant `pattern.json` (métadonnées + palette + segments), `grid.bin` (les couches), `progress.bin`, et un `README.txt` décrivant le format.
+Un export ouvert et documenté doit être disponible dès le lot 2, pour que l'utilisateur ne soit jamais captif de l'application (leçon de Cross Stitch Markup) : archive `.cshp` (ZIP) contenant `pattern.json` (métadonnées + palette + segments), `grid.bin` (la couche des points entiers), `progress.bin`, et un `README.txt` décrivant le format. Depuis le Lot 8 (`format_version` 2), quatre fichiers optionnels s'ajoutent quand le motif en a le contenu : `grid_half.bin`/`grid_quarter.bin` (mêmes conventions que `grid.bin`) et `progress_half.bin`/`progress_quarter.bin`/`progress_backstitch.bin`/`progress_knots.bin` — ces deux derniers un bit par élément de `segments.backstitch`/`french_knots`, jamais par case.
 
 ---
 
@@ -318,7 +322,7 @@ Une empreinte est calculée à partir de la structure du fichier — polices emb
 
 Pour la même raison, la configuration enregistrée dans une recette (Lot 6) se limite au cadrage (`crop_by_page`) — jamais les dimensions ni la palette, qui sont le contenu propre à chaque motif et diffèrent toujours d'un fichier à l'autre, même au sein d'un même éditeur (§4.1). Ces deux-là restent produites, à chaque import, par la détection automatique (Lots 4-5) sur le fichier lui-même.
 
-Cette bibliothèque est locale en V2. Un partage communautaire, limité aux paramètres géométriques et structurels, est envisageable ensuite : c'est ce qui permet de résorber progressivement le problème d'hétérogénéité des formats sans coder un connecteur par éditeur.
+Cette bibliothèque reste strictement locale. Un partage communautaire avait été envisagé comme piste ouverte, mais retiré du périmètre (décision du 18/09/2026, §13) — l'usage visé n'en a pas besoin.
 
 ---
 
@@ -341,7 +345,7 @@ Cette bibliothèque est locale en V2. Un partage communautaire, limité aux para
 | GET | `/api/patterns/{id}/export` | Export `.cshp` |
 | GET/POST/DELETE | `/api/recipes` | Bibliothèque de recettes |
 
-La synchronisation de progression fonctionne par **deltas versionnés** : le client envoie les cases modifiées avec la version qu'il connaît ; en cas de divergence, le serveur renvoie les opérations manquantes et le client rejoue. Cocher une case est une opération idempotente, ce qui rend les conflits triviaux à résoudre.
+La synchronisation de progression fonctionne par **deltas versionnés** : le client envoie les cases modifiées avec la version qu'il connaît ; en cas de divergence, le serveur renvoie les opérations manquantes et le client rejoue. Cocher une case est une opération idempotente, ce qui rend les conflits triviaux à résoudre. Depuis le Lot 8, chaque opération porte aussi une catégorie de point (`layer` : entier, 1/2, 1/4, point arrière, nœud) — un seul index de version pour tout le motif, mais un espace d'index propre à chaque catégorie (jamais partagé, voir §6.2).
 
 ---
 
@@ -413,7 +417,7 @@ Détection et exclusion des pages de prévisualisation photoréaliste, extractio
 
 ### Lot 8 — Finitions
 
-Points fractionnés et spéciaux complets dans l'interface de suivi, sauvegarde/restauration, thème sombre, traductions, éventuel partage communautaire des recettes. Suppose que `backstitch_json`/`french_knots_json` (§6.2) sont déjà renseignés — voir Lot 9 pour leur extraction réelle depuis le PDF.
+Points fractionnés et spéciaux complets dans l'interface de suivi, sauvegarde/restauration, thème sombre, traductions. Suppose que `backstitch_json`/`french_knots_json` (§6.2) sont déjà renseignés — voir Lot 9 pour leur extraction réelle depuis le PDF.
 
 ### Lot 9 — Extraction des points spéciaux (arrière, nœuds, fractionnés)
 
@@ -454,4 +458,4 @@ Les lots 0 à 3 constituent la **V1 utilisable** et devraient être menés d'un 
 | 14/09/2026 | Ajout du **type E** (grilles en images bitmap réutilisées) à la typologie, après analyse de 4 PDF supplémentaires — hors périmètre du Lot 5, à repositionner dans la roadmap |
 | 18/09/2026 | **Abandon du type D** (reconnaissance automatique par vision par ordinateur sur photo libre) et retrait du bouton de prise de photo de l'assistant, avant tout début d'implémentation — voir §4.4. L'import manuel universel (Lot 2) reste le filet de sécurité pour tout fichier, image comprise, qu'aucun connecteur automatique ne reconnaît |
 | À trancher | Licence open source (MIT pour la diffusion, AGPL pour garantir l'ouverture des forks) |
-| À trancher | Partage communautaire des recettes (V3, sous conditions strictes) |
+| 18/09/2026 | **Partage communautaire des recettes retiré du périmètre** — évoqué comme piste éventuelle au §8.7, jamais un engagement ; l'usage visé n'en a pas besoin |

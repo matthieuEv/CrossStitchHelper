@@ -3,11 +3,15 @@ import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPoi
 import { ColorList } from "../components/ColorList";
 import {
   BackIcon,
+  BackstitchIcon,
   CloseIcon,
   EyeOffIcon,
+  FrenchKnotIcon,
+  HalfStitchIcon,
   MinusIcon,
   PanIcon,
   PlusIcon,
+  QuarterStitchIcon,
   SelectIcon,
   StitchIcon,
   UndoIcon,
@@ -58,7 +62,20 @@ export function TrackScreen({ tracker, wide, onBack }: TrackScreenProps) {
     lastX: number;
     lastY: number;
     cell: CellPosition | null;
-  }>({ active: false, panning: false, startX: 0, startY: 0, lastX: 0, lastY: 0, cell: null });
+    /** Point de contact fractionnaire (Lot 8), capturé au même instant que
+     * `cell` — nécessaire pour viser un segment de point arrière ou un nœud,
+     * qui ne sont pas alignés sur la grille de cases (voir `tracker.toggleAtPoint`). */
+    point: { gx: number; gy: number } | null;
+  }>({
+    active: false,
+    panning: false,
+    startX: 0,
+    startY: 0,
+    lastX: 0,
+    lastY: 0,
+    cell: null,
+    point: null,
+  });
 
   /** Dernière position connue (coordonnées client) de chaque contact actif. */
   const pointersRef = useRef<Map<number, { x: number; y: number }>>(new Map());
@@ -74,8 +91,19 @@ export function TrackScreen({ tracker, wide, onBack }: TrackScreenProps) {
     initialCell: number;
   } | null>(null);
 
-  const { pattern, view, tool, highlight, hideDone, cursor, selection, totals, counts, version } =
-    tracker;
+  const {
+    pattern,
+    view,
+    tool,
+    activeLayer,
+    highlight,
+    hideDone,
+    cursor,
+    selection,
+    totals,
+    counts,
+    version,
+  } = tracker;
 
   // Un symbole réel (Lot 4) se décode de façon asynchrone la première fois
   // qu'il apparaît à l'écran (voir `onSymbolImageLoaded`) : ce compteur
@@ -94,6 +122,7 @@ export function TrackScreen({ tracker, wide, onBack }: TrackScreenProps) {
     const drawn = drawGrid(canvas, {
       pattern,
       done: tracker.done,
+      special: tracker.special,
       view,
       theme,
       highlight,
@@ -106,6 +135,7 @@ export function TrackScreen({ tracker, wide, onBack }: TrackScreenProps) {
   }, [
     pattern,
     tracker.done,
+    tracker.special,
     version,
     view,
     highlight,
@@ -167,6 +197,21 @@ export function TrackScreen({ tracker, wide, onBack }: TrackScreenProps) {
     [view],
   );
 
+  /** Comme `cellAt`, sans arrondi — nécessaire pour viser un segment de point
+   * arrière ou un nœud (Lot 8), qui ne sont pas alignés sur la grille de
+   * cases (voir `tracker.toggleAtPoint`). */
+  const pointAt = useCallback(
+    (event: ReactPointerEvent<HTMLCanvasElement>): { gx: number; gy: number } => {
+      const canvas = event.currentTarget;
+      const box = canvas.getBoundingClientRect();
+      return {
+        gx: view.x0 + (event.clientX - box.left) / view.cell,
+        gy: view.y0 + (event.clientY - box.top) / view.cell,
+      };
+    },
+    [view],
+  );
+
   const onPointerDown = (event: ReactPointerEvent<HTMLCanvasElement>): void => {
     event.currentTarget.setPointerCapture(event.pointerId);
     pointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
@@ -186,7 +231,7 @@ export function TrackScreen({ tracker, wide, onBack }: TrackScreenProps) {
       // Annule tout état de cocher/sélection en cours issu du premier contact :
       // un pincement ne doit jamais se terminer par une case cochée ou une
       // sélection tracée par accident.
-      dragRef.current = { ...dragRef.current, active: false, panning: false, cell: null };
+      dragRef.current = { ...dragRef.current, active: false, panning: false, cell: null, point: null };
       if (tool === "select") tracker.setSelection(null);
       tracker.setCursor(null);
       return;
@@ -195,6 +240,7 @@ export function TrackScreen({ tracker, wide, onBack }: TrackScreenProps) {
     if (pointersRef.current.size > 2) return; // Troisième contact : ignoré.
 
     const cell = cellAt(event);
+    const point = pointAt(event);
     dragRef.current = {
       active: true,
       panning: false,
@@ -203,6 +249,7 @@ export function TrackScreen({ tracker, wide, onBack }: TrackScreenProps) {
       lastX: event.clientX,
       lastY: event.clientY,
       cell,
+      point,
     };
 
     if (tool === "select") {
@@ -291,17 +338,20 @@ export function TrackScreen({ tracker, wide, onBack }: TrackScreenProps) {
         // un léger saut au prochain geste est accepté.
         pinchRef.current = null;
       }
-      dragRef.current = { ...dragRef.current, active: false, panning: false, cell: null };
+      dragRef.current = { ...dragRef.current, active: false, panning: false, cell: null, point: null };
       return;
     }
 
     const drag = dragRef.current;
-    // La case n'est cochée qu'au relâchement : c'est ce qui permet de commencer
-    // un glissé depuis n'importe quelle case sans la marquer au passage.
-    if (drag.active && !drag.panning && drag.cell !== null && tool === "stitch") {
-      tracker.toggleCell(drag.cell);
+    // L'élément n'est coché qu'au relâchement : c'est ce qui permet de
+    // commencer un glissé depuis n'importe où sans cocher au passage. La
+    // catégorie ciblée (`tracker.activeLayer`, Lot 8) détermine si `point`
+    // vise une case (full/half/quarter) ou le segment/nœud le plus proche
+    // (backstitch/knot) — voir `tracker.toggleAtPoint`.
+    if (drag.active && !drag.panning && drag.point !== null && tool === "stitch") {
+      tracker.toggleAtPoint(drag.point);
     }
-    dragRef.current = { ...drag, active: false, panning: false, cell: null };
+    dragRef.current = { ...drag, active: false, panning: false, cell: null, point: null };
   };
 
   const activeColor = highlight === 0 ? null : (counts[highlight - 1] ?? null);
@@ -506,6 +556,59 @@ export function TrackScreen({ tracker, wide, onBack }: TrackScreenProps) {
               <SelectIcon />
             </button>
           </div>
+
+          {tool === "stitch" && (
+            <div className="toolbar-layers" role="toolbar" aria-label={t("track.layer.title")}>
+              <button
+                type="button"
+                aria-pressed={activeLayer === "full"}
+                onClick={() => tracker.setActiveLayer("full")}
+                aria-label={t("track.layer.full")}
+              >
+                <StitchIcon size={17} />
+              </button>
+              <button
+                type="button"
+                aria-pressed={activeLayer === "half"}
+                onClick={() => tracker.setActiveLayer("half")}
+                aria-label={t("track.layer.half")}
+              >
+                <HalfStitchIcon size={17} />
+              </button>
+              <button
+                type="button"
+                aria-pressed={activeLayer === "quarter"}
+                onClick={() => tracker.setActiveLayer("quarter")}
+                aria-label={t("track.layer.quarter")}
+              >
+                <QuarterStitchIcon size={17} />
+              </button>
+              <div className="sep" />
+              {/* Point arrière / nœuds : cibles trop petites pour un tap
+                  fiable en dessous de `SYMBOL_MIN_CELL` — désactivés plutôt
+                  que silencieusement inopérants, voir `tracker.toggleAtPoint`. */}
+              <button
+                type="button"
+                aria-pressed={activeLayer === "backstitch"}
+                onClick={() => tracker.setActiveLayer("backstitch")}
+                disabled={view.cell < SYMBOL_MIN_CELL}
+                aria-label={t("track.layer.backstitch")}
+                title={view.cell < SYMBOL_MIN_CELL ? t("track.layer.zoomHint") : undefined}
+              >
+                <BackstitchIcon size={17} />
+              </button>
+              <button
+                type="button"
+                aria-pressed={activeLayer === "knot"}
+                onClick={() => tracker.setActiveLayer("knot")}
+                disabled={view.cell < SYMBOL_MIN_CELL}
+                aria-label={t("track.layer.knot")}
+                title={view.cell < SYMBOL_MIN_CELL ? t("track.layer.zoomHint") : undefined}
+              >
+                <FrenchKnotIcon size={17} />
+              </button>
+            </div>
+          )}
         </div>
 
         {!wide && drawerOpen && (

@@ -133,11 +133,16 @@ Le type D (scan/photo libre, vision par ordinateur en plein cadre) a été retir
 
 ## Lot 8 — Finitions
 
-- [ ] Points fractionnés et spéciaux complets dans l'interface (quart, demi, point arrière, point de nœud, perles)
+Sous-chantiers assez indépendants pour être livrés en PR séparées (décision du 18/09/2026) plutôt qu'en un seul gros commit.
+
+- [x] Points fractionnés et spéciaux complets dans l'interface (quart, demi, point arrière, point de nœud, perles)
 - [ ] Sauvegarde/restauration des données
 - [ ] Thème sombre
 - [ ] Traductions FR/EN complètes
-- [ ] Partage communautaire des recettes (éventuel, sous conditions strictes — voir cahier des charges §8.7)
+
+> **Partage communautaire des recettes retiré du périmètre (décision du 18/09/2026) :** évoqué comme une possibilité éventuelle au cahier des charges §8.7, jamais un engagement. L'utilisateur n'en a pas l'usage — la bibliothèque de recettes reste locale (Lot 6), point final.
+
+**Points fractionnés et spéciaux — terminé.** Modèle de progression étendu à cinq catégories (`backend/app/models.py::Progress.bitmap_half`/`_quarter`/`_backstitch`/`_knots`, migration 0005) au lieu d'une seule, chacune avec son propre espace d'index — jamais partagé entre catégories. `stitched_count`/le pourcentage global restent basés sur le point entier uniquement (§7.1, inchangé). Convention de coordonnées actée pour `Grid.backstitch_json`/`french_knots_json` (jamais précisée avant ce lot) : coins de case pour un segment, centre de case pour un nœud — voir `backend/app/schemas.py::BackstitchSegment`/`FrenchKnot`. Rendu canvas et interaction tactile ajoutés (`frontend/src/pattern/render.ts`, `state/useTracker.ts`, nouvelle barre de sélection de catégorie dans `TrackScreen.tsx`) : point arrière/nœuds interactifs seulement à partir du même seuil de zoom que l'apparition des symboles (`SYMBOL_MIN_CELL`), une case en dessous faisant trop peu de pixels pour distinguer deux éléments voisins au doigt. Perles : déjà couvertes par le mécanisme du point entier existant (`PaletteEntry.count_beads`) — une case « perle » est une case de `layer_full` dont l'entrée de palette référencée représente une perle, jamais une géométrie ou un espace d'index séparé, donc rien de nouveau à construire pour cette catégorie précise. Aucun connecteur d'extraction ne produit encore cette donnée depuis un PDF réel (Lot 9, pas commencé) : le motif de démonstration (`backend/app/seed.py`) porte désormais un petit contenu synthétique dans les quatre catégories pour que la fonctionnalité soit réellement vérifiable en attendant.
 
 ---
 
@@ -158,4 +163,3 @@ Repéré en testant le Lot 5 en vrai sur `cafe-brasserie-charting-export` : cert
 ## Décisions encore ouvertes (à trancher avant certains lots)
 
 - Licence open source (MIT vs AGPL) — à trancher avant toute publication publique, indépendamment des lots.
-- Partage communautaire des recettes (Lot 8) — sous conditions légales strictes à définir.

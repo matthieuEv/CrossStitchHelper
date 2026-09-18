@@ -86,7 +86,21 @@ export function useImportPainter(
   ]);
 
   const pattern: Pattern = useMemo(
-    () => ({ id: "import-painter", name, width: columns, height: rows, cells, palette }),
+    () => ({
+      id: "import-painter",
+      name,
+      width: columns,
+      height: rows,
+      cells,
+      // L'assistant d'import ne construit que le point entier — le point
+      // arrière/nœuds/1-2/1-4 restent le périmètre du Lot 9, pas encore
+      // construit (voir `lib/mappers.ts::patternFromImportPreview`).
+      cellsHalf: new Uint8Array(columns * rows),
+      cellsQuarter: new Uint8Array(columns * rows),
+      backstitch: [],
+      frenchKnots: [],
+      palette,
+    }),
     [name, columns, rows, cells, palette],
   );
 

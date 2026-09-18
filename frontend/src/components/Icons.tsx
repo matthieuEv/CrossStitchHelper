@@ -146,6 +146,55 @@ export function UploadIcon(props: IconProps) {
   );
 }
 
+/** Point 1/2 (Lot 8) : triangle occupant la moitié de la case, diagonale —
+ * même convention que le rendu canvas (`pattern/render.ts`). */
+export function HalfStitchIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <rect x="4" y="4" width="16" height="16" rx="2" />
+      <path d="M4 4l16 16" />
+    </Svg>
+  );
+}
+
+/** Point 1/4 (Lot 8) : un triangle plus petit qu'un point 1/2, même coin. */
+export function QuarterStitchIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <rect x="4" y="4" width="16" height="16" rx="2" />
+      <path d="M4 4l7 7M4 4v7M4 4h7" />
+    </Svg>
+  );
+}
+
+/** Point arrière (Lot 8) : trait le long des coins de case. */
+export function BackstitchIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <path d="M3 17L8 8l4 5 4-8 4 7" />
+    </Svg>
+  );
+}
+
+/** Nœud (Lot 8) : point rond au centre de case. */
+export function FrenchKnotIcon(props: IconProps) {
+  return (
+    <svg
+      width={props.size ?? 22}
+      height={props.size ?? 22}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.75"
+      aria-hidden="true"
+      focusable="false"
+    >
+      <circle cx="12" cy="12" r="9" />
+      <circle cx="12" cy="12" r="2.6" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
 /** Œil barré : masque les cases déjà brodées pour ne montrer que le reste à faire. */
 export function EyeOffIcon(props: IconProps) {
   return (

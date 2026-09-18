@@ -185,6 +185,12 @@ export function createDemoVariants(): DemoLibraryEntry[] {
       width: built.width,
       height: built.height,
       cells: built.cells,
+      // Motifs de démonstration purement locaux : aucun point spécial (Lot
+      // 8) — voir `demo/lavender.ts::createDemoPattern` pour la même note.
+      cellsHalf: new Uint8Array(built.width * built.height),
+      cellsQuarter: new Uint8Array(built.width * built.height),
+      backstitch: [],
+      frenchKnots: [],
       palette: paletteFor(definition.kind),
     };
     return {

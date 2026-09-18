@@ -135,7 +135,7 @@ def test_sync_progress_reports_missing_ops_for_stale_client(seeded_client: TestC
         json={"base_version": base["version"], "ops": [{"index": 10001, "stitched": True}]},
     ).json()
     assert device_b["conflict"] is True
-    assert device_b["missing_ops"] == [{"index": 10000, "stitched": True}]
+    assert device_b["missing_ops"] == [{"layer": "full", "index": 10000, "stitched": True}]
     assert device_b["version"] == device_a["version"] + 1
 
     final = seeded_client.get(f"/api/patterns/{DEMO_PATTERN_ID}/progress").json()
@@ -162,6 +162,107 @@ def test_sync_progress_rejects_out_of_range_index(seeded_client: TestClient) -> 
     assert response.status_code == 400
 
 
+# (clé du bitmap, index encore non coché sur le motif de démonstration) —
+# `app/seed.py` marque déjà 5/10 points 1/2 et 6/12 points 1/4 comme faits,
+# mais dans l'espace des *cases de la grille entière* (comme pour `full`,
+# pas dans celui, plus restreint, des seules cases porteuses d'un point 1/2
+# ou 1/4) : la case (0, 9) n'en fait pas partie, donc garantie non cochée.
+# Pour `backstitch`/`knot`, l'espace d'index est bien celui, plus étroit,
+# des éléments de `Grid.backstitch_json`/`french_knots_json` eux-mêmes —
+# seuls 0 et 1 (sur 4 segments), puis 0, 2 et 4 (sur 6 nœuds), y sont cochés
+# au départ.
+_UNCHECKED_INDEX_BY_LAYER = {
+    "half": ("bitmap_half", 9),
+    "quarter": ("bitmap_quarter", 9),
+    "backstitch": ("bitmap_backstitch", 2),
+    "knot": ("bitmap_knots", 1),
+}
+
+
+@pytest.mark.parametrize("layer", ["half", "quarter", "backstitch", "knot"])
+def test_sync_progress_handles_each_special_layer_independently(
+    seeded_client: TestClient, layer: str
+) -> None:
+    """Chaque catégorie a son propre bitmap et son propre espace d'index —
+    voir `app/models.py::Progress` et `app/api/patterns.py::_LAYER_ATTR`.
+    Le motif de démonstration a du contenu dans les cinq catégories depuis
+    le Lot 8 (`app/seed.py`), donc chacune est réellement exerçable ici."""
+    bitmap_key, target = _UNCHECKED_INDEX_BY_LAYER[layer]
+    before = seeded_client.get(f"/api/patterns/{DEMO_PATTERN_ID}/progress").json()
+    assert get_bit(base64_to_bytes(before[bitmap_key]), target) is False
+
+    response = seeded_client.post(
+        f"/api/patterns/{DEMO_PATTERN_ID}/progress",
+        json={
+            "base_version": before["version"],
+            "ops": [{"layer": layer, "index": target, "stitched": True}],
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["version"] == before["version"] + 1
+    # Cocher un segment de point arrière ou un nœud ne doit jamais gonfler
+    # `stitched_count` (points entiers uniquement, §7.1 inchangé) — sauf pour
+    # `layer == "full"`, non testé ici (déjà couvert par les tests existants).
+    assert body["stitched_count"] == before["stitched_count"]
+
+    after = seeded_client.get(f"/api/patterns/{DEMO_PATTERN_ID}/progress").json()
+    assert get_bit(base64_to_bytes(after[bitmap_key]), target) is True
+    # Les autres bitmaps ne doivent pas avoir bougé.
+    other_keys = ["bitmap", "bitmap_half", "bitmap_quarter", "bitmap_backstitch", "bitmap_knots"]
+    for other_key in other_keys:
+        if other_key == bitmap_key:
+            continue
+        assert after[other_key] == before[other_key]
+
+
+def test_sync_progress_rejects_index_out_of_range_for_its_own_layer(
+    seeded_client: TestClient,
+) -> None:
+    """Un `index` valide pour `full` (grande grille) mais hors limites pour
+    `backstitch` (4 segments sur le motif de démonstration) doit être
+    rejeté — les espaces d'index ne se partagent jamais entre catégories."""
+    response = seeded_client.post(
+        f"/api/patterns/{DEMO_PATTERN_ID}/progress",
+        json={"base_version": 1, "ops": [{"layer": "backstitch", "index": 4, "stitched": True}]},
+    )
+    assert response.status_code == 400
+
+
+def test_sync_progress_defaults_to_full_layer_when_omitted(seeded_client: TestClient) -> None:
+    """Compatibilité : un client qui ignore `layer` (comme avant le Lot 8)
+    continue de cocher un point entier, sans rien changer à son comportement
+    observable."""
+    before = seeded_client.get(f"/api/patterns/{DEMO_PATTERN_ID}/progress").json()
+    response = seeded_client.post(
+        f"/api/patterns/{DEMO_PATTERN_ID}/progress",
+        json={"base_version": before["version"], "ops": [{"index": 30000, "stitched": True}]},
+    )
+    assert response.status_code == 200
+    after = seeded_client.get(f"/api/patterns/{DEMO_PATTERN_ID}/progress").json()
+    assert get_bit(base64_to_bytes(after["bitmap"]), 30000) is True
+
+
+def test_sync_progress_mixed_layer_batch_applies_all_of_them(seeded_client: TestClient) -> None:
+    before = seeded_client.get(f"/api/patterns/{DEMO_PATTERN_ID}/progress").json()
+    response = seeded_client.post(
+        f"/api/patterns/{DEMO_PATTERN_ID}/progress",
+        json={
+            "base_version": before["version"],
+            "ops": [
+                {"layer": "full", "index": 20000, "stitched": True},
+                {"layer": "backstitch", "index": 2, "stitched": True},
+                {"layer": "knot", "index": 5, "stitched": True},
+            ],
+        },
+    )
+    assert response.status_code == 200
+    after = seeded_client.get(f"/api/patterns/{DEMO_PATTERN_ID}/progress").json()
+    assert get_bit(base64_to_bytes(after["bitmap"]), 20000) is True
+    assert get_bit(base64_to_bytes(after["bitmap_backstitch"]), 2) is True
+    assert get_bit(base64_to_bytes(after["bitmap_knots"]), 5) is True
+
+
 def test_sync_progress_404_for_unknown_pattern(client: TestClient) -> None:
     response = client.post(
         "/api/patterns/does-not-exist/progress",
@@ -177,27 +278,60 @@ def test_export_produces_a_self_contained_cshp_archive(seeded_client: TestClient
     assert "attachment" in response.headers["content-disposition"]
 
     archive = zipfile.ZipFile(io.BytesIO(response.content))
-    assert set(archive.namelist()) == {"pattern.json", "grid.bin", "progress.bin", "README.txt"}
+    # Le motif de démonstration a du contenu dans les cinq catégories de
+    # points depuis le Lot 8 (voir `app/seed.py`) : les quatre fichiers
+    # optionnels doivent donc tous être présents ici.
+    assert set(archive.namelist()) == {
+        "pattern.json",
+        "grid.bin",
+        "grid_half.bin",
+        "grid_quarter.bin",
+        "progress.bin",
+        "progress_half.bin",
+        "progress_quarter.bin",
+        "progress_backstitch.bin",
+        "progress_knots.bin",
+        "README.txt",
+    }
 
     manifest = json.loads(archive.read("pattern.json"))
     assert manifest["format"] == "cshp"
+    assert manifest["format_version"] == 2
     assert manifest["pattern"]["width"] == WIDTH
     assert manifest["pattern"]["height"] == HEIGHT
     assert len(manifest["palette"]) == 12
     assert manifest["grid"]["width"] == WIDTH
+    assert manifest["grid"]["half_file"] == "grid_half.bin"
+    assert manifest["grid"]["quarter_file"] == "grid_quarter.bin"
     assert manifest["progress"]["version"] == 1
+    assert manifest["progress"]["backstitch_file"] == "progress_backstitch.bin"
+    assert manifest["progress"]["knots_file"] == "progress_knots.bin"
+    assert len(manifest["segments"]["backstitch"]) == 4
+    assert len(manifest["segments"]["french_knots"]) == 6
+
+    grid_response = seeded_client.get(f"/api/patterns/{DEMO_PATTERN_ID}/grid").json()
+    progress_response = seeded_client.get(f"/api/patterns/{DEMO_PATTERN_ID}/progress").json()
+
+    # Même contenu que ce que /grid et /progress renvoient en base64 — pour
+    # chaque fichier, jamais un réencodage ou une troncature des octets
+    # stockés en base.
+    for filename, api_b64 in [
+        ("grid.bin", grid_response["layer_full"]),
+        ("grid_half.bin", grid_response["layer_half"]),
+        ("grid_quarter.bin", grid_response["layer_quarter"]),
+        ("progress.bin", progress_response["bitmap"]),
+        ("progress_half.bin", progress_response["bitmap_half"]),
+        ("progress_quarter.bin", progress_response["bitmap_quarter"]),
+        ("progress_backstitch.bin", progress_response["bitmap_backstitch"]),
+        ("progress_knots.bin", progress_response["bitmap_knots"]),
+    ]:
+        assert archive.read(filename) == base64_to_bytes(api_b64)
 
     grid_bytes = archive.read("grid.bin")
     assert len(grid_bytes) == WIDTH * HEIGHT * 2  # uint16 little-endian, une valeur par case
-    layer = decode_uint16_layer(grid_bytes)
-    # Même contenu que ce que /grid renvoie en base64 — l'export ne doit pas
-    # réencoder ou tronquer les octets stockés en base.
-    grid_response = seeded_client.get(f"/api/patterns/{DEMO_PATTERN_ID}/grid").json()
-    assert layer == decode_uint16_layer(base64_to_bytes(grid_response["layer_full"]))
-
-    progress_bytes = archive.read("progress.bin")
-    progress_response = seeded_client.get(f"/api/patterns/{DEMO_PATTERN_ID}/progress").json()
-    assert progress_bytes == base64_to_bytes(progress_response["bitmap"])
+    assert decode_uint16_layer(grid_bytes) == decode_uint16_layer(
+        base64_to_bytes(grid_response["layer_full"])
+    )
 
 
 def test_export_404_for_unknown_pattern(client: TestClient) -> None:
