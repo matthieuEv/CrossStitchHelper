@@ -13,7 +13,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { syncProgress } from "../lib/api";
 import { cacheProgress, clearPendingOps, enqueueOps, getPendingOps } from "../lib/db";
-import type { Pattern, Progress } from "../pattern/types";
+import { emptySpecialProgress, type Pattern, type Progress, type SpecialProgress } from "../pattern/types";
 import { useTracker, type CellChange, type Tracker } from "./useTracker";
 
 const FLUSH_DEBOUNCE_MS = 1200;
@@ -30,6 +30,7 @@ export function useSyncedTracker(
   pattern: Pattern,
   initialProgress: Progress,
   initialVersion: number,
+  initialSpecial: SpecialProgress = emptySpecialProgress(pattern),
 ): SyncedTracker {
   const versionRef = useRef(initialVersion);
   const flushTimerRef = useRef<number | null>(null);
@@ -47,10 +48,15 @@ export function useSyncedTracker(
     (changes: CellChange[]) => {
       // Best-effort : la transaction IndexedDB se termine largement avant
       // l'expiration du délai ci-dessous, pas besoin d'attendre ici — cela
-      // forcerait `toggleCell` à devenir asynchrone jusqu'au geste tactile.
+      // forcerait `toggleCell`/`toggleAtPoint` à devenir asynchrones jusqu'au
+      // geste tactile.
       void enqueueOps(
         patternId,
-        changes.map((change) => ({ index: change.index, stitched: change.stitched === 1 })),
+        changes.map((change) => ({
+          layer: change.layer,
+          index: change.index,
+          stitched: change.stitched === 1,
+        })),
       );
       setSyncState((current) => (current === "syncing" ? current : "pending"));
       scheduleFlush(FLUSH_DEBOUNCE_MS);
@@ -58,7 +64,7 @@ export function useSyncedTracker(
     [patternId, scheduleFlush],
   );
 
-  const tracker = useTracker(pattern, initialProgress, onChange);
+  const tracker = useTracker(pattern, initialProgress, initialSpecial, onChange);
   trackerRef.current = tracker;
 
   const flush = useCallback(async () => {
@@ -74,7 +80,10 @@ export function useSyncedTracker(
       const response = await syncProgress(
         patternId,
         versionRef.current,
-        pending.map((op) => ({ index: op.index, stitched: op.stitched })),
+        // Une opération mise en file avant le Lot 8 n'a pas de `layer` : elle
+        // ne peut être qu'un point entier (seule catégorie qui existait
+        // alors), même défaut que côté serveur (`ProgressOp.layer`).
+        pending.map((op) => ({ layer: op.layer ?? "full", index: op.index, stitched: op.stitched })),
       );
       const ids = pending
         .map((op) => op.id)
@@ -85,6 +94,7 @@ export function useSyncedTracker(
       if (response.missing_ops.length > 0) {
         trackerRef.current?.applyRemote(
           response.missing_ops.map((op) => ({
+            layer: op.layer,
             index: op.index,
             stitched: op.stitched ? 1 : 0,
           })),
@@ -96,6 +106,7 @@ export function useSyncedTracker(
           trackerRef.current.done,
           response.version,
           response.stitched_count,
+          trackerRef.current.special,
         );
       }
       setSyncState("synced");

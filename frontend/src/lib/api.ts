@@ -130,15 +130,34 @@ export interface ApiGrid {
   french_knots: Array<{ x: number; y: number; palette_index: number }>;
 }
 
+/** Même énumération que `backend/app/schemas.py::ProgressOp.layer` (Lot 8) —
+ * jamais un espace d'index partagé entre catégories. */
+export type ApiStitchLayer = "full" | "half" | "quarter" | "backstitch" | "knot";
+
 export interface ApiProgress {
   pattern_id: string;
   version: number;
   stitched_count: number;
   cell_count: number;
   bitmap: string;
+  /** Points 1/2 cochés (Lot 8), même forme que `bitmap` — `null` si le motif
+   * n'a aucun contenu 1/2 (`ApiGrid.layer_half` absent). */
+  bitmap_half: string | null;
+  bitmap_quarter: string | null;
+  /** 1 bit par élément de `ApiGrid.backstitch`/`french_knots`, pas par case —
+   * `null` si la liste correspondante est vide. */
+  bitmap_backstitch: string | null;
+  bitmap_knots: string | null;
+  stitched_count_half: number;
+  stitched_count_quarter: number;
+  stitched_count_backstitch: number;
+  stitched_count_knots: number;
 }
 
 export interface ApiProgressOp {
+  /** Défaut « full » côté serveur si omis (rétrocompatibilité) — toujours
+   * fourni explicitement côté client depuis le Lot 8. */
+  layer: ApiStitchLayer;
   index: number;
   stitched: boolean;
 }

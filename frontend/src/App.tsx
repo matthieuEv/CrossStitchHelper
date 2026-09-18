@@ -7,6 +7,7 @@ import { useT } from "./i18n";
 import { useServerHealth } from "./lib/api";
 import { useWideLayout } from "./lib/hooks";
 import { useRouter } from "./lib/router";
+import { emptySpecialProgress } from "./pattern/types";
 import { ImportScreen } from "./screens/ImportScreen";
 import { LibraryScreen, type LibraryEntry } from "./screens/LibraryScreen";
 import { SettingsScreen } from "./screens/SettingsScreen";
@@ -46,6 +47,7 @@ function PatternSession({
     entry.pattern,
     entry.progress,
     entry.version ?? 0,
+    entry.special ?? emptySpecialProgress(entry.pattern),
   );
   return <>{children(tracker)}</>;
 }

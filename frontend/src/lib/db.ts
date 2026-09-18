@@ -10,7 +10,7 @@
 
 import Dexie, { type Table } from "dexie";
 
-import type { Pattern } from "../pattern/types";
+import type { Pattern, SpecialProgress, StitchLayer } from "../pattern/types";
 
 export interface CachedPattern {
   id: string;
@@ -24,11 +24,20 @@ export interface CachedProgress {
   version: number;
   stitchedCount: number;
   updatedAt: number;
+  /** Progression des points spéciaux (Lot 8) — absente pour un enregistrement
+   * mis en cache avant ce lot ; traitée comme « rien de coché » à la lecture. */
+  half?: Uint8Array;
+  quarter?: Uint8Array;
+  backstitch?: Uint8Array;
+  knot?: Uint8Array;
 }
 
 export interface PendingOp {
   id?: number;
   patternId: string;
+  /** Absent pour une opération mise en file avant le Lot 8 — traitée comme
+   * « full » à la lecture (`getPendingOps`), même défaut que côté serveur. */
+  layer?: StitchLayer;
   index: number;
   stitched: boolean;
   createdAt: number;
@@ -65,8 +74,21 @@ export async function cacheProgress(
   done: Uint8Array,
   version: number,
   stitchedCount: number,
+  special?: SpecialProgress,
 ): Promise<void> {
-  await db.progress.put({ patternId, done, version, stitchedCount, updatedAt: Date.now() });
+  await db.progress.put({
+    patternId,
+    done,
+    version,
+    stitchedCount,
+    updatedAt: Date.now(),
+    ...(special !== undefined && {
+      half: special.half,
+      quarter: special.quarter,
+      backstitch: special.backstitch,
+      knot: special.knot,
+    }),
+  });
 }
 
 export async function getCachedProgress(patternId: string): Promise<CachedProgress | null> {
@@ -75,11 +97,17 @@ export async function getCachedProgress(patternId: string): Promise<CachedProgre
 
 export async function enqueueOps(
   patternId: string,
-  ops: ReadonlyArray<{ index: number; stitched: boolean }>,
+  ops: ReadonlyArray<{ layer: StitchLayer; index: number; stitched: boolean }>,
 ): Promise<void> {
   const now = Date.now();
   await db.pendingOps.bulkAdd(
-    ops.map((op) => ({ patternId, index: op.index, stitched: op.stitched, createdAt: now })),
+    ops.map((op) => ({
+      patternId,
+      layer: op.layer,
+      index: op.index,
+      stitched: op.stitched,
+      createdAt: now,
+    })),
   );
 }
 
