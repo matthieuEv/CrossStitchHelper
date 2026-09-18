@@ -58,6 +58,13 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     document.documentElement.dataset["theme"] = resolved;
+    // Garde la couleur de barre d'état/chrome du navigateur synchronisée
+    // avec le thème réellement appliqué — le script bloquant de
+    // `index.html` ne couvre que le tout premier rendu, pas un changement
+    // fait ensuite (bascule manuelle, ou préférence système qui change
+    // pendant que l'app est ouverte).
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (meta !== null) meta.setAttribute("content", resolved === "dark" ? "#1f1d19" : "#f5ead8");
   }, [resolved]);
 
   const setChoice = useCallback((next: ThemeChoice) => {
