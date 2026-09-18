@@ -409,7 +409,7 @@ Calcul d'empreinte, enregistrement et réapplication automatique des configurati
 
 Détection et exclusion des pages de prévisualisation photoréaliste, extraction du catalogue d'images distinctes réutilisées sur les pages de grille, classification de chaque image du catalogue en (couleur, symbole), repositionnement de chaque case à partir des placements de ces images.
 
-*Terminé quand :* le PDF « River And Mountains » s'importe avec ses couleurs et symboles corrects, sans que la page de prévisualisation photoréaliste ne soit prise pour une page de grille.
+*Terminé quand :* le PDF « River And Mountains » s'importe avec ses couleurs et symboles corrects, sans que la page de prévisualisation photoréaliste ne soit prise pour une page de grille. **Précision actée au Lot 7 :** le catalogue de cette fixture contient réellement 20 images distinctes, pas ~531 (voir §4.3 et `docs/roadmap.md`) ; le rapprochement image → couleur DMC utilisé (`backend/app/type_e.py`) est le comptage exact de placements par image, pas la couleur perceptuelle seule (mesurée peu fiable sur ce fichier).
 
 ### Lot 8 — Finitions
 

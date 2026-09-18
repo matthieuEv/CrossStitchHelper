@@ -118,12 +118,16 @@ Une recette (`backend/app/models.py::Recipe`, `backend/app/api/recipes.py`) ne p
 Le type D (scan/photo libre, vision par ordinateur en plein cadre) a été retiré de ce lot et abandonné avant tout début d'implémentation — voir `docs/cahier-des-charges.md` §4.4/§13 (décision du 18/09/2026) : aucun fichier de référence réel pour le vérifier, contrairement à tous les autres types, et un problème de vision nettement plus ouvert que le reste du moteur d'extraction. Le bouton de prise de photo est retiré de l'assistant (Lot 2) ; l'import manuel universel reste disponible pour toute image déposée par ailleurs.
 
 **Type E — grilles composées d'images bitmap réutilisées** (voir `docs/cahier-des-charges.md` §4.3 et §4.4, cas River And Mountains) :
-- [ ] Détection et exclusion des pages de prévisualisation photoréaliste (pas des grilles de travail)
-- [ ] Extraction du catalogue d'images distinctes réutilisées sur les pages de grille (généralement quelques centaines, pas des milliers)
-- [ ] Classification de chaque image du catalogue en (couleur, symbole) — un problème fermé de classification sur un petit catalogue, plus simple qu'une reconnaissance libre
-- [ ] Repositionnement de chaque case à partir des placements de ces images
+- [x] Détection et exclusion des pages de prévisualisation photoréaliste (pas des grilles de travail)
+- [x] Extraction du catalogue d'images distinctes réutilisées sur les pages de grille (20 sur la fixture de référence, pas les ~531 initialement supposés — voir plus bas)
+- [x] Classification de chaque image du catalogue en (couleur, symbole) — un problème fermé de classification sur un petit catalogue, plus simple qu'une reconnaissance libre
+- [x] Repositionnement de chaque case à partir des placements de ces images
 
 **Terminé quand :** le PDF `fixtures/river-and-mountains-laserarts/` s'importe avec ses couleurs et symboles corrects, sans que sa page de prévisualisation photoréaliste ne soit prise pour une page de grille.
+
+**Lot clos.** `backend/app/type_e.py` distingue une page de grille d'une page à exclure par mesure structurelle (taille d'image dominante, quasi carrée) plutôt que par position supposée : la page 1 (prévisualisation photoréaliste) mélange deux tailles d'image pour un rendu par empâtement de texture (69,8 % seulement à la taille dominante, contre 100 % sur une vraie page de grille), et la page 18 (carte d'assemblage des pages, pas une page de travail) place des images bien plus grandes et non carrées — deux régimes largement séparés, jamais un seuil ajusté au pif. Assemblage multi-pages par numéros d'axes (même mécanisme que le type A) sur les 15 pages de grille restantes.
+
+**Correction mesurée en cours de route, pas supposée** (`docs/cahier-des-charges.md` §4.3, `fixtures/README.md`) : le catalogue d'images de la fixture de référence contient réellement **20** images distinctes, pas ~531 comme documenté avant ce lot — 531 était le nombre de *placements* sur une seule page, confondu avec un nombre d'images distinctes. Ces 20 images correspondent exactement aux 20 couleurs DMC de sa légende texte (page 17, comptages exacts par couleur — même rôle de vérité terrain que la page 11 de `cafe-brasserie-charting-export` au Lot 4). Constat notable : rapprocher la couleur de fond de chaque image vers le code DMC le plus proche s'avère peu fiable sur ce fichier (12 des 20 mal identifiées, mesuré) — le signal réellement exploité par `detect_type_e` est le nombre total de placements de chaque image, qui correspond exactement au nombre de points déclaré par la légende pour chaque couleur ; la couleur perceptuelle (`nearest_dmc_among`, `backend/app/dmc_catalog.py`) ne sert que de repli explicite, signalé incertain, pour les images que le comptage ne peut départager sans ambiguïté.
 
 ---
 
