@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -59,6 +60,13 @@ class PatternDetail(BaseModel):
 
 
 class BackstitchSegment(BaseModel):
+    """Un trait de point arrière, en coordonnées de **coins** de case (Lot 8) :
+    (0, 0) est le coin haut-gauche de la case (0, 0) de la grille, (1, 0) le
+    coin haut-droit de cette même case (= coin haut-gauche de la case
+    (1, 0)), etc. — jamais un pixel ni un centre de case, pour que le tracé
+    reste correct quel que soit le zoom ou la taille de case affichée à
+    l'écran (même principe que `Grid.layer_full`, indépendant du rendu)."""
+
     x1: float
     y1: float
     x2: float
@@ -67,6 +75,10 @@ class BackstitchSegment(BaseModel):
 
 
 class FrenchKnot(BaseModel):
+    """Un point de nœud, en coordonnées de **centre de case** (Lot 8) :
+    (0.5, 0.5) est le centre de la case (0, 0) — jamais un coin (contrairement
+    à `BackstitchSegment`) ni un pixel."""
+
     x: float
     y: float
     palette_index: int
@@ -89,15 +101,50 @@ class ProgressOut(BaseModel):
     pattern_id: str
     version: int
     stitched_count: int
+    """Points entiers cochés — seule catégorie comptant pour le pourcentage
+    global d'avancement (§7.1), inchangé depuis le Lot 1."""
     cell_count: int
     bitmap: str = Field(description="1 bit par case, encodé en base64, ligne par ligne.")
 
+    bitmap_half: str | None = Field(
+        default=None,
+        description="Points 1/2 cochés, même forme que `bitmap` — absent si `Grid.layer_half` "
+        "est vide (aucun point 1/2 dans ce motif).",
+    )
+    bitmap_quarter: str | None = Field(
+        default=None,
+        description="Points 1/4 cochés, même forme que `bitmap` — absent si `Grid.layer_quarter` "
+        "est vide.",
+    )
+    bitmap_backstitch: str | None = Field(
+        default=None,
+        description="Segments de point arrière cochés — 1 bit par élément de "
+        "`GridOut.backstitch`, dans le même ordre (jamais une grille : absent si aucun segment).",
+    )
+    bitmap_knots: str | None = Field(
+        default=None,
+        description="Nœuds cochés — 1 bit par élément de `GridOut.french_knots`, même "
+        "convention que `bitmap_backstitch`.",
+    )
+    stitched_count_half: int = 0
+    stitched_count_quarter: int = 0
+    stitched_count_backstitch: int = 0
+    stitched_count_knots: int = 0
+
 
 class ProgressOp(BaseModel):
-    """Une modification de case, exprimée en état absolu — donc idempotente
-    (cahier des charges §9 : « cocher une case est une opération idempotente,
-    ce qui rend les conflits triviaux à résoudre »)."""
+    """Une modification de case ou d'élément, exprimée en état absolu — donc
+    idempotente (cahier des charges §9 : « cocher une case est une opération
+    idempotente, ce qui rend les conflits triviaux à résoudre »).
 
+    `layer` distingue la catégorie de point visée (Lot 8) : `index` se lit
+    alors dans l'espace de cette catégorie précise — un index de grille
+    (0-based, ligne par ligne) pour `full`/`half`/`quarter`, un index dans
+    `GridOut.backstitch`/`french_knots` pour `backstitch`/`knot`. Jamais un
+    espace d'index partagé entre catégories, pour ne jamais faire cocher la
+    mauvaise case/le mauvais segment par une confusion de couche."""
+
+    layer: Literal["full", "half", "quarter", "backstitch", "knot"] = "full"
     index: int = Field(ge=0)
     stitched: bool
 

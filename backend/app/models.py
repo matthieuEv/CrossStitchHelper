@@ -140,6 +140,11 @@ class Grid(Base):
 
     Une ligne par motif : ``pattern_id`` est à la fois clé primaire et clé
     étrangère (relation un-à-un stricte).
+
+    ``backstitch_json``/``french_knots_json`` (Lot 8) : voir
+    ``app/schemas.py::BackstitchSegment``/``FrenchKnot`` pour la convention
+    de coordonnées exacte (coins de case pour l'un, centre de case pour
+    l'autre — jamais des pixels).
     """
 
     __tablename__ = "grids"
@@ -167,7 +172,18 @@ class Progress(Base):
     ``version`` est incrémenté à chaque delta appliqué (voir
     :mod:`app.api.patterns`) ; c'est la valeur comparée par le client pour
     détecter s'il a manqué des changements faits depuis un autre appareil.
-    """
+
+    ``bitmap`` couvre uniquement les points entiers (``Grid.layer_full``) —
+    c'est lui qui fait foi pour ``stitched_count`` et le pourcentage global
+    (§7.1), inchangé depuis le Lot 1. Les quatre colonnes suivantes (Lot 8)
+    suivent le même principe pour les autres catégories de points, chacune
+    ``NULL`` tant que la grille correspondante n'a aucun contenu de cette
+    catégorie (même convention que ``Grid.layer_half``/``layer_quarter``) :
+    ``bitmap_half``/``bitmap_quarter`` ont la même forme que ``bitmap`` (1 bit
+    par case, ``Grid.layer_half``/``layer_quarter``) ; ``bitmap_backstitch``/
+    ``bitmap_knots`` sont dimensionnés sur le nombre d'éléments de
+    ``Grid.backstitch_json``/``french_knots_json`` (1 bit par segment/nœud,
+    jamais par case — ce ne sont pas des grilles)."""
 
     __tablename__ = "progress"
 
@@ -175,6 +191,10 @@ class Progress(Base):
         ForeignKey("patterns.id", ondelete="CASCADE"), primary_key=True
     )
     bitmap: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    bitmap_half: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    bitmap_quarter: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    bitmap_backstitch: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    bitmap_knots: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     stitched_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     updated_at: Mapped[datetime] = mapped_column(

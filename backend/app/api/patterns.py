@@ -19,7 +19,13 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from app.activity import compute_activity
-from app.codec import bytes_to_base64, count_set_bits, decode_uint16_layer
+from app.codec import (
+    bitmap_byte_length,
+    bytes_to_base64,
+    count_set_bits,
+    decode_uint16_layer,
+    set_bit,
+)
 from app.db import get_session
 from app.export_cshp import build_cshp_archive
 from app.models import Pattern, Progress, ProgressEvent
@@ -142,6 +148,22 @@ def _progress_out(pattern: Pattern, progress: Progress) -> ProgressOut:
         stitched_count=progress.stitched_count,
         cell_count=pattern.width * pattern.height,
         bitmap=bytes_to_base64(progress.bitmap),
+        bitmap_half=bytes_to_base64(progress.bitmap_half)
+        if progress.bitmap_half is not None
+        else None,
+        bitmap_quarter=bytes_to_base64(progress.bitmap_quarter)
+        if progress.bitmap_quarter is not None
+        else None,
+        bitmap_backstitch=bytes_to_base64(progress.bitmap_backstitch)
+        if progress.bitmap_backstitch is not None
+        else None,
+        bitmap_knots=bytes_to_base64(progress.bitmap_knots)
+        if progress.bitmap_knots is not None
+        else None,
+        stitched_count_half=count_set_bits(progress.bitmap_half or b""),
+        stitched_count_quarter=count_set_bits(progress.bitmap_quarter or b""),
+        stitched_count_backstitch=count_set_bits(progress.bitmap_backstitch or b""),
+        stitched_count_knots=count_set_bits(progress.bitmap_knots or b""),
     )
 
 
@@ -174,6 +196,28 @@ def _events_since(session: Session, pattern_id: str, version: int) -> list[Progr
     return ops
 
 
+_LAYER_ATTR = {
+    "full": "bitmap",
+    "half": "bitmap_half",
+    "quarter": "bitmap_quarter",
+    "backstitch": "bitmap_backstitch",
+    "knot": "bitmap_knots",
+}
+
+
+def _layer_bound(pattern: Pattern, layer: str) -> int:
+    """Nombre d'éléments adressables dans cette catégorie — 0 si le motif
+    n'en a aucun (`Grid.layer_half`/`layer_quarter` absent, ou liste
+    `backstitch_json`/`french_knots_json` vide), ce qui rejette naturellement
+    tout `index` (toujours >= 0) via la même vérification que les autres
+    catégories, sans cas particulier à écrire."""
+    if layer in ("full", "half", "quarter"):
+        return pattern.width * pattern.height
+    assert pattern.grid is not None  # garanti par l'appelant, voir sync_progress
+    field = "backstitch_json" if layer == "backstitch" else "french_knots_json"
+    return len(json.loads(getattr(pattern.grid, field)))
+
+
 @router.post(
     "/{pattern_id}/progress",
     response_model=ProgressSyncResponse,
@@ -190,17 +234,28 @@ def sync_progress(
     les opérations envoyées, qu'elles soient « en retard » ou non, puis on
     signale au client les changements faits par d'autres appareils depuis sa
     dernière version connue, pour qu'il les rejoue localement.
+
+    Depuis le Lot 8, `ProgressOp.layer` distingue jusqu'à cinq catégories de
+    points (point entier, 1/2, 1/4, point arrière, nœud), chacune avec son
+    propre bitmap (`Progress.bitmap*`) et son propre espace d'index — jamais
+    partagé entre catégories, pour ne jamais cocher le mauvais élément par
+    confusion de couche (voir `app/models.py::Progress`).
     """
     pattern = _get_pattern(session, pattern_id)
     progress = pattern.progress
     if progress is None:
         raise HTTPException(status_code=404, detail="Progression introuvable pour ce motif")
+    if pattern.grid is None:
+        raise HTTPException(status_code=404, detail="Grille introuvable pour ce motif")
 
-    cell_count = pattern.width * pattern.height
+    bounds = {layer: _layer_bound(pattern, layer) for layer in _LAYER_ATTR}
     for op in payload.ops:
-        if op.index >= cell_count:
+        bound = bounds[op.layer]
+        if op.index >= bound:
             raise HTTPException(
-                status_code=400, detail=f"Index hors grille : {op.index} >= {cell_count}"
+                status_code=400,
+                detail=f"Index hors limites pour la catégorie « {op.layer} » : "
+                f"{op.index} >= {bound}",
             )
 
     # Calculé avant l'écriture : les événements déjà connus du client ne
@@ -210,16 +265,23 @@ def sync_progress(
     conflict = len(missing_ops) > 0
 
     if payload.ops:
-        bitmap = bytearray(progress.bitmap)
+        ops_by_layer: dict[str, list[ProgressOp]] = {}
         for op in payload.ops:
-            byte_index, bit_index = divmod(op.index, 8)
-            if op.stitched:
-                bitmap[byte_index] |= 1 << bit_index
-            else:
-                bitmap[byte_index] &= ~(1 << bit_index) & 0xFF
+            ops_by_layer.setdefault(op.layer, []).append(op)
+
+        for layer, ops in ops_by_layer.items():
+            attr = _LAYER_ATTR[layer]
+            current: bytes | None = getattr(progress, attr)
+            bitmap = (
+                bytearray(current)
+                if current is not None
+                else bytearray(bitmap_byte_length(bounds[layer]))
+            )
+            for op in ops:
+                set_bit(bitmap, op.index, op.stitched)
+            setattr(progress, attr, bytes(bitmap))
 
         new_version = progress.version + 1
-        progress.bitmap = bytes(bitmap)
         progress.version = new_version
         progress.stitched_count = count_set_bits(progress.bitmap)
 

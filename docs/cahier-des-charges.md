@@ -198,14 +198,18 @@ grids (
   layer_full BLOB,        -- Uint16Array w*h, 0 = case vide, n = index palette
   layer_half BLOB NULL,
   layer_quarter BLOB NULL,
-  backstitch_json,        -- [{x1,y1,x2,y2,palette_index}]
-  french_knots_json,      -- [{x,y,palette_index}]
+  backstitch_json,        -- [{x1,y1,x2,y2,palette_index}], coordonnées en coins de case
+  french_knots_json,      -- [{x,y,palette_index}], coordonnées en centre de case
   encoding, version
 )
 
 progress (
   pattern_id PRIMARY KEY,
-  bitmap BLOB,            -- 1 bit par case
+  bitmap BLOB,            -- 1 bit par case (points entiers) — fait foi pour stitched_count
+  bitmap_half BLOB NULL,       -- 1 bit par case, même forme que bitmap (Lot 8)
+  bitmap_quarter BLOB NULL,    -- idem
+  bitmap_backstitch BLOB NULL, -- 1 bit par élément de grids.backstitch_json, pas par case
+  bitmap_knots BLOB NULL,      -- 1 bit par élément de grids.french_knots_json
   version INTEGER,        -- incrémenté à chaque delta appliqué
   stitched_count, updated_at
 )
@@ -233,7 +237,7 @@ Pour 255 × 180 : 91,8 ko bruts, typiquement 10–20 ko compressés. Aucun besoi
 
 ### 6.4 Format « fichier machine » exportable
 
-Un export ouvert et documenté doit être disponible dès le lot 2, pour que l'utilisateur ne soit jamais captif de l'application (leçon de Cross Stitch Markup) : archive `.cshp` (ZIP) contenant `pattern.json` (métadonnées + palette + segments), `grid.bin` (les couches), `progress.bin`, et un `README.txt` décrivant le format.
+Un export ouvert et documenté doit être disponible dès le lot 2, pour que l'utilisateur ne soit jamais captif de l'application (leçon de Cross Stitch Markup) : archive `.cshp` (ZIP) contenant `pattern.json` (métadonnées + palette + segments), `grid.bin` (la couche des points entiers), `progress.bin`, et un `README.txt` décrivant le format. Depuis le Lot 8 (`format_version` 2), quatre fichiers optionnels s'ajoutent quand le motif en a le contenu : `grid_half.bin`/`grid_quarter.bin` (mêmes conventions que `grid.bin`) et `progress_half.bin`/`progress_quarter.bin`/`progress_backstitch.bin`/`progress_knots.bin` — ces deux derniers un bit par élément de `segments.backstitch`/`french_knots`, jamais par case.
 
 ---
 
@@ -341,7 +345,7 @@ Cette bibliothèque reste strictement locale. Un partage communautaire avait ét
 | GET | `/api/patterns/{id}/export` | Export `.cshp` |
 | GET/POST/DELETE | `/api/recipes` | Bibliothèque de recettes |
 
-La synchronisation de progression fonctionne par **deltas versionnés** : le client envoie les cases modifiées avec la version qu'il connaît ; en cas de divergence, le serveur renvoie les opérations manquantes et le client rejoue. Cocher une case est une opération idempotente, ce qui rend les conflits triviaux à résoudre.
+La synchronisation de progression fonctionne par **deltas versionnés** : le client envoie les cases modifiées avec la version qu'il connaît ; en cas de divergence, le serveur renvoie les opérations manquantes et le client rejoue. Cocher une case est une opération idempotente, ce qui rend les conflits triviaux à résoudre. Depuis le Lot 8, chaque opération porte aussi une catégorie de point (`layer` : entier, 1/2, 1/4, point arrière, nœud) — un seul index de version pour tout le motif, mais un espace d'index propre à chaque catégorie (jamais partagé, voir §6.2).
 
 ---
 
