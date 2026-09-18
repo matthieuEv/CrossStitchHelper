@@ -84,6 +84,13 @@ docker compose up -d
 Si l'arrêt du service n'est pas souhaitable, `sqlite3 data/crossstitchhelper.db
 ".backup sauvegarde.db"` produit une copie cohérente à chaud.
 
+Sans accès au serveur, l'application propose aussi sa propre sauvegarde,
+depuis Réglages → Données : un export JSON téléchargeable directement
+utilisable pour restaurer (remplace toutes les données existantes). Une
+sauvegarde automatique quotidienne, activable au même endroit, écrit en plus
+un instantané dans `data/backups/` (les 14 plus récents conservés) — toujours
+dans le même volume `./data`, donc déjà couverte par la procédure ci-dessus.
+
 ## Accès depuis l'extérieur
 
 Par défaut l'instance n'est joignable que depuis votre réseau local, ce qui est
@@ -106,6 +113,7 @@ Toutes les variables d'environnement sont préfixées `CSH_`.
 | `CSH_FRONTEND_DIST` | défini dans l'image | Répertoire du frontend construit. Vide en développement. |
 | `CSH_DATABASE_FILENAME` | `crossstitchhelper.db` | Nom du fichier SQLite. |
 | `CSH_RUN_MIGRATIONS_ON_STARTUP` | `true` | Applique les migrations au démarrage. |
+| `CSH_RUN_AUTO_BACKUP_LOOP` | `true` | Démarre la boucle de sauvegarde automatique quotidienne (voir « Sauvegarde et restauration »). |
 
 ---
 
