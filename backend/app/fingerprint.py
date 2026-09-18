@@ -13,11 +13,18 @@ Ne lève jamais : un PDF illisible ou atypique doit simplement ne pas avoir
 d'empreinte réutilisable, jamais faire échouer l'import (cahier des charges
 §10, même contrat que `type_a.detect_type_a`/`type_bc.detect_type_bc`).
 
-`pdfplumber` (déjà utilisé par `app/type_a.py` pour l'analyse de police et
-de texte, contrairement à PyMuPDF réservé au rendu/rasterisation dans
-`app/type_bc.py`/`app/imports_engine.py`) plutôt que PyMuPDF : c'est lui qui
-porte des annotations de type, ce qui évite ici une longue suite de
-`# type: ignore[no-untyped-call]`."""
+PyMuPDF plutôt que `pdfplumber` (utilisé par `app/type_a.py` pour l'analyse
+fine de police/texte) : `pdfplumber` reconstruit un layout par glyphe
+(clustering géométrique) même pour une simple liste de noms de polices, et
+s'est mesuré à ~2s **par page** sur `cafe-brasserie-charting-export`
+(police de symboles dense, des milliers de glyphes par page de grille),
+largement trop pour une tâche de fond — voir l'historique de ce fichier :
+la première version utilisait `pdfplumber` et a dû être corrigée après une
+régression observée sur les suites e2e (calcul d'empreinte devenu le poste
+dominant du temps de détection). `page.get_fonts()`/`page.get_text()` de
+PyMuPDF n'ont pas ce coût (mesuré à quelques millisecondes sur ce même
+fichier, toutes pages confondues) : ils lisent le dictionnaire de
+ressources et le flux de texte de la page, sans reclustering géométrique."""
 
 from __future__ import annotations
 
@@ -26,7 +33,7 @@ import json
 import re
 from pathlib import Path
 
-import pdfplumber
+import pymupdf
 
 # Libellés génériques qu'un logiciel de charting imprime sur chaque export,
 # indépendamment du motif — jamais le titre du motif ou le nom d'une couleur
@@ -49,6 +56,11 @@ _BOILERPLATE_PHRASES = (
 
 _SUBSET_TAG_RE = re.compile(r"^[A-Z]{6}\+")
 
+# Pages sondées pour le texte générique — pas le document entier : la
+# légende/l'en-tête s'y trouve toujours sur les fixtures de référence, et
+# `get_text()` reste cher à l'échelle de plusieurs dizaines de pages.
+_TEXT_SAMPLE_PAGES = 3
+
 
 def compute_fingerprint(source_path: Path, kind: str) -> str | None:
     """`None` pour tout ce qui n'est pas un PDF (une photo n'a pas de
@@ -62,19 +74,20 @@ def compute_fingerprint(source_path: Path, kind: str) -> str | None:
 
 
 def _compute(source_path: Path) -> str:
-    with pdfplumber.open(source_path) as pdf:
-        first_page = pdf.pages[0]
-        page_size = (round(first_page.width), round(first_page.height))
+    with pymupdf.open(source_path) as doc:  # type: ignore[no-untyped-call]
+        first_page = doc[0]
+        rect = first_page.rect
+        page_size = (round(rect.width), round(rect.height))
 
         font_names: set[str] = set()
-        for page in pdf.pages:
-            font_names.update(_strip_subset_tag(str(char["fontname"])) for char in page.chars)
+        sample_text_parts: list[str] = []
+        for index, page in enumerate(doc):
+            for font in page.get_fonts():
+                font_names.add(_strip_subset_tag(str(font[3])))
+            if index < _TEXT_SAMPLE_PAGES:
+                sample_text_parts.append(page.get_text())
 
-        # Trois premières pages seulement : la légende/l'en-tête générique
-        # s'y trouve toujours sur les fixtures de référence, pas besoin de
-        # lire un PDF de plusieurs dizaines de pages en entier pour ça.
-        sample_text = "\n".join(page.extract_text() or "" for page in pdf.pages[:3]).lower()
-
+    sample_text = "\n".join(sample_text_parts).lower()
     boilerplate_hits = tuple(
         sorted(phrase for phrase in _BOILERPLATE_PHRASES if phrase in sample_text)
     )

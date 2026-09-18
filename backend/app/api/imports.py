@@ -223,10 +223,8 @@ async def create_import(
         "source_ext": ext,
         "source_sha256": sha256_file(source_path),
         # Calculée dans la tâche de fond (`_run_auto_detection`), jamais ici
-        # — mêmes raisons de performance que la détection : sur la fixture
-        # de référence (11 pages, police de symboles riche), le seul calcul
-        # d'empreinte prend une dizaine de secondes, inadapté à la requête
-        # d'upload elle-même (mesuré, voir l'historique de ce fichier).
+        # — voir `app/fingerprint.py` pour le bug de performance réel qui a
+        # motivé ce choix, même une fois le calcul lui-même rendu rapide.
         "source_fingerprint": None,
         "applied_recipe": None,
         "config": {
@@ -305,10 +303,11 @@ def _run_auto_detection(job_id: str, source_path: Path) -> None:
     doit se prendre sur l'état le plus frais possible, juste avant d'écrire,
     pas sur celui d'il y a plusieurs secondes.
 
-    L'empreinte (Lot 6, `app/fingerprint.py`) est calculée ici pour la même
-    raison — jamais dans `create_import` : sur la fixture de référence type
-    A (11 pages, police de symboles riche), le seul parcours glyphe par
-    glyphe de `compute_fingerprint` prend une dizaine de secondes."""
+    L'empreinte (Lot 6, `app/fingerprint.py`) est calculée ici plutôt que
+    dans `create_import`, jamais dans la requête d'upload — voir le module
+    pour le détail d'un bug de performance réel trouvé et corrigé à cet
+    endroit précis (une première implémentation à base de `pdfplumber`
+    prenait ~14 s sur la fixture Café Brasserie, remplacée par PyMuPDF)."""
     fingerprint = compute_fingerprint(source_path, "pdf")
 
     detection_error: Exception | None = None
