@@ -26,12 +26,19 @@ const RIVER_AND_MOUNTAINS_PATH = fileURLToPath(
   ),
 );
 
-const DETECTION_TIMEOUT = 90_000;
+// Plus généreux que les fixtures DMC des Lots 4-5 (90s) : ce fichier est la
+// plus lourde fixture du dépôt (18 pages, ~40 000 placements d'image rien
+// que sur sa page de couverture) et passe par les trois détecteurs en
+// séquence (detect_type_a et detect_type_bc doivent d'abord y renvoyer
+// `None`) — mesuré à ~21s en local pour la chaîne complète, mais le job CI
+// "Image Docker + e2e" tourne sur un runner mesurément plus lent (voir
+// l'historique : déjà la cause d'un ajustement similaire au Lot 5).
+const DETECTION_TIMEOUT = 180_000;
 
 test("un PDF type E (catalogue d'images réutilisées) pré-remplit l'assistant avec de vraies icônes couleur+symbole", async ({
   page,
 }) => {
-  test.setTimeout(120_000);
+  test.setTimeout(240_000);
 
   const pageErrors: Error[] = [];
   page.on("pageerror", (error) => pageErrors.push(error));
