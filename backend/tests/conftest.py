@@ -36,6 +36,12 @@ def make_client(
 
     def factory(dist: Path | None = None) -> TestClient:
         monkeypatch.setenv("CSH_DATA_DIR", str(tmp_path / "data"))
+        # Boucle de sauvegarde automatique (Lot 8, `app/auto_backup.py`) :
+        # désactivée par défaut dans les tests, même principe que les
+        # migrations — pas de tâche de fond qui écrit sur disque à chaque
+        # test qui instancie un client. `test_auto_backup.py` la réactive
+        # explicitement pour ce qu'elle a besoin de vérifier.
+        monkeypatch.setenv("CSH_RUN_AUTO_BACKUP_LOOP", "false")
         if dist is not None:
             monkeypatch.setenv("CSH_FRONTEND_DIST", str(dist))
         else:

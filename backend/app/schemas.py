@@ -377,3 +377,116 @@ class RecipeOut(BaseModel):
     config: RecipeConfig
     created_at: datetime
     usage_count: int
+
+
+# --- Sauvegarde/restauration complète (Lot 8, cahier des charges §7.5) -----
+#
+# Format JSON autonome (voir `app/backup.py`), distinct de l'export `.cshp`
+# (Lot 2) qui ne couvre qu'un seul motif à la fois : celui-ci couvre toute
+# l'instance (tous les motifs, toute la progression, toutes les recettes),
+# pour l'utilisateur qui n'a accès qu'à son téléphone, pas au volume Docker.
+
+
+class BackupPaletteEntry(BaseModel):
+    id: str
+    index_in_grid: int
+    brand: str
+    code: str
+    name: str
+    rgb_hex: str
+    symbol_key: str
+    symbol_svg: str | None = None
+    strands_full: int | None = None
+    strands_back: int | None = None
+    count_full: int = 0
+    count_half: int = 0
+    count_quarter: int = 0
+    count_french: int = 0
+    count_beads: int = 0
+    backstitch_length_cm: float | None = None
+
+
+class BackupGrid(BaseModel):
+    layer_full: str = Field(description="Uint16Array encodée en base64, comme `GridOut`.")
+    layer_half: str | None = None
+    layer_quarter: str | None = None
+    backstitch_json: str = "[]"
+    french_knots_json: str = "[]"
+    encoding: str = "uint16le"
+    version: int = 1
+
+
+class BackupProgress(BaseModel):
+    bitmap: str = Field(description="1 bit par case, encodé en base64, comme `ProgressOut`.")
+    bitmap_half: str | None = None
+    bitmap_quarter: str | None = None
+    bitmap_backstitch: str | None = None
+    bitmap_knots: str | None = None
+    version: int = 0
+    stitched_count: int = 0
+    updated_at: datetime
+
+
+class BackupProgressEvent(BaseModel):
+    """Un événement du journal `progress_events` — sans lui, l'historique
+    d'activité (§11) disparaîtrait d'une restauration même si la progression
+    elle-même est intacte."""
+
+    id: int
+    ts: datetime
+    ops_json: str
+    version_after: int
+
+
+class BackupPattern(BaseModel):
+    id: str
+    owner_id: str | None = None
+    name: str
+    source_filename: str | None = None
+    source_sha256: str | None = None
+    width: int
+    height: int
+    fabric_count: int | None = None
+    created_at: datetime
+    updated_at: datetime
+    import_config_json: str | None = None
+    recipe_id: str | None = None
+    notes: str | None = None
+    palette: list[BackupPaletteEntry] = Field(default_factory=list)
+    grid: BackupGrid | None = None
+    progress: BackupProgress | None = None
+    progress_events: list[BackupProgressEvent] = Field(default_factory=list)
+
+
+class BackupRecipe(BaseModel):
+    id: str
+    fingerprint: str
+    label: str
+    grid_type: str
+    config_json: str
+    created_at: datetime
+    usage_count: int = 0
+
+
+class BackupDocument(BaseModel):
+    """Le document exporté/restauré dans son ensemble.
+
+    Volontairement hors périmètre (`app/backup.py`) : ``ImportJob`` (état
+    transitoire d'un assistant d'import en cours, jamais une donnée durable)
+    et ``AppMeta`` (bookkeeping interne, pas une donnée utilisateur)."""
+
+    format: Literal["csh-backup"] = "csh-backup"
+    format_version: int = 1
+    generated_at: datetime
+    patterns: list[BackupPattern] = Field(default_factory=list)
+    recipes: list[BackupRecipe] = Field(default_factory=list)
+
+
+class BackupRestoreSummary(BaseModel):
+    patterns_count: int
+    recipes_count: int
+    progress_events_count: int
+
+
+class AutoBackupSettings(BaseModel):
+    enabled: bool
