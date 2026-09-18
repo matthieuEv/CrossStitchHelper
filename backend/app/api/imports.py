@@ -1,16 +1,18 @@
 """Assistant d'import — Lot 2 (cahier des charges §7.2, §9), détection
-automatique depuis les Lots 4-5.
+automatique depuis les Lots 4-5-7.
 
 L'utilisateur dépose un fichier, le cadre et le calibre lui-même, saisit sa
 propre palette, et peint chaque zone de la grille à la main — ce parcours
 manuel reste toujours disponible et jamais contourné de force (§4.4 :
 « jamais un résultat imposé »). Pour un PDF, `_run_auto_detection` tente en
-tâche de fond `app/type_a.py` puis, s'il ne reconnaît rien, `app/type_bc.py`
-(la typologie A/B/C/D est une classification, jamais un empilement de
-suppositions concurrentes — un seul résultat de détection par fichier) : le
-résultat ne fait que pré-remplir la même configuration modifiable :
-dimensions, palette, et une grille de fond que les zones peintes peuvent
-corriger (`app/imports_engine.apply_fills`, paramètre `base`).
+tâche de fond `app/type_a.py`, puis s'il ne reconnaît rien `app/type_bc.py`,
+puis en dernier recours `app/type_e.py` (catalogue fermé d'images bitmap
+réutilisées, Lot 7) — la typologie A/B/C/E est une classification, jamais
+un empilement de suppositions concurrentes : un seul résultat de détection
+par fichier. Le résultat ne fait que pré-remplir la même configuration
+modifiable : dimensions, palette, et une grille de fond que les zones
+peintes peuvent corriger (`app/imports_engine.apply_fills`, paramètre
+`base`).
 
 Depuis le Lot 6, cette même tâche de fond applique aussi une recette
 connue (`app/api/recipes.py`) quand l'empreinte du fichier (`app/fingerprint.py`)
@@ -60,6 +62,7 @@ from app.schemas import (
 )
 from app.type_a import SymbolGlyphLocation, TypeAPaletteEntry, detect_type_a
 from app.type_bc import TypeBCPaletteEntry, detect_type_bc
+from app.type_e import TypeEPaletteEntry, detect_type_e
 
 router = APIRouter(prefix="/imports", tags=["import"])
 
@@ -275,24 +278,27 @@ def _symbol_svg_for(glyph: SymbolGlyphLocation | None, source_path: Path) -> str
 
 @dataclass
 class _Detected:
-    grid_type: Literal["A", "B", "C"]
+    grid_type: Literal["A", "B", "C", "E"]
     columns: int
     rows: int
     cells: list[int]
-    palette: list[TypeAPaletteEntry] | list[TypeBCPaletteEntry]
+    palette: list[TypeAPaletteEntry] | list[TypeBCPaletteEntry] | list[TypeEPaletteEntry]
     confidence: float
     warnings: list[str]
     uncertain_cells: list[int]
 
 
 def _run_auto_detection(job_id: str, source_path: Path) -> None:
-    """Tâche de fond (Lots 4-5) : détection automatique, jamais bloquante
+    """Tâche de fond (Lots 4-5-7) : détection automatique, jamais bloquante
     pour la requête d'upload. Essaie `detect_type_a` puis, s'il ne reconnaît
-    rien, `detect_type_bc` (ni l'un ni l'autre ne lève jamais — voir leurs
-    modules) — un filet de sécurité ici garantit malgré tout que le job sort
-    toujours de l'état « en cours d'analyse », même face à un bug imprévu :
-    un import qui reste éternellement « en cours » serait une impasse (§10 :
-    « aucun import ne doit aboutir à une impasse »).
+    rien, `detect_type_bc`, puis en dernier recours `detect_type_e` (aucun
+    des trois ne lève jamais — voir leurs modules) — un seul résultat de
+    détection par fichier (§4.4 : une classification, jamais un empilement
+    de suppositions concurrentes). Un filet de sécurité ici garantit malgré
+    tout que le job sort toujours de l'état « en cours d'analyse », même
+    face à un bug imprévu : un import qui reste éternellement « en cours »
+    serait une impasse (§10 : « aucun import ne doit aboutir à une
+    impasse »).
 
     L'analyse tourne **avant** d'ouvrir la session ou de lire l'état courant
     du job : elle prend plusieurs secondes, largement de quoi laisser
@@ -338,6 +344,19 @@ def _run_auto_detection(job_id: str, source_path: Path) -> None:
                     warnings=type_bc.warnings,
                     uncertain_cells=type_bc.uncertain_cells,
                 )
+            else:
+                type_e = detect_type_e(source_path)
+                if type_e is not None:
+                    detected = _Detected(
+                        grid_type="E",
+                        columns=type_e.columns,
+                        rows=type_e.rows,
+                        cells=type_e.cells,
+                        palette=type_e.palette,
+                        confidence=type_e.confidence,
+                        warnings=type_e.warnings,
+                        uncertain_cells=type_e.uncertain_cells,
+                    )
     except Exception as error:  # pragma: no cover - filet de sécurité défensif
         detection_error = error
 
