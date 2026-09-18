@@ -209,7 +209,8 @@ def test_sync_progress_handles_each_special_layer_independently(
     after = seeded_client.get(f"/api/patterns/{DEMO_PATTERN_ID}/progress").json()
     assert get_bit(base64_to_bytes(after[bitmap_key]), target) is True
     # Les autres bitmaps ne doivent pas avoir bougé.
-    for other_key in ("bitmap", "bitmap_half", "bitmap_quarter", "bitmap_backstitch", "bitmap_knots"):
+    other_keys = ["bitmap", "bitmap_half", "bitmap_quarter", "bitmap_backstitch", "bitmap_knots"]
+    for other_key in other_keys:
         if other_key == bitmap_key:
             continue
         assert after[other_key] == before[other_key]
