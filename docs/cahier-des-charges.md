@@ -316,6 +316,8 @@ Priorité aux numéros d'axes imprimés en marge, qui donnent la position absolu
 
 Une empreinte est calculée à partir de la structure du fichier — polices embarquées, motifs de texte d'en-tête, géométrie de mise en page — **et jamais à partir du contenu créatif**. Après validation d'un import, la configuration peut être enregistrée comme recette associée à cette empreinte. Un fichier ultérieur de même empreinte (même éditeur, même logiciel, même boutique) est alors pré-configuré automatiquement.
 
+Pour la même raison, la configuration enregistrée dans une recette (Lot 6) se limite au cadrage (`crop_by_page`) — jamais les dimensions ni la palette, qui sont le contenu propre à chaque motif et diffèrent toujours d'un fichier à l'autre, même au sein d'un même éditeur (§4.1). Ces deux-là restent produites, à chaque import, par la détection automatique (Lots 4-5) sur le fichier lui-même.
+
 Cette bibliothèque est locale en V2. Un partage communautaire, limité aux paramètres géométriques et structurels, est envisageable ensuite : c'est ce qui permet de résorber progressivement le problème d'hétérogénéité des formats sans coder un connecteur par éditeur.
 
 ---
@@ -401,7 +403,7 @@ Extraction des couleurs par remplissage de rectangles, rapprochement Lab vers la
 
 Calcul d'empreinte, enregistrement et réapplication automatique des configurations validées, gestion de la bibliothèque locale.
 
-*Terminé quand :* réimporter un second PDF du même éditeur saute directement au récapitulatif.
+*Terminé quand :* réimporter un second PDF du même éditeur reprend automatiquement le cadrage déjà validé la première fois, sans repasser par l'étape de recadrage manuel. **Précision actée au Lot 6, pas supposée à l'écriture de cette section :** une recette ne porte jamais les dimensions ni la palette (§8.7 — contenu propre à chaque motif, même au sein d'un même éditeur, cf. §4.1 Winter Wreath/Summer Flight vs Botanical Citrus/Cucurbit) ; ces deux-là restent toujours recalculées par les Lots 4-5 sur le fichier lui-même, jamais recopiées d'un fichier à l'autre. « Sauter directement au récapitulatif » ne s'observe donc tel quel que pour un fichier déjà reconnu par un type A/B/C (le cadrage n'y change alors plus rien d'observable) ; pour un fichier non reconnu (type D), la recette économise uniquement le recadrage manuel, jamais la saisie des dimensions/palette propres à ce motif.
 
 ### Lot 7 — Scan et photo (type D automatique)
 

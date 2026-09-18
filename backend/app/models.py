@@ -7,8 +7,8 @@ charges §6) : ``patterns``, ``palette_entries``, ``grids``, ``progress``,
 distinctes reliées uniquement par ``pattern_id`` — un ré-import ne touche
 jamais à ``progress``.
 
-``recipes`` (aussi présente au §6.2 du cahier des charges) n'existe pas
-encore : elle appartient au Lot 6, qui n'a pas commencé.
+``recipes`` (§6.2, Lot 6) complète ce modèle : une empreinte de fichier
+(``app/fingerprint.py``) associée à une configuration d'import réutilisable.
 """
 
 from __future__ import annotations
@@ -211,6 +211,35 @@ class ProgressEvent(Base):
         return (
             f"ProgressEvent(pattern_id={self.pattern_id!r}, version_after={self.version_after})"
         )
+
+
+class Recipe(Base):
+    """Une configuration d'import validée, réutilisable sur un futur fichier
+    de même empreinte (Lot 6, cahier des charges §8.7, §6.2).
+
+    ``config_json`` ne contient **que des paramètres géométriques et
+    structurels** (`CLAUDE.md` : « jamais le contenu créatif du motif ») —
+    en l'état, uniquement ``crop_by_page`` (voir `app/api/recipes.py`).
+    Jamais les dimensions, la palette ou les zones peintes : ce sont le
+    contenu propre à chaque motif, qui diffère toujours d'un fichier à
+    l'autre même au sein d'un même éditeur (cahier des charges §4.1, cas
+    Winter Wreath/Summer Flight vs Botanical Citrus/Cucurbit).
+    """
+
+    __tablename__ = "recipes"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    fingerprint: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    label: Mapped[str] = mapped_column(String(200), nullable=False)
+    grid_type: Mapped[str] = mapped_column(String(8), nullable=False)
+    config_json: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utcnow
+    )
+    usage_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+    def __repr__(self) -> str:  # pragma: no cover - confort de débogage
+        return f"Recipe(id={self.id!r}, label={self.label!r}, fingerprint={self.fingerprint[:8]!r})"
 
 
 class ImportJob(Base):

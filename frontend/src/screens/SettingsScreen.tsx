@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { LANGUAGES, useI18n, type Language } from "../i18n";
+import { deleteRecipe, listRecipes, type ApiRecipe } from "../lib/api";
 import { useTheme, type ThemeChoice } from "../lib/theme";
 import { useWakeLock } from "../lib/wakeLock";
 
@@ -43,6 +44,21 @@ export function SettingsScreen({ version }: SettingsScreenProps) {
   // l'API de configuration existera (Lot 3).
   const [brand, setBrand] = useState<(typeof BRANDS)[number]>("DMC");
   const [autoBackup, setAutoBackup] = useState(true);
+
+  const [recipes, setRecipes] = useState<ApiRecipe[]>([]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void listRecipes(controller.signal)
+      .then(setRecipes)
+      .catch(() => undefined);
+    return () => controller.abort();
+  }, []);
+
+  const removeRecipe = (recipeId: string): void => {
+    setRecipes((current) => current.filter((recipe) => recipe.id !== recipeId));
+    void deleteRecipe(recipeId).catch(() => undefined);
+  };
 
   const themeChoices: Array<{ value: ThemeChoice; label: string }> = [
     { value: "light", label: t("settings.theme.light") },
@@ -175,6 +191,52 @@ export function SettingsScreen({ version }: SettingsScreenProps) {
           >
             {t("settings.data.erase")}
           </button>
+        </section>
+
+        <section className="panel">
+          <div>
+            <div className="panel-title">{t("settings.recipes")}</div>
+            <div className="text-muted" style={{ fontSize: 12 }}>
+              {t("settings.recipes.hint")}
+            </div>
+          </div>
+          {recipes.length === 0 ? (
+            <div className="text-muted" style={{ fontSize: 13 }}>
+              {t("settings.recipes.empty")}
+            </div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {recipes.map((recipe) => (
+                <div
+                  key={recipe.id}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    gap: 12,
+                    padding: "10px 14px",
+                    borderRadius: 16,
+                    background: "var(--color-surface)",
+                  }}
+                >
+                  <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+                    <span style={{ fontSize: 14 }}>{recipe.label}</span>
+                    <span className="text-muted" style={{ fontSize: 11 }}>
+                      {t("settings.recipes.usage", { count: recipe.usage_count })}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    className="btn btn-ghost"
+                    style={{ minHeight: 40, color: "var(--color-accent-700)" }}
+                    onClick={() => removeRecipe(recipe.id)}
+                  >
+                    {t("settings.recipes.delete")}
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
         </section>
 
         <div

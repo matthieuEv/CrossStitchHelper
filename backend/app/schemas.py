@@ -267,6 +267,14 @@ class ImportDetection(BaseModel):
     warnings: list[str] = Field(default_factory=list)
 
 
+class ImportAppliedRecipe(BaseModel):
+    """Recette (Lot 6) dont `crop_by_page` a été repris pour ce job — jamais
+    les dimensions ni la palette, voir `app/models.py::Recipe`."""
+
+    id: str
+    label: str
+
+
 class ImportJobOut(BaseModel):
     id: str
     status: str
@@ -281,6 +289,7 @@ class ImportJobOut(BaseModel):
         default=False,
         description="Détection automatique (Lot 4) en cours en tâche de fond pour ce PDF.",
     )
+    applied_recipe: ImportAppliedRecipe | None = None
     error: str | None
     created_at: datetime
     finished_at: datetime | None
@@ -293,3 +302,31 @@ class ImportCommitRequest(BaseModel):
 
 class ImportCommitResponse(BaseModel):
     pattern_id: str
+
+
+# --- Recettes réutilisables (Lot 6, cahier des charges §8.7, §6.2) ---------
+
+
+class RecipeConfig(BaseModel):
+    """Le sous-ensemble de `ImportConfig` qu'une recette peut porter —
+    volontairement restreint aux paramètres géométriques/structurels
+    (`CLAUDE.md` : jamais le contenu créatif du motif). Ni dimensions, ni
+    palette, ni zones peintes : elles diffèrent toujours d'un motif à
+    l'autre, même au sein d'un même éditeur."""
+
+    crop_by_page: dict[str, ImportCrop] = Field(default_factory=dict)
+
+
+class RecipeCreate(BaseModel):
+    job_id: str
+    label: str = Field(min_length=1, max_length=200)
+
+
+class RecipeOut(BaseModel):
+    id: str
+    fingerprint: str
+    label: str
+    grid_type: str
+    config: RecipeConfig
+    created_at: datetime
+    usage_count: int

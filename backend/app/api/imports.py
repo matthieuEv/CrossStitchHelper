@@ -11,6 +11,11 @@ suppositions concurrentes — un seul résultat de détection par fichier) : le
 résultat ne fait que pré-remplir la même configuration modifiable :
 dimensions, palette, et une grille de fond que les zones peintes peuvent
 corriger (`app/imports_engine.apply_fills`, paramètre `base`).
+
+Depuis le Lot 6, cette même tâche de fond applique aussi une recette
+connue (`app/api/recipes.py`) quand l'empreinte du fichier (`app/fingerprint.py`)
+en rapproche une : seul `crop_by_page` en est tiré (jamais les dimensions ni
+la palette, qui sont propres à chaque motif — voir `app/models.py::Recipe`).
 """
 
 from __future__ import annotations
@@ -27,10 +32,12 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, U
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
+from app.api.recipes import find_matching_recipe
 from app.codec import bytes_to_base64, encode_uint16_layer
 from app.codec import empty_bitmap as codec_empty_bitmap
 from app.config import Settings, get_settings
 from app.db import get_session, get_session_factory
+from app.fingerprint import compute_fingerprint
 from app.imports_engine import (
     MAX_PREVIEW_DIMENSION,
     apply_fills,
@@ -42,6 +49,7 @@ from app.imports_engine import (
 )
 from app.models import Grid, ImportJob, PaletteEntry, Pattern, Progress
 from app.schemas import (
+    ImportAppliedRecipe,
     ImportCommitRequest,
     ImportCommitResponse,
     ImportConfig,
@@ -142,6 +150,11 @@ def _job_out(job: ImportJob) -> ImportJobOut:
             ImportDetection(**result["detection"]) if result.get("detection") is not None else None
         ),
         detecting=bool(result.get("detecting", False)),
+        applied_recipe=(
+            ImportAppliedRecipe(**result["applied_recipe"])
+            if result.get("applied_recipe") is not None
+            else None
+        ),
         error=job.error,
         created_at=job.created_at,
         finished_at=job.finished_at,
@@ -209,6 +222,11 @@ async def create_import(
         "source_filename": file.filename or f"source.{ext}",
         "source_ext": ext,
         "source_sha256": sha256_file(source_path),
+        # Calculée dans la tâche de fond (`_run_auto_detection`), jamais ici
+        # — voir `app/fingerprint.py` pour le bug de performance réel qui a
+        # motivé ce choix, même une fois le calcul lui-même rendu rapide.
+        "source_fingerprint": None,
+        "applied_recipe": None,
         "config": {
             "crop_by_page": {},
             "columns": None,
@@ -283,7 +301,15 @@ def _run_auto_detection(job_id: str, source_path: Path) -> None:
     `result["config"]` avant l'analyse plutôt qu'après figerait un
     instantané périmé — la décision « l'utilisateur a-t-il déjà commencé ? »
     doit se prendre sur l'état le plus frais possible, juste avant d'écrire,
-    pas sur celui d'il y a plusieurs secondes."""
+    pas sur celui d'il y a plusieurs secondes.
+
+    L'empreinte (Lot 6, `app/fingerprint.py`) est calculée ici plutôt que
+    dans `create_import`, jamais dans la requête d'upload — voir le module
+    pour le détail d'un bug de performance réel trouvé et corrigé à cet
+    endroit précis (une première implémentation à base de `pdfplumber`
+    prenait ~14 s sur la fixture Café Brasserie, remplacée par PyMuPDF)."""
+    fingerprint = compute_fingerprint(source_path, "pdf")
+
     detection_error: Exception | None = None
     detected: _Detected | None = None
     try:
@@ -321,6 +347,7 @@ def _run_auto_detection(job_id: str, source_path: Path) -> None:
             return  # Job supprimé ou déjà validé entre-temps.
 
         result = _result_of(job)
+        result["source_fingerprint"] = fingerprint
 
         if detection_error is not None:
             result["detecting"] = False
@@ -334,6 +361,18 @@ def _run_auto_detection(job_id: str, source_path: Path) -> None:
             return
 
         result["detecting"] = False
+
+        # Lot 6 : indépendant du type A/B/C (une recette aide même un fichier
+        # qu'aucun des deux ne reconnaît, cas type D) — seul `crop_by_page`
+        # en est tiré, jamais réécrit s'il a déjà été cadré à la main.
+        if fingerprint is not None and not result["config"].get("crop_by_page"):
+            recipe = find_matching_recipe(session, fingerprint)
+            if recipe is not None:
+                recipe_config = json.loads(recipe.config_json)
+                result["config"]["crop_by_page"] = recipe_config.get("crop_by_page") or {}
+                recipe.usage_count += 1
+                result["applied_recipe"] = {"id": recipe.id, "label": recipe.label}
+
         if detected is not None:
             config = result["config"]
             # Si l'utilisateur a déjà commencé à renseigner la configuration
@@ -534,7 +573,7 @@ def commit(
         created_at=now,
         updated_at=now,
         import_config_json=json.dumps(result["config"]),
-        recipe_id=None,
+        recipe_id=(result.get("applied_recipe") or {}).get("id"),
         notes=None,
     )
     session.add(pattern)
