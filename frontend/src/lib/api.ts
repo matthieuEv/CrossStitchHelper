@@ -394,6 +394,69 @@ export function deleteRecipe(recipeId: string, signal?: AbortSignal): Promise<vo
   return deleteRequest(`/recipes/${recipeId}`, signal);
 }
 
+// --- Sauvegarde/restauration complète (Lot 8, cahier des charges §7.5) -----
+
+export interface ApiBackupRestoreSummary {
+  patterns_count: number;
+  recipes_count: number;
+  progress_events_count: number;
+}
+
+/** Format ouvert (JSON) et documenté (§7.5) — comme `patternExportUrl`, un
+ * lien direct suffit : le serveur pose déjà l'en-tête de téléchargement. */
+export function backupExportUrl(): string {
+  return "/api/backup";
+}
+
+/**
+ * Restauration complète : remplace toutes les données existantes par le
+ * contenu de `fileText` (le texte brut d'un fichier exporté via
+ * `backupExportUrl`). Passe par `fetch` directement plutôt que par
+ * `request`/`postJson` pour pouvoir remonter le message d'erreur précis du
+ * serveur (version de sauvegarde non prise en charge, format inattendu…) —
+ * une opération destructrice mérite mieux qu'un message générique.
+ */
+export async function restoreBackup(fileText: string): Promise<ApiBackupRestoreSummary> {
+  const response = await fetch("/api/backup/restore", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: fileText,
+  });
+  if (!response.ok) {
+    let detail = `Requête /backup/restore échouée (${response.status})`;
+    try {
+      const body = (await response.json()) as { detail?: string };
+      if (body.detail) detail = body.detail;
+    } catch {
+      // Corps non-JSON (ex. erreur réseau bas niveau) : message générique.
+    }
+    throw new ApiError(detail, response.status);
+  }
+  return (await response.json()) as ApiBackupRestoreSummary;
+}
+
+export interface ApiAutoBackupSettings {
+  enabled: boolean;
+}
+
+export function fetchAutoBackupSetting(
+  signal?: AbortSignal,
+): Promise<ApiAutoBackupSettings> {
+  return request<ApiAutoBackupSettings>("/backup/auto", withSignal(signal));
+}
+
+export function setAutoBackupSetting(
+  enabled: boolean,
+  signal?: AbortSignal,
+): Promise<ApiAutoBackupSettings> {
+  return request<ApiAutoBackupSettings>("/backup/auto", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ enabled }),
+    ...(signal !== undefined && { signal }),
+  });
+}
+
 export type ServerState = "checking" | "ok" | "unreachable";
 
 /**

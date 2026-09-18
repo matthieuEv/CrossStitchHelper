@@ -141,8 +141,18 @@ export const en: Record<TranslationKey, string> = {
   "settings.data": "Data",
   "settings.data.export": "Export (.json)",
   "settings.data.restore": "Restore a backup",
+  "settings.data.restore.confirm":
+    "Restoring this file will replace ALL patterns, all progress, and all recipes currently on this server — this cannot be undone. Continue?",
+  "settings.data.restore.invalidFile":
+    "This file isn't valid JSON — check that it's really a CrossStitchHelper export.",
+  "settings.data.restore.success": "{patterns} pattern(s) and {recipes} recipe(s) restored.",
+  "settings.data.restore.error": "Restore failed: {message}",
   "settings.data.autoBackup": "Daily automatic backup",
+  "settings.data.autoBackup.error": "Setting unavailable offline.",
   "settings.data.erase": "Erase all data",
+  "settings.data.erase.confirm":
+    "Permanently erase all patterns, all progress, and all recipes on this server — this cannot be undone. Continue?",
+  "settings.data.erase.done": "All data has been erased.",
   "settings.recipes": "Reusable recipes",
   "settings.recipes.hint":
     "Cropping reused automatically on a future file from the same editor — never a pattern's colours or dimensions.",

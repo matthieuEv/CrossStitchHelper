@@ -1,9 +1,30 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState, type ChangeEvent } from "react";
 
 import { LANGUAGES, useI18n, type Language } from "../i18n";
-import { deleteRecipe, listRecipes, type ApiRecipe } from "../lib/api";
+import {
+  backupExportUrl,
+  deleteRecipe,
+  fetchAutoBackupSetting,
+  listRecipes,
+  restoreBackup,
+  setAutoBackupSetting,
+  type ApiRecipe,
+} from "../lib/api";
+import { clearOfflineCache } from "../lib/db";
 import { useTheme, type ThemeChoice } from "../lib/theme";
 import { useWakeLock } from "../lib/wakeLock";
+
+/** Un document de sauvegarde vide : réutilise exactement le mécanisme de
+ * restauration (`app/backup.py::restore_backup`, remplacement complet) pour
+ * « effacer toutes les données », plutôt que dupliquer une logique de
+ * suppression séparée côté serveur pour le même résultat. */
+const EMPTY_BACKUP_DOCUMENT = JSON.stringify({
+  format: "csh-backup",
+  format_version: 1,
+  generated_at: new Date(0).toISOString(),
+  patterns: [],
+  recipes: [],
+});
 
 const BRANDS = ["DMC", "Anchor", "Madeira"] as const;
 const LANGUAGE_LABELS: Record<Language, string> = { fr: "Français", en: "English" };
@@ -40,10 +61,101 @@ export function SettingsScreen({ version }: SettingsScreenProps) {
   const { choice, setChoice } = useTheme();
   const wakeLock = useWakeLock();
 
-  // Réglages encore locaux : ils deviendront des préférences serveur quand
-  // l'API de configuration existera (Lot 3).
+  // Réglage encore local : deviendra une préférence serveur quand un besoin
+  // réel de la faire influencer l'extraction/l'import se présentera.
   const [brand, setBrand] = useState<(typeof BRANDS)[number]>("DMC");
-  const [autoBackup, setAutoBackup] = useState(true);
+
+  // Sauvegarde automatique quotidienne (Lot 8) : un réglage serveur
+  // (`AppMeta`, `app/auto_backup.py`), pas une préférence locale au
+  // navigateur — elle doit s'appliquer même si personne n'ouvre
+  // l'application ce jour-là.
+  const [autoBackup, setAutoBackupState] = useState(true);
+  const [autoBackupError, setAutoBackupError] = useState(false);
+  const [dataBusy, setDataBusy] = useState(false);
+  const [dataMessage, setDataMessage] = useState<string | null>(null);
+  const restoreInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void fetchAutoBackupSetting(controller.signal)
+      .then((setting) => setAutoBackupState(setting.enabled))
+      .catch((error: unknown) => {
+        // Un `AbortError` vient de notre propre nettoyage (démontage, ou
+        // double montage de StrictMode en développement) — jamais un vrai
+        // échec réseau, donc jamais affiché comme tel (même garde que
+        // `useServerHealth` ci-dessous).
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        setAutoBackupError(true);
+      });
+    return () => controller.abort();
+  }, []);
+
+  const toggleAutoBackup = (value: boolean): void => {
+    setAutoBackupState(value); // optimiste : reflète le tap immédiatement.
+    setAutoBackupError(false);
+    void setAutoBackupSetting(value).catch(() => {
+      setAutoBackupState(!value); // repli si le serveur est injoignable.
+      setAutoBackupError(true);
+    });
+  };
+
+  const reloadAfterDataChange = (): void => {
+    void clearOfflineCache().finally(() => window.location.reload());
+  };
+
+  const pickRestoreFile = (): void => restoreInputRef.current?.click();
+
+  const handleRestoreFile = (event: ChangeEvent<HTMLInputElement>): void => {
+    const file = event.target.files?.[0];
+    event.target.value = ""; // permet de rechoisir le même fichier ensuite.
+    if (!file) return;
+    if (!window.confirm(t("settings.data.restore.confirm"))) return;
+
+    setDataBusy(true);
+    setDataMessage(null);
+    void file
+      .text()
+      .then((text) => {
+        JSON.parse(text); // validation locale : message clair avant l'aller-retour réseau.
+        return restoreBackup(text);
+      })
+      .then((summary) => {
+        setDataMessage(
+          t("settings.data.restore.success", {
+            patterns: summary.patterns_count,
+            recipes: summary.recipes_count,
+          }),
+        );
+        reloadAfterDataChange();
+      })
+      .catch((error: unknown) => {
+        const message =
+          error instanceof SyntaxError
+            ? t("settings.data.restore.invalidFile")
+            : error instanceof Error
+              ? error.message
+              : String(error);
+        setDataMessage(t("settings.data.restore.error", { message }));
+        setDataBusy(false);
+      });
+  };
+
+  const eraseAllData = (): void => {
+    if (!window.confirm(t("settings.data.erase.confirm"))) return;
+
+    setDataBusy(true);
+    setDataMessage(null);
+    void restoreBackup(EMPTY_BACKUP_DOCUMENT)
+      .then(() => {
+        setDataMessage(t("settings.data.erase.done"));
+        reloadAfterDataChange();
+      })
+      .catch((error: unknown) => {
+        const message = error instanceof Error ? error.message : String(error);
+        setDataMessage(t("settings.data.restore.error", { message }));
+        setDataBusy(false);
+      });
+  };
 
   const [recipes, setRecipes] = useState<ApiRecipe[]>([]);
 
@@ -160,12 +272,29 @@ export function SettingsScreen({ version }: SettingsScreenProps) {
             <div className="panel-title">{t("settings.data")}</div>
           </div>
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-            <button type="button" className="btn btn-secondary" style={{ minHeight: 48, padding: "0 18px" }}>
+            <a
+              className="btn btn-secondary"
+              style={{ minHeight: 48, padding: "0 18px" }}
+              href={backupExportUrl()}
+            >
               {t("settings.data.export")}
-            </button>
-            <button type="button" className="btn btn-secondary" style={{ minHeight: 48, padding: "0 18px" }}>
+            </a>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              style={{ minHeight: 48, padding: "0 18px" }}
+              disabled={dataBusy}
+              onClick={pickRestoreFile}
+            >
               {t("settings.data.restore")}
             </button>
+            <input
+              ref={restoreInputRef}
+              type="file"
+              accept="application/json"
+              hidden
+              onChange={handleRestoreFile}
+            />
           </div>
           <div
             style={{
@@ -180,14 +309,26 @@ export function SettingsScreen({ version }: SettingsScreenProps) {
             <span>{t("settings.data.autoBackup")}</span>
             <Switch
               checked={autoBackup}
-              onChange={setAutoBackup}
+              onChange={toggleAutoBackup}
               label={t("settings.data.autoBackup")}
             />
           </div>
+          {autoBackupError && (
+            <div className="text-muted" style={{ fontSize: 12 }}>
+              {t("settings.data.autoBackup.error")}
+            </div>
+          )}
+          {dataMessage && (
+            <div className="text-muted" style={{ fontSize: 13 }}>
+              {dataMessage}
+            </div>
+          )}
           <button
             type="button"
             className="btn btn-ghost"
             style={{ alignSelf: "flex-start", minHeight: 44, color: "var(--color-accent-700)" }}
+            disabled={dataBusy}
+            onClick={eraseAllData}
           >
             {t("settings.data.erase")}
           </button>
