@@ -59,7 +59,6 @@ CrossStitchHelper se différencie par un **import semi-automatique transparent**
 
 - Cible principale : **Safari sur iPhone et iPad**, installée en **PWA** ("Ajouter à l'écran d'accueil") — plein écran, icône, hors-ligne, sans App Store.
 - Le stockage navigateur (IndexedDB) est traité comme un **cache**, jamais comme la source de vérité : Safari applique une politique d'éviction des données de site après inactivité, et le comportement a varié selon les versions d'iOS. La source de vérité est la base du serveur auto-hébergé.
-- L'import d'une photo de grille papier passe par un simple `<input type="file" accept="image/*" capture>`, sans app native.
 - L'accès depuis l'extérieur du réseau local (tunnel type Tailscale/WireGuard, ou reverse proxy HTTPS) est un sujet de **documentation**, pas de code applicatif.
 
 ### 3.3 Contraintes juridiques
@@ -104,10 +103,10 @@ Quatre PDF additionnels ont été analysés pour vérifier si la typologie A/B/C
 
 **« River And Mountains »** (éditeur tiers, LaserArtsDesigns, 18 pages) — structure radicalement différente des PDF DMC, et qui **ne rentre dans aucun des quatre types existants** :
 - La page 1 est une image de prévisualisation photoréaliste de l'ouvrage terminé (pas une grille de travail) — un cas à détecter et écarter avant même de chercher une grille.
-- Les pages de grille (à partir de la page 2) ne sont ni du texte, ni des rectangles vectoriels colorés, ni des tracés vectoriels : ce sont des **milliers de petites images bitmap réutilisées** (531 images distinctes de 48×48/64×64 px, chacune combinant déjà une couleur de fond et une icône de symbole, placées des dizaines de milliers de fois pour composer la grille).
-- La couleur et le symbole d'une case sont donc obtenus en identifiant **quelle image parmi les ~531 réutilisées** est placée à cette position — un problème de classification d'image sur un petit catalogue fermé d'icônes, très différent à la fois de la lecture d'un remplissage vectoriel (type B/C) et de la vision par ordinateur en plein cadre sur une photo libre (type D).
+- Les pages de grille (à partir de la page 2) ne sont ni du texte, ni des rectangles vectoriels colorés, ni des tracés vectoriels : ce sont des **milliers de petites images bitmap réutilisées** (531 est le nombre de *placements* sur la seule page 2, pas le nombre d'images distinctes — voir la correction mesurée au Lot 7 ci-dessous), chacune combinant déjà une couleur de fond et une icône de symbole, placées des dizaines de milliers de fois pour composer la grille.
+- La couleur et le symbole d'une case sont donc obtenus en identifiant quelle image du catalogue réutilisé est placée à cette position — un problème de classification d'image sur un petit catalogue fermé d'icônes, très différent de la lecture d'un remplissage vectoriel (type B/C). **Correction Lot 7, mesurée et non supposée (`backend/app/type_e.py`) :** le nombre d'images réellement distinctes utilisées par les pages de grille (2 à 16) est **20**, pas ~531 — mesuré en cumulant les empreintes de contenu (`digest`, déjà calculées par PyMuPDF) des images placées sur ces pages précises ; la convergence se stabilise dès la page 5, aucune nouvelle image sur les pages suivantes. Le chiffre de 531 vient d'une confusion entre nombre de *placements* sur la seule page 2 (531 est exact comme décompte de placements) et nombre d'images distinctes. Ces 20 images correspondent d'ailleurs exactement aux 20 couleurs DMC de la légende du fichier (une image par couleur, jamais deux variantes par couleur) — chacune combine un aplat de fond uni (la couleur du fil) et un symbole dessiné par-dessus en couleur contrastante, confirmé en rendant plusieurs images du catalogue.
 
-Ce dernier cas justifie l'ajout d'un **type E** à la typologie (§4.4) : les grilles composées d'images bitmap réutilisées, ni purement vectorielles ni des photos libres.
+Ce dernier cas justifie l'ajout d'un **type E** à la typologie (§4.4) : les grilles composées d'images bitmap réutilisées, ni purement vectorielles ni du texte.
 
 ### 4.4 Typologie retenue pour le moteur d'extraction
 
@@ -116,10 +115,11 @@ Ce dernier cas justifie l'ajout d'un **type E** à la typologie (§4.4) : les gr
 | **A** | Export logiciel structuré : police de symboles embarquée + légende texte | Auto | Auto | Cafe Brasserie |
 | **B** | Vectoriel éditorial, couleur seule (symboles ignorés ou absents de la page) | Auto | Non traité | DMC, magazines |
 | **C** | Une ou deux grilles vectorielles à couleur + symboles, densité de tracés à mesurer par page pour savoir si une superposition est nécessaire | Auto | Reconnaissance de forme | DMC Winter Wreath, Botanical Citrus, Cucurbit, Summer Flight |
-| **D** | Image / scan / photo libre | Assisté puis auto (V3) | Assisté puis auto (V3) | Grille papier photographiée |
 | **E** | Grille composée de petites images bitmap réutilisées (catalogue fermé d'icônes couleur+symbole) | Auto (classification d'image sur catalogue fermé) | Auto (idem) | River And Mountains |
 
-**Conséquence de conception majeure :** aucun parseur universel n'est possible, et cette diversité s'observe **même à l'intérieur d'un seul éditeur** (§4.3). L'auto-détection n'a pas besoin d'être parfaite — elle doit produire une **bonne proposition de départ** que l'utilisateur corrige. Le type D en mode assisté est le **filet de sécurité universel** : il fonctionne sur n'importe quel fichier, et égale au minimum ce que fait Pattern Keeper aujourd'hui. Le type E, bien que nouveau, reste hors du périmètre du Lot 5 (types B/C) — voir `docs/roadmap.md` pour son positionnement.
+**Conséquence de conception majeure :** aucun parseur universel n'est possible, et cette diversité s'observe **même à l'intérieur d'un seul éditeur** (§4.3). L'auto-détection n'a pas besoin d'être parfaite — elle doit produire une **bonne proposition de départ** que l'utilisateur corrige. L'assistant d'import manuel (Lot 2) reste le **filet de sécurité universel** pour tout fichier qu'aucun connecteur automatique ne reconnaît : cadrage, dimensions, palette et peinture à la main, ce qui égale au minimum ce que fait Pattern Keeper aujourd'hui.
+
+**Type D abandonné (décision du 18/09/2026, voir §13) :** la typologie prévoyait initialement un type D — reconnaissance automatique par vision par ordinateur d'une photo libre de grille papier, avec prise de photo intégrée à l'assistant. Abandonné avant tout début d'implémentation, faute de fichier de référence réel pour vérifier une telle détection (contrairement à tous les autres types, toujours vérifiés contre un fichier connu) et devant l'ampleur du problème de vision en plein cadre (éclairage, angle, flou) par rapport au reste du moteur d'extraction, qui exploite tous la structure interne d'un PDF. Le bouton de prise de photo a été retiré de l'assistant ; déposer une image existante (scan, capture d'écran) reste possible et suit alors le parcours manuel universel ci-dessus, sans tentative de reconnaissance automatique.
 
 ---
 
@@ -247,13 +247,13 @@ Un export ouvert et documenté doit être disponible dès le lot 2, pour que l'u
 
 Parcours en étapes, chacune pré-remplie automatiquement et modifiable, avec navigation avant/arrière sans perte de saisie.
 
-**Étape 1 — Dépôt du fichier.** PDF ou image, par sélection ou glisser-déposer, avec accès direct à l'appareil photo sur mobile. Le fichier est envoyé au serveur ; un job d'analyse démarre.
+**Étape 1 — Dépôt du fichier.** PDF ou image, par sélection ou glisser-déposer. Le fichier est envoyé au serveur ; un job d'analyse démarre.
 
 **Étape 2 — Analyse automatique.** Le serveur calcule l'empreinte du fichier et cherche une recette connue (§8.7). Si elle existe, toutes les étapes suivantes sont pré-remplies et l'utilisateur peut aller directement au récapitulatif. Sinon, il produit ses meilleures estimations : nature de chaque page, zone de grille probable, pas de la grille, dimensions en cases, légende candidate, indices de pagination, détection de grilles jumelles.
 
 **Étape 3 — Recadrage.** Aperçu raster de la page avec un cadre proposé, ajustable par poignées sur les quatre bords, zoom pour le réglage fin. Objectif : exclure marges, titres, légendes intercalées, ou corriger une détection imprécise.
 
-**Étape 4 — Type de grille.** Choix dans la liste fermée A / B / C / D (§4.4), pré-sélectionné par la détection, avec une description courte et honnête des conséquences de chaque choix (notamment : en type B, les symboles sont ignorés et deux nuances très proches peuvent être confondues). Le type E (§4.4) n'est pas encore proposé comme choix à l'utilisateur en V1 — voir `docs/roadmap.md`.
+**Étape 4 — Type de grille.** Choix dans la liste fermée A / B / C (§4.4), pré-sélectionné par la détection, avec une description courte et honnête des conséquences de chaque choix (notamment : en type B, les symboles sont ignorés et deux nuances très proches peuvent être confondues). Le type E (§4.4) n'est pas encore proposé comme choix à l'utilisateur en V1 — voir `docs/roadmap.md`.
 
 **Étape 5 — Association des grilles jumelles** (type C uniquement). Désignation ou confirmation de la page/zone « couleur » et de la page/zone « symboles », avec un réglage fin de recalage si la superposition n'est pas exacte.
 
@@ -350,7 +350,7 @@ La synchronisation de progression fonctionne par **deltas versionnés** : le cli
 - **Performance** : pan et zoom fluides (cible 60 images/s, plancher acceptable 30) sur un motif de 45 900 cases, sur iPhone réel — pas seulement sur simulateur de bureau. Chargement d'un motif en moins de 2 secondes sur réseau local.
 - **Extraction** : analyse d'un PDF de 10 pages en moins de 30 secondes, avec avancement affiché.
 - **Hors-ligne** : suivi pleinement fonctionnel sans réseau sur les motifs déjà ouverts ; synchronisation automatique au retour.
-- **Robustesse** : aucun import ne doit aboutir à une impasse — le mode assisté du type D reste toujours accessible en repli.
+- **Robustesse** : aucun import ne doit aboutir à une impasse — l'import manuel universel reste toujours accessible en repli.
 - **Accessibilité** : cibles tactiles d'au moins 44 px, contrastes suffisants, interface utilisable d'une seule main sur iPhone.
 - **Internationalisation** : français et anglais dès le départ, chaînes externalisées.
 - **Tests** : les deux PDF analysés servent de jeu de tests de référence ; toute évolution du moteur d'extraction doit être vérifiée contre les valeurs connues (255 × 180 cases, 34 couleurs, comptages par couleur de la page 11).
@@ -375,7 +375,7 @@ Modèle de données complet, rendu `<canvas>` avec ses trois niveaux de détail,
 
 *C'est le lot le plus risqué techniquement : il est placé tôt délibérément.*
 
-### Lot 2 — Import assisté universel (type D)
+### Lot 2 — Import assisté universel
 
 Assistant : dépôt de fichier, aperçu, recadrage manuel, calibrage des dimensions, saisie manuelle de la palette, remplissage des couleurs par zone. Export `.cshp`.
 
@@ -403,13 +403,13 @@ Extraction des couleurs par remplissage de rectangles, rapprochement Lab vers la
 
 Calcul d'empreinte, enregistrement et réapplication automatique des configurations validées, gestion de la bibliothèque locale.
 
-*Terminé quand :* réimporter un second PDF du même éditeur reprend automatiquement le cadrage déjà validé la première fois, sans repasser par l'étape de recadrage manuel. **Précision actée au Lot 6, pas supposée à l'écriture de cette section :** une recette ne porte jamais les dimensions ni la palette (§8.7 — contenu propre à chaque motif, même au sein d'un même éditeur, cf. §4.1 Winter Wreath/Summer Flight vs Botanical Citrus/Cucurbit) ; ces deux-là restent toujours recalculées par les Lots 4-5 sur le fichier lui-même, jamais recopiées d'un fichier à l'autre. « Sauter directement au récapitulatif » ne s'observe donc tel quel que pour un fichier déjà reconnu par un type A/B/C (le cadrage n'y change alors plus rien d'observable) ; pour un fichier non reconnu (type D), la recette économise uniquement le recadrage manuel, jamais la saisie des dimensions/palette propres à ce motif.
+*Terminé quand :* réimporter un second PDF du même éditeur reprend automatiquement le cadrage déjà validé la première fois, sans repasser par l'étape de recadrage manuel. **Précision actée au Lot 6, pas supposée à l'écriture de cette section :** une recette ne porte jamais les dimensions ni la palette (§8.7 — contenu propre à chaque motif, même au sein d'un même éditeur, cf. §4.1 Winter Wreath/Summer Flight vs Botanical Citrus/Cucurbit) ; ces deux-là restent toujours recalculées par les Lots 4-5 sur le fichier lui-même, jamais recopiées d'un fichier à l'autre. « Sauter directement au récapitulatif » ne s'observe donc tel quel que pour un fichier déjà reconnu par un type A/B/C (le cadrage n'y change alors plus rien d'observable) ; pour un fichier qu'aucun connecteur automatique ne reconnaît, la recette économise uniquement le recadrage manuel, jamais la saisie des dimensions/palette propres à ce motif.
 
-### Lot 7 — Scan et photo (type D automatique)
+### Lot 7 — Grilles en images bitmap réutilisées (type E)
 
-Détection de grille par vision par ordinateur, correction de perspective, quantification des couleurs par case, classification des symboles, avec validation manuelle obligatoire des zones à faible confiance.
+Détection et exclusion des pages de prévisualisation photoréaliste, extraction du catalogue d'images distinctes réutilisées sur les pages de grille, classification de chaque image du catalogue en (couleur, symbole), repositionnement de chaque case à partir des placements de ces images.
 
-*Terminé quand :* une photo correcte d'une grille papier produit une proposition exploitable, l'utilisateur n'ayant plus qu'à corriger les erreurs signalées.
+*Terminé quand :* le PDF « River And Mountains » s'importe avec ses couleurs et symboles corrects, sans que la page de prévisualisation photoréaliste ne soit prise pour une page de grille. **Précision actée au Lot 7 :** le catalogue de cette fixture contient réellement 20 images distinctes, pas ~531 (voir §4.3 et `docs/roadmap.md`) ; le rapprochement image → couleur DMC utilisé (`backend/app/type_e.py`) est le comptage exact de placements par image, pas la couleur perceptuelle seule (mesurée peu fiable sur ce fichier).
 
 ### Lot 8 — Finitions
 
@@ -452,5 +452,6 @@ Les lots 0 à 3 constituent la **V1 utilisable** et devraient être menés d'un 
 | 13/09/2026 | **React + FastAPI + SQLite + Docker**, sans service externe ni dépendance cloud |
 | 13/09/2026 | **Progression stockée séparément de la grille**, pour survivre à un ré-import |
 | 14/09/2026 | Ajout du **type E** (grilles en images bitmap réutilisées) à la typologie, après analyse de 4 PDF supplémentaires — hors périmètre du Lot 5, à repositionner dans la roadmap |
+| 18/09/2026 | **Abandon du type D** (reconnaissance automatique par vision par ordinateur sur photo libre) et retrait du bouton de prise de photo de l'assistant, avant tout début d'implémentation — voir §4.4. L'import manuel universel (Lot 2) reste le filet de sécurité pour tout fichier, image comprise, qu'aucun connecteur automatique ne reconnaît |
 | À trancher | Licence open source (MIT pour la diffusion, AGPL pour garantir l'ouverture des forks) |
 | À trancher | Partage communautaire des recettes (V3, sous conditions strictes) |

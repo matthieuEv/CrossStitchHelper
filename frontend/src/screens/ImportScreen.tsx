@@ -9,7 +9,7 @@ import {
 } from "react";
 
 import { ImportGridPainter } from "../components/ImportGridPainter";
-import { BackIcon, CameraIcon, UploadIcon } from "../components/Icons";
+import { BackIcon, UploadIcon } from "../components/Icons";
 import { PatternThumbnail } from "../components/PatternThumbnail";
 import { useT } from "../i18n";
 import { useWideLayout } from "../lib/hooks";
@@ -394,34 +394,6 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
                 />
               </label>
             </div>
-            <label
-              className="btn btn-primary"
-              style={{ minHeight: 52, gap: 10, cursor: uploading ? "wait" : "pointer" }}
-            >
-              <CameraIcon size={20} />
-              {t("import.photo")}
-              <input
-                type="file"
-                accept="image/*"
-                capture="environment"
-                style={{ display: "none" }}
-                disabled={uploading}
-                onChange={onFileChosen}
-              />
-            </label>
-            <p
-              className="text-muted"
-              style={{
-                fontSize: 12,
-                lineHeight: 1.6,
-                padding: "14px 16px",
-                borderRadius: 20,
-                background: "var(--color-surface)",
-                margin: 0,
-              }}
-            >
-              {t("import.photo.hint")}
-            </p>
             {uploadError !== null && (
               <p className="tag tag-accent" style={{ margin: 0 }}>
                 {t("import.drop.error", { message: uploadError })}

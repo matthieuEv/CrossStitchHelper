@@ -14,17 +14,17 @@ Six PDF réels couvrent les types A/B/C/E connus (voir `fixtures/README.md` pour
 - `fixtures/cafe-brasserie-charting-export/` — type A (police de symboles embarquée, légende texte) → `backend/app/type_a.py`.
 - `fixtures/winter-wreath-dmc/`, `fixtures/summer-flight-dmc/` — type C, cas piège : la page couleur porte déjà ses propres tracés de symbole, ne jamais superposer une deuxième page à l'aveugle → `backend/app/type_bc.py`.
 - `fixtures/botanical-citrus-dmc/`, `fixtures/cucurbit-dmc/` — type C, superposition à deux pages réellement nécessaire → `backend/app/type_bc.py`.
-- `fixtures/river-and-mountains-laserarts/` — type E (catalogue d'images bitmap réutilisées, hors périmètre des connecteurs A/B/C : sert surtout à vérifier l'absence de faux positif).
+- `fixtures/river-and-mountains-laserarts/` — type E (catalogue fermé d'images bitmap réutilisées, couleur+symbole déjà combinés) → `backend/app/type_e.py`. Sert aussi à vérifier l'absence de faux positif des connecteurs A/B/C sur ce fichier structurellement très différent.
 
 N'importe lequel de ces six fichiers peut, à l'œil, sembler suivre une structure différente de sa réalité mesurée (`winter-wreath-dmc` en est la preuve directe, corrigée au Lot 5 après une première description erronée dans le cahier des charges) — ne jamais faire confiance à un premier examen visuel ou à une description déjà écrite sans la revérifier par la mesure sur le fichier réel.
 
 ## 2. Lancer l'extraction sur chaque fixture concernée par le changement
 
-Utiliser le point d'entrée du moteur d'extraction backend concerné (`detect_type_a`, `detect_type_bc`, …) — voir `docs/cahier-des-charges.md` §8 pour le détail des étapes du pipeline : analyse structurelle → détection de grille → parseur spécifique → rapprochement couleur → assemblage.
+Utiliser le point d'entrée du moteur d'extraction backend concerné (`detect_type_a`, `detect_type_bc`, `detect_type_e`) — voir `docs/cahier-des-charges.md` §8 pour le détail des étapes du pipeline : analyse structurelle → détection de grille → parseur spécifique → rapprochement couleur → assemblage.
 
 ## 3. Comparer aux valeurs attendues
 
-Les valeurs exactes (dimensions, nombre de couleurs, comptages, stratégie de page) sont dans `fixtures/README.md` — ne pas les recopier ici, un seul endroit par information (voir `CLAUDE.md`). Les suites `backend/tests/test_type_a.py` et `backend/tests/test_type_bc.py` les vérifient déjà automatiquement ; les relancer est le moyen le plus rapide de faire cette comparaison.
+Les valeurs exactes (dimensions, nombre de couleurs, comptages, stratégie de page) sont dans `fixtures/README.md` — ne pas les recopier ici, un seul endroit par information (voir `CLAUDE.md`). Les suites `backend/tests/test_type_a.py`, `backend/tests/test_type_bc.py` et `backend/tests/test_type_e.py` les vérifient déjà automatiquement ; les relancer est le moyen le plus rapide de faire cette comparaison.
 
 ## 4. En cas d'écart
 

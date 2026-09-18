@@ -24,6 +24,7 @@ rester le lieu de correction, et toute correspondance de distance Lab
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 
 # Table communautaire code -> (nom, RVB 0-255). Volontairement plus large que
@@ -356,4 +357,33 @@ def nearest_dmc(rgb: tuple[float, float, float]) -> DmcMatch:
             best_code = code
     assert best_code is not None  # le catalogue n'est jamais vide
     name, rgb_int = _DMC_CATALOG[best_code]
+    return DmcMatch(code=best_code, name=name, rgb_hex=rgb_hex(rgb_int), distance=best_distance)
+
+
+def nearest_dmc_among(rgb: tuple[float, float, float], codes: Iterable[str]) -> DmcMatch | None:
+    """Variante de `nearest_dmc` restreinte à `codes` (recherche du plus
+    proche voisin uniquement parmi cet ensemble, plutôt que tout le
+    catalogue) — utile quand une source externe (légende texte d'un PDF,
+    §8.3/§8.5) fait déjà autorité sur l'ensemble fermé de codes réellement
+    utilisés dans le motif : restreindre la recherche évite qu'une teinte
+    proche mais non pertinente d'ailleurs dans le catalogue ne l'emporte à
+    tort (`app/type_e.py`, Lot 7).
+
+    Renvoie `None` si aucun code de `codes` n'est présent dans
+    `_DMC_CATALOG` (catalogue communautaire nécessairement partiel, §3.3) —
+    jamais une correspondance inventée hors de l'ensemble demandé."""
+    target = rgb_to_lab(rgb)
+    best_code: str | None = None
+    best_distance = float("inf")
+    for code in codes:
+        lab = _CATALOG_LAB.get(code.lower())
+        if lab is None:
+            continue
+        distance = lab_distance(target, lab)
+        if distance < best_distance:
+            best_distance = distance
+            best_code = code
+    if best_code is None:
+        return None
+    name, rgb_int = _DMC_CATALOG[best_code.lower()]
     return DmcMatch(code=best_code, name=name, rgb_hex=rgb_hex(rgb_int), distance=best_distance)

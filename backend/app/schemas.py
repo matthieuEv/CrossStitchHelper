@@ -262,7 +262,7 @@ class ImportDetection(BaseModel):
     toujours un score exploitable pour que l'assistant d'import invite à
     vérifier plutôt qu'à faire confiance aveuglément (§4.4)."""
 
-    grid_type: str = Field(description='"A", "B" ou "C" — voir cahier des charges §4.4.')
+    grid_type: str = Field(description='"A", "B", "C" ou "E" — voir cahier des charges §4.4.')
     confidence: float = Field(ge=0, le=1)
     warnings: list[str] = Field(default_factory=list)
 
