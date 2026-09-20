@@ -176,6 +176,43 @@ export const fr = {
 
   "demo.notice":
     "Motif de démonstration. L'import réel de fichiers arrivera avec le moteur d'extraction.",
+
+  // --- Erreurs API (audit des traductions, Lot 8) ---------------------------
+  // Traduction des codes `ApiErrorDetail.code` (backend/app/schemas.py) —
+  // jamais un message déjà composé côté serveur. `error.unknown` est le
+  // repli si le serveur renvoie un code que ce frontend ne connaît pas
+  // encore (décalage de version).
+  "error.unknown": "Une erreur est survenue.",
+  "error.backup_unexpected_format": "Format de sauvegarde inattendu : {got} (attendu {expected}).",
+  "error.backup_unsupported_version":
+    "Version de sauvegarde non prise en charge : {got} (cette instance sait lire la version {expected}).",
+  "error.import_not_found": "Import introuvable.",
+  "error.import_already_committed":
+    "Cet import a déjà été validé et ne peut plus être modifié.",
+  "error.import_unsupported_file_type":
+    "Format non pris en charge : seuls PDF, PNG et JPEG le sont.",
+  "error.import_file_too_large": "Fichier trop volumineux (> {maxMb} Mo).",
+  "error.import_file_unreadable": "Fichier illisible.",
+  "error.import_source_missing": "Fichier source introuvable (import déjà validé ?).",
+  "error.import_page_out_of_range": "Page {page} hors limites (1..{count}).",
+  "error.import_photo_single_page": "Une photo n'a qu'une seule page.",
+  "error.import_config_incomplete":
+    "Configuration incomplète : dimensions et palette sont requises.",
+  "error.recipe_no_fingerprint":
+    "Ce fichier n'a pas d'empreinte réutilisable (format non-PDF, ou analyse échouée).",
+  "error.recipe_not_found": "Recette introuvable.",
+  "error.pattern_not_found": "Motif introuvable.",
+  "error.pattern_grid_not_found": "Grille introuvable pour ce motif.",
+  "error.pattern_progress_not_found": "Progression introuvable pour ce motif.",
+  "error.pattern_grid_or_progress_not_found": "Grille ou progression introuvable.",
+  "error.pattern_progress_index_out_of_range":
+    "Index hors limites pour la catégorie « {layer} » : {index} >= {bound}.",
+
+  // --- Avertissements de détection automatique (audit des traductions, Lot 8) --
+  // Traduction des codes `DetectionWarning.code` (backend/app/schemas.py),
+  // affichés dans l'assistant d'import (ImportScreen.tsx). Complété au fil
+  // de la restructuration du moteur d'extraction (type_a/type_bc/type_e).
+  "import.warning.unknown": "Un point mérite vérification (détails indisponibles).",
 } as const;
 
 export type TranslationKey = keyof typeof fr;

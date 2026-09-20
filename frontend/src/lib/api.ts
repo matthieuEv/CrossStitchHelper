@@ -8,6 +8,9 @@
 
 import { useEffect, useState } from "react";
 
+import type { Translate } from "../i18n";
+import { fr, type TranslationKey } from "../i18n/fr";
+
 export interface HealthResponse {
   status: string;
   version: string;
@@ -15,14 +18,59 @@ export interface HealthResponse {
   schema_revision: string | null;
 }
 
+export type ApiErrorParams = Record<string, string | number>;
+
+/**
+ * Une erreur API traduisible — jamais un message déjà composé côté serveur
+ * (audit des traductions, Lot 8) : `code`/`params` reflètent tels quels
+ * `ApiErrorDetail` (`backend/app/schemas.py`), à traduire côté composant via
+ * `translateApiError` au moment de l'afficher (jamais ici : ce module n'a
+ * pas accès à la langue choisie par l'utilisateur).
+ */
 export class ApiError extends Error {
   constructor(
-    message: string,
     readonly status: number,
+    readonly code: string,
+    readonly params: ApiErrorParams = {},
   ) {
-    super(message);
+    super(`Erreur API ${status} : ${code}`);
     this.name = "ApiError";
   }
+}
+
+/**
+ * Traduit une `ApiError` (ou toute autre erreur) en message affichable, dans
+ * la langue courante. `error.<code>` peut être absente (version du serveur
+ * plus récente que celle du frontend, code inconnu) : repli sur
+ * `error.unknown` plutôt que planter ou afficher un code technique brut.
+ */
+export function translateApiError(t: Translate, error: unknown): string {
+  if (error instanceof ApiError) {
+    const key = `error.${error.code}`;
+    if (key in fr) return t(key as TranslationKey, error.params);
+  }
+  return t("error.unknown");
+}
+
+async function errorFrom(response: Response): Promise<ApiError> {
+  try {
+    const body = (await response.json()) as { detail?: unknown };
+    const detail = body.detail;
+    if (
+      typeof detail === "object" &&
+      detail !== null &&
+      "code" in detail &&
+      typeof (detail as { code: unknown }).code === "string"
+    ) {
+      const rawParams = (detail as { params?: unknown }).params;
+      const params = (typeof rawParams === "object" && rawParams !== null ? rawParams : {}) as ApiErrorParams;
+      return new ApiError(response.status, (detail as { code: string }).code, params);
+    }
+  } catch {
+    // Corps non-JSON (ex. erreur réseau bas niveau, ou erreur de validation
+    // native de FastAPI dans une forme différente) : code générique ci-dessous.
+  }
+  return new ApiError(response.status, "unknown");
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -31,7 +79,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     ...init,
   });
   if (!response.ok) {
-    throw new ApiError(`Requête ${path} échouée`, response.status);
+    throw await errorFrom(response);
   }
   return (await response.json()) as T;
 }
@@ -63,7 +111,7 @@ async function deleteRequest(path: string, signal?: AbortSignal): Promise<void> 
     ...(signal !== undefined && { signal }),
   });
   if (!response.ok) {
-    throw new ApiError(`Requête ${path} échouée`, response.status);
+    throw await errorFrom(response);
   }
 }
 
@@ -281,10 +329,26 @@ export interface ApiImportConfigPatch {
   uncertain_cells?: number[] | null;
 }
 
+export interface ApiDetectionWarning {
+  code: string;
+  params: ApiErrorParams;
+}
+
 export interface ApiImportDetection {
   grid_type: string;
   confidence: number;
-  warnings: string[];
+  warnings: ApiDetectionWarning[];
+}
+
+/**
+ * Traduit un avertissement de détection automatique — même principe que
+ * `translateApiError` (clé `import.warning.<code>` plutôt que `error.<code>`,
+ * repli sur `import.warning.unknown`).
+ */
+export function translateDetectionWarning(t: Translate, warning: ApiDetectionWarning): string {
+  const key = `import.warning.${warning.code}`;
+  if (key in fr) return t(key as TranslationKey, warning.params);
+  return t("import.warning.unknown");
 }
 
 export interface ApiImportPreview {
@@ -412,9 +476,9 @@ export function backupExportUrl(): string {
  * Restauration complète : remplace toutes les données existantes par le
  * contenu de `fileText` (le texte brut d'un fichier exporté via
  * `backupExportUrl`). Passe par `fetch` directement plutôt que par
- * `request`/`postJson` pour pouvoir remonter le message d'erreur précis du
- * serveur (version de sauvegarde non prise en charge, format inattendu…) —
- * une opération destructrice mérite mieux qu'un message générique.
+ * `postJson` : `fileText` est déjà le JSON sérialisé à envoyer tel quel,
+ * `postJson` le sérialiserait une seconde fois (`JSON.stringify` d'une
+ * chaîne déjà JSON).
  */
 export async function restoreBackup(fileText: string): Promise<ApiBackupRestoreSummary> {
   const response = await fetch("/api/backup/restore", {
@@ -423,14 +487,7 @@ export async function restoreBackup(fileText: string): Promise<ApiBackupRestoreS
     body: fileText,
   });
   if (!response.ok) {
-    let detail = `Requête /backup/restore échouée (${response.status})`;
-    try {
-      const body = (await response.json()) as { detail?: string };
-      if (body.detail) detail = body.detail;
-    } catch {
-      // Corps non-JSON (ex. erreur réseau bas niveau) : message générique.
-    }
-    throw new ApiError(detail, response.status);
+    throw await errorFrom(response);
   }
   return (await response.json()) as ApiBackupRestoreSummary;
 }

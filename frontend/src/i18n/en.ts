@@ -168,4 +168,31 @@ export const en: Record<TranslationKey, string> = {
 
   "demo.notice":
     "Demonstration pattern. Real file import arrives with the extraction engine.",
+
+  "error.unknown": "Something went wrong.",
+  "error.backup_unexpected_format": "Unexpected backup format: {got} (expected {expected}).",
+  "error.backup_unsupported_version":
+    "Unsupported backup version: {got} (this instance can read version {expected}).",
+  "error.import_not_found": "Import not found.",
+  "error.import_already_committed":
+    "This import has already been finalised and can no longer be edited.",
+  "error.import_unsupported_file_type":
+    "Unsupported format: only PDF, PNG and JPEG are accepted.",
+  "error.import_file_too_large": "File too large (> {maxMb} MB).",
+  "error.import_file_unreadable": "Unreadable file.",
+  "error.import_source_missing": "Source file not found (was this import already finalised?).",
+  "error.import_page_out_of_range": "Page {page} out of range (1..{count}).",
+  "error.import_photo_single_page": "A photo only has a single page.",
+  "error.import_config_incomplete": "Incomplete configuration: dimensions and palette are required.",
+  "error.recipe_no_fingerprint":
+    "This file has no reusable fingerprint (non-PDF format, or analysis failed).",
+  "error.recipe_not_found": "Recipe not found.",
+  "error.pattern_not_found": "Pattern not found.",
+  "error.pattern_grid_not_found": "Grid not found for this pattern.",
+  "error.pattern_progress_not_found": "Progress not found for this pattern.",
+  "error.pattern_grid_or_progress_not_found": "Grid or progress not found.",
+  "error.pattern_progress_index_out_of_range":
+    'Index out of range for category "{layer}": {index} >= {bound}.',
+
+  "import.warning.unknown": "Something here is worth double-checking (details unavailable).",
 };

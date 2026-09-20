@@ -14,7 +14,6 @@ import { PatternThumbnail } from "../components/PatternThumbnail";
 import { useT } from "../i18n";
 import { useWideLayout } from "../lib/hooks";
 import {
-  ApiError,
   commitImport,
   createImport,
   createRecipe,
@@ -22,6 +21,8 @@ import {
   fetchImport,
   importPagePreviewUrl,
   patchImportConfig,
+  translateApiError,
+  translateDetectionWarning,
   type ApiImportConfig,
   type ApiImportFillZone,
   type ApiImportJob,
@@ -130,7 +131,7 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
       setPage(1);
       setStep(2);
     } catch (error) {
-      setUploadError(error instanceof ApiError ? `HTTP ${error.status}` : String(error));
+      setUploadError(translateApiError(t, error));
     } finally {
       setUploading(false);
     }
@@ -304,7 +305,7 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
         } catch (error) {
           // Une recette ratée ne doit jamais empêcher de créer le motif —
           // c'est un confort pour la prochaine fois, pas une étape requise.
-          setRecipeError(error instanceof ApiError ? `HTTP ${error.status}` : String(error));
+          setRecipeError(translateApiError(t, error));
         }
       }
       const fabric = Number.parseInt(fabricCount, 10);
@@ -314,7 +315,7 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
       });
       onFinish(response.pattern_id);
     } catch (error) {
-      setCommitError(error instanceof ApiError ? `HTTP ${error.status}` : String(error));
+      setCommitError(translateApiError(t, error));
     } finally {
       setCommitting(false);
     }
@@ -448,7 +449,7 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
                 )}
                 {detection.warnings.map((warning, index) => (
                   <div key={index} className="text-faint" style={{ fontSize: 11 }}>
-                    ⚠ {warning}
+                    ⚠ {translateDetectionWarning(t, warning)}
                   </div>
                 ))}
               </div>
