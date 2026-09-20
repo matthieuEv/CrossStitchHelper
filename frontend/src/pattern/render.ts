@@ -374,15 +374,20 @@ export function drawGrid(canvas: HTMLCanvasElement, options: DrawGridOptions): b
     }
   }
 
-  // Point arrière et nœuds (Lot 8) : rendus seulement au niveau de détail le
-  // plus rapproché (`withSymbols`), comme les symboles — en dessous, un
-  // trait ou un point de quelques pixels n'apporterait rien et coûterait un
-  // balayage de la liste complète à chaque frame pour un motif réel qui peut
-  // en compter plusieurs centaines (Lot 9 à venir). Balayage linéaire avec
-  // recadrage grossier sur la vue : suffisant tant que ces listes restent de
-  // cette taille, voir `pattern/specialHitTest.ts` pour la même limite côté
-  // interaction.
-  if (withSymbols && pattern.backstitch.length > 0) {
+  // Point arrière et nœuds (Lot 8) : rendus à tout niveau de zoom, contrairement
+  // aux symboles (`withSymbols`) — sur un vrai diagramme papier, ces traits
+  // restent visibles même sur une vue d'ensemble de la grille, et un
+  // brodeur s'attend à la même chose ici (retour direct après usage réel).
+  // `lineWidth`/`radius` ci-dessous ont un plancher en pixels (jamais
+  // proportionnels à `cell` seul) pour rester visibles même très dézoomé.
+  // Cocher un segment/nœud reste réservé au zoom rapproché (`useTracker.ts`,
+  // même seuil `SYMBOL_MIN_CELL`) : le voir n'implique pas de pouvoir viser
+  // précisément une case de quelques pixels au doigt. Balayage linéaire de
+  // la liste complète avec recadrage grossier sur la vue (comme avant) :
+  // négligeable même pour un motif réel qui en compte plusieurs centaines
+  // (Lot 9 à venir), voir `pattern/specialHitTest.ts` pour la même limite
+  // côté interaction.
+  if (pattern.backstitch.length > 0) {
     const specialDone = special?.backstitch ?? null;
     g.lineCap = "round";
     for (let i = 0; i < pattern.backstitch.length; i++) {
@@ -409,7 +414,7 @@ export function drawGrid(canvas: HTMLCanvasElement, options: DrawGridOptions): b
     }
   }
 
-  if (withSymbols && pattern.frenchKnots.length > 0) {
+  if (pattern.frenchKnots.length > 0) {
     const specialDone = special?.knot ?? null;
     for (let i = 0; i < pattern.frenchKnots.length; i++) {
       const knot = pattern.frenchKnots[i];
