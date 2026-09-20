@@ -12,7 +12,7 @@ import json
 from datetime import UTC
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from fastapi.responses import Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
@@ -27,7 +27,7 @@ from app.codec import (
 )
 from app.db import get_session
 from app.export_cshp import build_cshp_archive
-from app.http import content_disposition
+from app.http import api_error, content_disposition
 from app.models import Pattern, Progress, ProgressEvent
 from app.schemas import (
     GridOut,
@@ -52,7 +52,7 @@ MAX_REPLAYED_EVENTS = 2000
 def _get_pattern(session: Session, pattern_id: str) -> Pattern:
     pattern = session.get(Pattern, pattern_id)
     if pattern is None:
-        raise HTTPException(status_code=404, detail="Motif introuvable")
+        raise api_error(404, "pattern_not_found")
     return pattern
 
 
@@ -123,7 +123,7 @@ def get_grid(pattern_id: str, session: Annotated[Session, Depends(get_session)])
     pattern = _get_pattern(session, pattern_id)
     grid = pattern.grid
     if grid is None:
-        raise HTTPException(status_code=404, detail="Grille introuvable pour ce motif")
+        raise api_error(404, "pattern_grid_not_found")
 
     return GridOut(
         pattern_id=pattern.id,
@@ -175,7 +175,7 @@ def get_progress(
 ) -> ProgressOut:
     pattern = _get_pattern(session, pattern_id)
     if pattern.progress is None:
-        raise HTTPException(status_code=404, detail="Progression introuvable pour ce motif")
+        raise api_error(404, "pattern_progress_not_found")
     return _progress_out(pattern, pattern.progress)
 
 
@@ -244,18 +244,20 @@ def sync_progress(
     pattern = _get_pattern(session, pattern_id)
     progress = pattern.progress
     if progress is None:
-        raise HTTPException(status_code=404, detail="Progression introuvable pour ce motif")
+        raise api_error(404, "pattern_progress_not_found")
     if pattern.grid is None:
-        raise HTTPException(status_code=404, detail="Grille introuvable pour ce motif")
+        raise api_error(404, "pattern_grid_not_found")
 
     bounds = {layer: _layer_bound(pattern, layer) for layer in _LAYER_ATTR}
     for op in payload.ops:
         bound = bounds[op.layer]
         if op.index >= bound:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Index hors limites pour la catégorie « {op.layer} » : "
-                f"{op.index} >= {bound}",
+            raise api_error(
+                400,
+                "pattern_progress_index_out_of_range",
+                layer=op.layer,
+                index=op.index,
+                bound=bound,
             )
 
     # Calculé avant l'écriture : les événements déjà connus du client ne
@@ -346,7 +348,7 @@ def export_pattern(
 ) -> Response:
     pattern = _get_pattern(session, pattern_id)
     if pattern.grid is None or pattern.progress is None:
-        raise HTTPException(status_code=404, detail="Grille ou progression introuvable")
+        raise api_error(404, "pattern_grid_or_progress_not_found")
 
     archive = build_cshp_archive(pattern, pattern.palette_entries, pattern.grid, pattern.progress)
     return Response(

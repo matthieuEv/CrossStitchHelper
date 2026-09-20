@@ -26,6 +26,19 @@ class UnsupportedFileError(ValueError):
     """Le fichier déposé n'est ni un PDF ni une image prise en charge."""
 
 
+class PageOutOfRangeError(ValueError):
+    """Numéro de page demandé hors des pages réelles du PDF.
+
+    Porte `page_number`/`page_count` en attributs typés plutôt qu'un message
+    déjà formaté — traduit côté client (audit des traductions, Lot 8), voir
+    `app/schemas.py::ApiErrorDetail` et `app/api/imports.py`."""
+
+    def __init__(self, page_number: int, page_count: int) -> None:
+        self.page_number = page_number
+        self.page_count = page_count
+        super().__init__(f"Page {page_number} hors limites (1..{page_count})")
+
+
 def sha256_file(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as handle:
@@ -47,7 +60,7 @@ def render_pdf_page(
     """Rend la page `page_number` (1-based) d'un PDF en PNG raster."""
     with pymupdf.open(path) as doc:  # type: ignore[no-untyped-call]
         if page_number < 1 or page_number > doc.page_count:
-            raise ValueError(f"Page {page_number} hors limites (1..{doc.page_count})")
+            raise PageOutOfRangeError(page_number, int(doc.page_count))
         page = doc[page_number - 1]
         # Le zoom est calculé pour que la plus grande dimension de page
         # n'excède pas `max_dimension`, sans jamais agrandir une petite page.

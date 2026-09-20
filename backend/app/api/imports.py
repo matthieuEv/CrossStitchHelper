@@ -30,7 +30,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, Query, UploadFile
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
@@ -40,8 +40,10 @@ from app.codec import empty_bitmap as codec_empty_bitmap
 from app.config import Settings, get_settings
 from app.db import get_session, get_session_factory
 from app.fingerprint import compute_fingerprint
+from app.http import api_error
 from app.imports_engine import (
     MAX_PREVIEW_DIMENSION,
+    PageOutOfRangeError,
     apply_fills,
     pdf_page_count,
     render_image_page,
@@ -85,7 +87,7 @@ def _source_path(settings: Settings, job: ImportJob, result: dict[str, Any]) -> 
 def _get_job(session: Session, job_id: str) -> ImportJob:
     job = session.get(ImportJob, job_id)
     if job is None:
-        raise HTTPException(status_code=404, detail="Import introuvable")
+        raise api_error(404, "import_not_found")
     return job
 
 
@@ -166,9 +168,7 @@ def _job_out(job: ImportJob) -> ImportJobOut:
 
 def _require_editable(job: ImportJob) -> None:
     if job.status == "committed":
-        raise HTTPException(
-            status_code=400, detail="Cet import a déjà été validé et ne peut plus être modifié"
-        )
+        raise api_error(400, "import_already_committed")
 
 
 @router.post("", response_model=ImportJobOut, summary="Dépose un fichier, crée un job d'import")
@@ -179,10 +179,7 @@ async def create_import(
     file: UploadFile,
 ) -> ImportJobOut:
     if file.content_type not in _ALLOWED_TYPES:
-        raise HTTPException(
-            status_code=400,
-            detail="Format non pris en charge : seuls PDF, PNG et JPEG le sont",
-        )
+        raise api_error(400, "import_unsupported_file_type")
     ext, kind = _ALLOWED_TYPES[file.content_type]
 
     job_id = uuid.uuid4().hex
@@ -198,17 +195,14 @@ async def create_import(
             if written > max_bytes:
                 handle.close()
                 shutil.rmtree(job_dir, ignore_errors=True)
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Fichier trop volumineux (> {settings.import_max_upload_mb} Mo)",
-                )
+                raise api_error(400, "import_file_too_large", max_mb=settings.import_max_upload_mb)
             handle.write(chunk)
 
     try:
         page_count = pdf_page_count(source_path) if kind == "pdf" else 1
     except Exception as error:  # pragma: no cover - fichier corrompu, chemin défensif
         shutil.rmtree(job_dir, ignore_errors=True)
-        raise HTTPException(status_code=400, detail="Fichier illisible") from error
+        raise api_error(400, "import_file_unreadable") from error
 
     # Un PDF déclenche une tentative de détection automatique (Lot 4) en
     # tâche de fond — jamais dans la requête elle-même : sur la fixture de
@@ -462,18 +456,18 @@ def get_page_preview(
     result = _result_of(job)
     source_path = _source_path(settings, job, result)
     if not source_path.is_file():
-        raise HTTPException(
-            status_code=404, detail="Fichier source introuvable (import déjà validé ?)"
-        )
+        raise api_error(404, "import_source_missing")
 
     if job.kind == "pdf":
         try:
             png_bytes = render_pdf_page(source_path, page_number, max_dimension)
-        except ValueError as error:
-            raise HTTPException(status_code=404, detail=str(error)) from error
+        except PageOutOfRangeError as error:
+            raise api_error(
+                404, "import_page_out_of_range", page=error.page_number, count=error.page_count
+            ) from error
     else:
         if page_number != 1:
-            raise HTTPException(status_code=404, detail="Une photo n'a qu'une seule page")
+            raise api_error(404, "import_photo_single_page")
         png_bytes = render_image_page(source_path, max_dimension)
 
     return Response(
@@ -565,10 +559,7 @@ def commit(
     result = _result_of(job)
     preview = _compute_preview(result["config"])
     if preview is None:
-        raise HTTPException(
-            status_code=400,
-            detail="Configuration incomplète : dimensions et palette sont requises",
-        )
+        raise api_error(400, "import_config_incomplete")
 
     now = datetime.now(UTC)
     pattern_id = uuid.uuid4().hex
