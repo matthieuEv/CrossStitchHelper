@@ -8,6 +8,7 @@ import {
   listRecipes,
   restoreBackup,
   setAutoBackupSetting,
+  translateApiError,
   type ApiRecipe,
 } from "../lib/api";
 import { clearOfflineCache } from "../lib/db";
@@ -132,9 +133,7 @@ export function SettingsScreen({ version }: SettingsScreenProps) {
         const message =
           error instanceof SyntaxError
             ? t("settings.data.restore.invalidFile")
-            : error instanceof Error
-              ? error.message
-              : String(error);
+            : translateApiError(t, error);
         setDataMessage(t("settings.data.restore.error", { message }));
         setDataBusy(false);
       });
@@ -151,8 +150,7 @@ export function SettingsScreen({ version }: SettingsScreenProps) {
         reloadAfterDataChange();
       })
       .catch((error: unknown) => {
-        const message = error instanceof Error ? error.message : String(error);
-        setDataMessage(t("settings.data.restore.error", { message }));
+        setDataMessage(t("settings.data.restore.error", { message: translateApiError(t, error) }));
         setDataBusy(false);
       });
   };

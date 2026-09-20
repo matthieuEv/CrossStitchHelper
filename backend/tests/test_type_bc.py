@@ -203,7 +203,15 @@ def test_summer_flight_never_blindly_overlays_a_redundant_page(
     centaines d'entrées présentée comme fiable."""
     assert summer_flight.grid_type == "B"
     assert len(summer_flight.palette) < 50
-    assert any("repli" in w.lower() or "fiable" in w.lower() for w in summer_flight.warnings)
+    # Le repli doit être annoncé explicitement, par un code de message (jamais
+    # un texte français figé côté serveur — audit des traductions, Lot 8) :
+    # l'un des trois codes qui signalent un repli sur la couleur seule.
+    fallback_codes = {
+        "type_bc.symbol_recognition_unreliable",
+        "type_bc.symbol_page_unusable",
+        "type_bc.no_symbol_page",
+    }
+    assert {w.code for w in summer_flight.warnings} & fallback_codes
 
 
 def test_uncertain_cells_are_explicitly_flagged_not_silently_wrong(
@@ -214,7 +222,14 @@ def test_uncertain_cells_are_explicitly_flagged_not_silently_wrong(
     mécanisme de signalement est réellement câblé de bout en bout (pas
     seulement présent dans le contrat de données)."""
     assert botanical_citrus.uncertain_cells
-    assert any("incertaine" in w for w in botanical_citrus.warnings)
+    # Signalé par un code + paramètres, jamais un texte français figé côté
+    # serveur (audit des traductions, Lot 8) — et le comptage annoncé doit
+    # correspondre exactement aux cases réellement marquées incertaines.
+    uncertain_warnings = [
+        w for w in botanical_citrus.warnings if w.code == "type_bc.uncertain_cells"
+    ]
+    assert len(uncertain_warnings) == 1
+    assert uncertain_warnings[0].params["count"] == len(botanical_citrus.uncertain_cells)
 
 
 @pytest.mark.parametrize(

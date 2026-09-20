@@ -11,14 +11,16 @@
     <meta name="color-scheme" content="light dark" />
     <meta name="theme-color" content="#f5ead8" />
     <!-- Applique le thème choisi (clair/sombre/système, `src/lib/theme.tsx`)
-         avant le premier rendu : sans ce script bloquant, un choix explicite
-         différent du système afficherait un éclair de mauvais thème le temps
-         que React démarre. Logique dupliquée depuis `theme.tsx` à dessein —
-         ce script tourne avant que le bundle applicatif ne soit chargé, donc
-         avant que quoi que ce soit d'autre ne soit disponible. Couleurs en
-         dur ici pour la même raison qu'aucune variable CSS n'est encore
-         chargée à ce stade ; les garder synchronisées avec `--color-bg`
-         (`index.css`) est manuel mais volontaire. -->
+         et la langue (`src/i18n/index.tsx`) avant le premier rendu : sans ce
+         script bloquant, un choix explicite différent du système/navigateur
+         afficherait un éclair de mauvais thème, ou un `<html lang>` incorrect
+         pendant l'instant où React démarre. Logique dupliquée depuis
+         `theme.tsx`/`i18n/index.tsx` à dessein — ce script tourne avant que
+         le bundle applicatif ne soit chargé, donc avant que quoi que ce soit
+         d'autre ne soit disponible. Couleurs en dur ici pour la même raison
+         qu'aucune variable CSS n'est encore chargée à ce stade ; les garder
+         synchronisées avec `--color-bg` (`index.css`) est manuel mais
+         volontaire. -->
     <script>
       (function () {
         try {
@@ -32,6 +34,18 @@
         } catch (e) {
           // localStorage indisponible (navigation privée) : reste sur le clair
           // par défaut, déjà posé en dur ci-dessus.
+        }
+        try {
+          var storedLanguage = localStorage.getItem("csh.language");
+          var language =
+            storedLanguage === "fr" || storedLanguage === "en"
+              ? storedLanguage
+              : navigator.language.toLowerCase().indexOf("fr") === 0
+                ? "fr"
+                : "en";
+          document.documentElement.lang = language;
+        } catch (e) {
+          // localStorage indisponible : reste sur "fr", déjà posé en dur ci-dessus.
         }
       })();
     </script>

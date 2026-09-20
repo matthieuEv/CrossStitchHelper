@@ -163,7 +163,9 @@ def test_restore_rejects_unsupported_format_version(seeded_client: TestClient) -
     snapshot["format_version"] = 99
     response = seeded_client.post("/api/backup/restore", json=snapshot)
     assert response.status_code == 400
-    assert "99" in response.json()["detail"]
+    detail = response.json()["detail"]
+    assert detail["code"] == "backup_unsupported_version"
+    assert detail["params"] == {"got": 99, "expected": 1}
 
 
 def test_auto_backup_setting_defaults_enabled_and_is_toggleable(client: TestClient) -> None:

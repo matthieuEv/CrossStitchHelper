@@ -8,6 +8,19 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 
+class ApiErrorDetail(BaseModel):
+    """Corps d'une erreur HTTP (`HTTPException(detail=...)`) — un code plutôt
+    qu'un texte figé côté serveur (audit des traductions, Lot 8), traduit
+    côté client via la clé `error.<code>` de `frontend/src/i18n/fr.ts`/
+    `en.ts`. Même principe que `DetectionWarning` pour les avertissements de
+    détection automatique. `frontend/src/lib/api.ts` sait retomber sur un
+    message générique si un `detail` ne respecte pas cette forme (erreur de
+    validation FastAPI native, par exemple — hors de ce mécanisme)."""
+
+    code: str
+    params: dict[str, str | int | float] = Field(default_factory=dict)
+
+
 class PaletteEntryOut(BaseModel):
     index_in_grid: int
     brand: str
@@ -304,6 +317,19 @@ class ImportPreview(BaseModel):
     palette: list[ImportPaletteEntry]
 
 
+class DetectionWarning(BaseModel):
+    """Un avertissement de détection automatique — jamais un texte déjà
+    formaté côté serveur (audit des traductions, Lot 8) : `code` identifie le
+    message (clé `import.warning.<code>` de `frontend/src/i18n/fr.ts`/
+    `en.ts`), `params` porte les valeurs interpolées (comptages, codes DMC,
+    pourcentages…) que la clé de traduction consomme via `{nom}`. Le message
+    final est composé côté client, dans la langue choisie par
+    l'utilisateur — jamais figé en français au moment de la détection."""
+
+    code: str
+    params: dict[str, str | int | float] = Field(default_factory=dict)
+
+
 class ImportDetection(BaseModel):
     """Résumé de la détection automatique (Lots 4-5) — jamais une certitude,
     toujours un score exploitable pour que l'assistant d'import invite à
@@ -311,7 +337,7 @@ class ImportDetection(BaseModel):
 
     grid_type: str = Field(description='"A", "B", "C" ou "E" — voir cahier des charges §4.4.')
     confidence: float = Field(ge=0, le=1)
-    warnings: list[str] = Field(default_factory=list)
+    warnings: list[DetectionWarning] = Field(default_factory=list)
 
 
 class ImportAppliedRecipe(BaseModel):

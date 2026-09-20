@@ -14,11 +14,12 @@ import uuid
 from datetime import UTC, datetime
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db import get_session
+from app.http import api_error
 from app.models import ImportJob, Recipe
 from app.schemas import RecipeConfig, RecipeCreate, RecipeOut
 
@@ -65,18 +66,12 @@ def create_recipe(
 ) -> RecipeOut:
     job = session.get(ImportJob, payload.job_id)
     if job is None:
-        raise HTTPException(status_code=404, detail="Import introuvable")
+        raise api_error(404, "import_not_found")
 
     result: dict[str, Any] = json.loads(job.result_json)
     fingerprint = result.get("source_fingerprint")
     if fingerprint is None:
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                "Ce fichier n'a pas d'empreinte réutilisable "
-                "(format non-PDF, ou analyse échouée)"
-            ),
-        )
+        raise api_error(400, "recipe_no_fingerprint")
 
     detection = result.get("detection") or {}
     grid_type = detection.get("grid_type")
@@ -103,6 +98,6 @@ def create_recipe(
 def delete_recipe(recipe_id: str, session: Annotated[Session, Depends(get_session)]) -> None:
     recipe = session.get(Recipe, recipe_id)
     if recipe is None:
-        raise HTTPException(status_code=404, detail="Recette introuvable")
+        raise api_error(404, "recipe_not_found")
     session.delete(recipe)
     session.commit()

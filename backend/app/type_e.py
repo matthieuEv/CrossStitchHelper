@@ -95,6 +95,10 @@ from pdfplumber.page import Page
 from PIL import Image
 
 from app.dmc_catalog import nearest_dmc_among
+
+# `app.schemas` ne dépend que de Pydantic — l'importer ici ne rompt pas la
+# pureté du module (aucune dépendance FastAPI/SQLAlchemy, voir docstring).
+from app.schemas import DetectionWarning
 from app.type_a import SymbolGlyphLocation
 
 Bbox = tuple[float, float, float, float]
@@ -198,7 +202,10 @@ class TypeEResult:
     """Index 0-based dans `cells` des cases dont l'identification est
     incertaine (repli couleur plutôt que comptage, ou image non reconnue) —
     jamais une case fausse laissée sans signalement."""
-    warnings: list[str] = field(default_factory=list)
+    warnings: list[DetectionWarning] = field(default_factory=list)
+    """Jamais un texte déjà composé en français : un code de message et ses
+    paramètres, traduits côté client (`import.warning.<code>`, audit des
+    traductions du Lot 8)."""
 
 
 def detect_type_e(pdf_path: Path) -> TypeEResult | None:
@@ -227,14 +234,16 @@ def detect_type_e(pdf_path: Path) -> TypeEResult | None:
             if total_placements < _MIN_TOTAL_GRID_PLACEMENTS:
                 return None
 
-            warnings: list[str] = []
+            warnings: list[DetectionWarning] = []
             confidence = 1.0
 
             skipped_pages = [info for info in candidates if info.axis_fit is None]
             if skipped_pages:
                 warnings.append(
-                    f"{len(skipped_pages)} page(s) porteuse(s) d'images de catalogue mais sans "
-                    "numéros d'axe exploitables n'ont pas pu être positionnées et sont ignorées."
+                    DetectionWarning(
+                        code="type_e.pages_without_axis_numbers",
+                        params={"count": len(skipped_pages)},
+                    )
                 )
                 confidence -= min(0.3, 0.08 * len(skipped_pages))
 
@@ -245,8 +254,10 @@ def detect_type_e(pdf_path: Path) -> TypeEResult | None:
                 return None
             if collisions:
                 warnings.append(
-                    f"{collisions} case(s) où deux pages se recouvrent avec des images "
-                    "différentes — la dernière page traitée l'emporte."
+                    DetectionWarning(
+                        code="type_e.overlapping_pages",
+                        params={"count": collisions},
+                    )
                 )
                 confidence -= min(0.2, 0.02 * collisions)
 
@@ -257,7 +268,7 @@ def detect_type_e(pdf_path: Path) -> TypeEResult | None:
             columns, rows, origin, dims_warning, dims_penalty = _resolve_dimensions(
                 declared, placements
             )
-            if dims_warning:
+            if dims_warning is not None:
                 warnings.append(dims_warning)
                 confidence -= dims_penalty
             if columns <= 0 or rows <= 0:
@@ -265,10 +276,7 @@ def detect_type_e(pdf_path: Path) -> TypeEResult | None:
 
             legend_rows = _parse_legend(doc, n_pages)
             if not legend_rows:
-                warnings.append(
-                    "Aucune légende de couleurs DMC reconnue dans le PDF : les images du "
-                    "catalogue restent non identifiées (« Symbole non reconnu »)."
-                )
+                warnings.append(DetectionWarning(code="type_e.missing_legend"))
                 confidence -= 0.5
 
             catalog = _build_catalog(doc, digest_sample, digest_count)
@@ -515,7 +523,7 @@ def _find_declared_dimensions(pages: list[Page]) -> tuple[int, int] | None:
 def _resolve_dimensions(
     declared: tuple[int, int] | None,
     placements: dict[tuple[int, int], bytes],
-) -> tuple[int, int, tuple[int, int], str | None, float]:
+) -> tuple[int, int, tuple[int, int], DetectionWarning | None, float]:
     """`(columns, rows, origin, warning, confidence_penalty)` — `origin`
     est le `(row1, col1)` absolu à soustraire de chaque placement pour
     obtenir des coordonnées 0-based.
@@ -537,18 +545,24 @@ def _resolve_dimensions(
     origin = (min_row1, min_col1)
 
     if declared is None:
-        warning = (
-            "Dimensions non annoncées explicitement dans le PDF : déduites de "
-            "l'étendue des images placées."
+        return (
+            seen_columns,
+            seen_rows,
+            origin,
+            DetectionWarning(code="type_e.dimensions_inferred"),
+            0.05,
         )
-        return seen_columns, seen_rows, origin, warning, 0.05
 
     columns, rows = declared
     if columns != seen_columns or rows != seen_rows:
-        warning = (
-            f"Les dimensions annoncées par le PDF ({columns}×{rows}) ne correspondent pas "
-            f"exactement à l'étendue reconstruite ({seen_columns}×{seen_rows}) — dimensions "
-            "annoncées conservées."
+        warning = DetectionWarning(
+            code="type_e.dimensions_mismatch",
+            params={
+                "declared_columns": columns,
+                "declared_rows": rows,
+                "seen_columns": seen_columns,
+                "seen_rows": seen_rows,
+            },
         )
         return columns, rows, origin, warning, 0.1
     return columns, rows, origin, None, 0.0
@@ -687,14 +701,14 @@ def _rgb_hex(rgb: tuple[float, float, float]) -> str:
 
 def _match_catalog_to_legend(
     catalog: list[_CatalogImage], legend_rows: list[_LegendRow]
-) -> tuple[list[TypeEPaletteEntry], dict[bytes, int], list[str], float]:
+) -> tuple[list[TypeEPaletteEntry], dict[bytes, int], list[DetectionWarning], float]:
     """Associe chaque image du catalogue à une ligne de légende. Signal
     primaire : comptage exact (voir docstring du module — bien plus fiable
     ici que la couleur). Repli : plus proche voisin de couleur perceptuelle,
     restreint aux codes de légende encore non attribués (cahier des charges
     §8.5), pour les images que le comptage ne peut départager sans ambiguïté
     (comptages en doublon, ou plus d'images que de lignes de légende)."""
-    warnings: list[str] = []
+    warnings: list[DetectionWarning] = []
     penalty = 0.0
 
     count_to_codes: dict[int, list[str]] = defaultdict(list)
@@ -720,9 +734,10 @@ def _match_catalog_to_legend(
 
     if remaining_images and remaining_codes:
         warnings.append(
-            f"{len(remaining_images)} image(s) du catalogue n'ont pas pu être rapprochées "
-            "sans ambiguïté par comptage exact (comptages en doublon) — rapprochement par "
-            "couleur perceptuelle utilisé en repli, moins fiable."
+            DetectionWarning(
+                code="type_e.count_match_ambiguous",
+                params={"count": len(remaining_images)},
+            )
         )
         penalty += min(0.3, 0.05 * len(remaining_images))
         # Appariement glouton par distance Lab croissante, jamais un ordre
@@ -765,8 +780,10 @@ def _match_catalog_to_legend(
     unmatched = [img for img in catalog if img.digest not in digest_to_index]
     if unmatched:
         warnings.append(
-            f"{len(unmatched)} image(s) du catalogue sans ligne de légende correspondante "
-            "— ajoutée(s) à la palette comme « Symbole non reconnu »."
+            DetectionWarning(
+                code="type_e.unmatched_catalog_images",
+                params={"count": len(unmatched)},
+            )
         )
         penalty += min(0.3, 0.05 * len(unmatched))
         for img in unmatched:

@@ -48,7 +48,16 @@ FORMAT_VERSION = 1
 
 class BackupFormatError(ValueError):
     """Le document fourni n'est pas une sauvegarde CrossStitchHelper reconnue,
-    ou une version de format que cette instance ne sait pas lire."""
+    ou une version de format que cette instance ne sait pas lire.
+
+    Porte `code`/`params` plutôt qu'un message déjà formaté — traduit côté
+    client (audit des traductions, Lot 8), voir `app/schemas.py::ApiErrorDetail`
+    et `app/api/backup.py`."""
+
+    def __init__(self, code: str, **params: str | int) -> None:
+        self.code = code
+        self.params: dict[str, str | int] = params
+        super().__init__(code)
 
 
 def build_backup(session: Session) -> BackupDocument:
@@ -179,11 +188,12 @@ def _dump_recipe(recipe: Recipe) -> BackupRecipe:
 
 def restore_backup(session: Session, document: BackupDocument) -> BackupRestoreSummary:
     if document.format != FORMAT:
-        raise BackupFormatError(f"Format inattendu : {document.format!r} (attendu {FORMAT!r}).")
+        raise BackupFormatError("backup_unexpected_format", got=document.format, expected=FORMAT)
     if document.format_version != FORMAT_VERSION:
         raise BackupFormatError(
-            f"Version de sauvegarde non prise en charge : {document.format_version} "
-            f"(cette instance sait lire la version {FORMAT_VERSION})."
+            "backup_unsupported_version",
+            got=document.format_version,
+            expected=FORMAT_VERSION,
         )
 
     # Suppression des motifs : entraîne par cascade SQLite (`PRAGMA

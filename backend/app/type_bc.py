@@ -39,6 +39,10 @@ from pdfplumber.page import Page
 from PIL import Image
 
 from app.dmc_catalog import lab_distance, nearest_dmc, rgb_to_lab
+
+# `app.schemas` ne dépend que de Pydantic — l'importer ici ne rompt pas la
+# pureté du module (aucune dépendance FastAPI/SQLAlchemy, voir docstring).
+from app.schemas import DetectionWarning
 from app.type_a import SymbolGlyphLocation, detect_type_a
 
 # Voir `app/type_a.py` pour le rationnel de ce typage : pdfplumber représente
@@ -270,7 +274,10 @@ class TypeBCResult:
     """Index 0-based dans `cells` des cases dont la couleur et/ou le symbole
     est incertain — jamais une case fausse laissée sans signalement (règle
     impérative du `pdf-extraction-specialist`)."""
-    warnings: list[str] = field(default_factory=list)
+    warnings: list[DetectionWarning] = field(default_factory=list)
+    """Jamais un texte déjà composé en français : un code de message et ses
+    paramètres, traduits côté client (`import.warning.<code>`, audit des
+    traductions du Lot 8)."""
 
 
 def detect_type_bc(pdf_path: Path) -> TypeBCResult | None:
@@ -305,7 +312,7 @@ def detect_type_bc(pdf_path: Path) -> TypeBCResult | None:
             color_pitch_y = color_page.pitch_y
 
             symbol_page, grid_type, page_warning = _select_symbol_page(infos, color_page)
-            warnings: list[str] = [page_warning] if page_warning else []
+            warnings: list[DetectionWarning] = [page_warning] if page_warning is not None else []
             confidence = 1.0
 
             grid = _GridGeometry(
@@ -319,18 +326,14 @@ def detect_type_bc(pdf_path: Path) -> TypeBCResult | None:
             if grid.columns <= 0 or grid.rows <= 0:
                 return None
             if color_page.border_is_fallback:
-                warnings.append(
-                    "Bordure de grille non détectée explicitement : dimensions déduites "
-                    "de l'étendue des cases coloriées, potentiellement sous-estimées si "
-                    "le motif ne touche pas les bords de la grille imprimée."
-                )
+                warnings.append(DetectionWarning(code="type_bc.border_inferred"))
                 confidence -= 0.15
 
             raw_cell_colors = _build_color_grid(color_page, grid)
             raw_cell_colors, background_warning = _exclude_background_color(
                 raw_cell_colors, grid.columns * grid.rows
             )
-            if background_warning:
+            if background_warning is not None:
                 warnings.append(background_warning)
 
             if not raw_cell_colors:
@@ -367,11 +370,7 @@ def detect_type_bc(pdf_path: Path) -> TypeBCResult | None:
                     # exemple) : ne jamais prétendre une reconnaissance de
                     # symbole qu'on n'a pas réellement — repli honnête en B.
                     grid_type = "B"
-                    warnings.append(
-                        "Page de symboles détectée mais aucune forme n'a pu être "
-                        "regroupée par case (recalage incertain) : repli sur la couleur "
-                        "seule (type B)."
-                    )
+                    warnings.append(DetectionWarning(code="type_bc.symbol_page_unusable"))
                     confidence -= 0.2
                 elif cell_signature:
                     n_clusters = len(set(cell_signature.values()))
@@ -392,9 +391,7 @@ def detect_type_bc(pdf_path: Path) -> TypeBCResult | None:
                         grid_type = "B"
                         cell_signature = {}
                         warnings.append(
-                            "Reconnaissance de symboles trop peu fiable sur l'ensemble du "
-                            "fichier (formes trop fragmentées d'une case à l'autre) : repli "
-                            "sur la couleur seule (type B)."
+                            DetectionWarning(code="type_bc.symbol_recognition_unreliable")
                         )
                         confidence -= 0.2
 
@@ -660,7 +657,7 @@ def _page_density(info: _PageInfo) -> float:
 
 def _select_symbol_page(
     infos: list[_PageInfo], color_page: _PageInfo
-) -> tuple[_PageInfo | None, Literal["B", "C"], str | None]:
+) -> tuple[_PageInfo | None, Literal["B", "C"], DetectionWarning | None]:
     """Décide, par mesure et jamais par position de page supposée fixe
     (§4.3 : cas piège `summer-flight-dmc`), si la page couleur porte déjà
     elle-même les symboles, si une page voisine doit être superposée, ou si
@@ -693,13 +690,7 @@ def _select_symbol_page(
     if best is not None and best_density >= _MIN_SYMBOL_PAGE_DENSITY:
         return best, "C", None
 
-    return (
-        None,
-        "B",
-        "Aucune page de symboles exploitable trouvée (densité de tracés vectoriels "
-        "insuffisante sur toutes les pages candidates) : seule la couleur a pu être "
-        "extraite automatiquement.",
-    )
+    return None, "B", DetectionWarning(code="type_bc.no_symbol_page")
 
 
 # --------------------------------------------------------------------------
@@ -809,7 +800,7 @@ def _build_color_grid(
 
 def _exclude_background_color(
     cells: dict[tuple[int, int], Color], total_grid_cells: int
-) -> tuple[dict[tuple[int, int], Color], str | None]:
+) -> tuple[dict[tuple[int, int], Color], DetectionWarning | None]:
     """Exclut une couleur qui domine une fraction implausible de la grille
     entière (observé : un aplat de fond neutre appliqué sous chaque case,
     coloriée ou non, sur `summer-flight-dmc` — jamais un vrai fil à broder
@@ -824,10 +815,9 @@ def _exclude_background_color(
     if dominant_count < _BACKGROUND_DOMINANCE_RATIO * total_grid_cells:
         return cells, None
     filtered = {pos: c for pos, c in cells.items() if c != dominant_color}
-    warning = (
-        "Une couleur de fond couvrant une fraction implausible de la grille "
-        f"({dominant_count} case(s)) a été écartée automatiquement — probablement un "
-        "aplat de fond de page plutôt qu'un fil à broder."
+    warning = DetectionWarning(
+        code="type_bc.background_color_excluded",
+        params={"cells": dominant_count},
     )
     return filtered, warning
 
@@ -1256,8 +1246,8 @@ def _build_palette_and_cells(
     representative_bbox: dict[int, Bbox],
     grid_type: Literal["B", "C"],
     symbol_page_number: int | None,
-) -> tuple[list[TypeBCPaletteEntry], list[int], list[int], list[str], float]:
-    warnings: list[str] = []
+) -> tuple[list[TypeBCPaletteEntry], list[int], list[int], list[DetectionWarning], float]:
+    warnings: list[DetectionWarning] = []
     cells = [0] * (grid.columns * grid.rows)
 
     combo_counts: Counter[tuple[int, int]] = Counter()
@@ -1330,14 +1320,17 @@ def _build_palette_and_cells(
 
     if uncertain_color_codes:
         warnings.append(
-            "Rapprochement DMC incertain (distance perceptuelle élevée) pour "
-            + str(len(uncertain_color_codes))
-            + " couleur(s) — à vérifier à l'étape légende de l'assistant."
+            DetectionWarning(
+                code="type_bc.uncertain_dmc_match",
+                params={"count": len(uncertain_color_codes)},
+            )
         )
     if uncertain_positions:
         warnings.append(
-            f"{len(uncertain_positions)} case(s) signalée(s) comme incertaine(s) "
-            "(couleur douteuse et/ou symbole ambigu) — correction manuelle recommandée."
+            DetectionWarning(
+                code="type_bc.uncertain_cells",
+                params={"count": len(uncertain_positions)},
+            )
         )
 
     uncertain_cells = sorted(row0 * grid.columns + col0 for row0, col0 in uncertain_positions)

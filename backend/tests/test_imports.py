@@ -498,7 +498,9 @@ def test_manual_config_started_before_detection_finishes_is_not_overwritten(
     _run_auto_detection(job_id, source_path)
 
     job = client.get(f"/api/imports/{job_id}").json()
-    assert "modifiée manuellement" in " ".join(job["detection"]["warnings"])
+    # Avertissement sous forme de code + paramètres (audit des traductions,
+    # Lot 8) : le texte final est composé côté client.
+    assert "detection.manual_config_kept" in [w["code"] for w in job["detection"]["warnings"]]
     config = job["config"]
     assert config["columns"] == 92  # jamais réécrasé par la détection
     assert config["rows"] == 74

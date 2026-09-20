@@ -9,14 +9,14 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
 from app.auto_backup import is_auto_backup_enabled, set_auto_backup_enabled
 from app.backup import BackupFormatError, build_backup, restore_backup
 from app.db import get_session
-from app.http import content_disposition
+from app.http import api_error, content_disposition
 from app.schemas import AutoBackupSettings, BackupDocument, BackupRestoreSummary
 
 router = APIRouter(prefix="/backup", tags=["sauvegarde"])
@@ -48,7 +48,7 @@ def restore(
     try:
         return restore_backup(session, document)
     except BackupFormatError as error:
-        raise HTTPException(status_code=400, detail=str(error)) from error
+        raise api_error(400, error.code, **error.params) from error
 
 
 @router.get(

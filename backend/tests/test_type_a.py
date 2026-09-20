@@ -183,7 +183,17 @@ def test_unmapped_cells_are_flagged_not_silently_empty(result: TypeAResult) -> N
     unmapped = [entry for entry in result.palette if not entry.code]
     assert unmapped
     assert all(entry.name == "Symbole non reconnu" for entry in unmapped)
-    assert any("non reconnu" in warning for warning in result.warnings)
+    # L'avertissement est un code + paramètres, jamais un texte français figé
+    # côté serveur (audit des traductions, Lot 8) : c'est `import.warning.
+    # type_a.unmapped_symbols` côté frontend qui compose la phrase.
+    unmapped_warnings = [w for w in result.warnings if w.code == "type_a.unmapped_symbols"]
+    assert len(unmapped_warnings) == 1
+    # Les paramètres portent bien les vraies valeurs, pas des placeholders :
+    # autant d'entrées « Symbole non reconnu » que la palette en contient, et
+    # au moins une case réellement concernée.
+    assert unmapped_warnings[0].params["count"] == len(unmapped)
+    assert isinstance(unmapped_warnings[0].params["cells"], int)
+    assert unmapped_warnings[0].params["cells"] > 0
 
 
 def _tiny_non_type_a_pdf(tmp_path: Path) -> Path:

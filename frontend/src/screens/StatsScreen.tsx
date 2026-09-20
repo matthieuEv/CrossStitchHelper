@@ -1,6 +1,6 @@
 import { useT } from "../i18n";
 import { patternExportUrl } from "../lib/api";
-import { useNumberFormat } from "../lib/format";
+import { useNumberFormat, useSessionRelativeTime, useWeekdayLabel } from "../lib/format";
 import { STITCHES_PER_SKEIN, type ColorCount, type PatternTotals } from "../pattern/counts";
 import type { Pattern } from "../pattern/types";
 
@@ -27,21 +27,10 @@ interface StatsScreenProps {
 export function StatsScreen({ pattern, counts, totals, activity, sessions }: StatsScreenProps) {
   const t = useT();
   const formatNumber = useNumberFormat();
+  const weekdayLabel = useWeekdayLabel();
+  const sessionLabel = useSessionRelativeTime();
 
   const peak = activity.reduce((max, day) => Math.max(max, day.stitches), 0);
-  const weekdayNames = new Intl.DateTimeFormat(undefined, { weekday: "short" });
-  const weekdayLabel = (index: number): string => {
-    // 2024-01-01 était un lundi : décalage stable quelle que soit la locale.
-    const date = new Date(Date.UTC(2024, 0, 1 + index));
-    return weekdayNames.format(date);
-  };
-
-  const relativeTime = new Intl.RelativeTimeFormat(undefined, { numeric: "auto" });
-  const sessionLabel = (hoursAgo: number): string => {
-    if (hoursAgo < 1) return relativeTime.format(-Math.max(1, Math.round(hoursAgo * 60)), "minute");
-    if (hoursAgo < 24) return relativeTime.format(-Math.round(hoursAgo), "hour");
-    return relativeTime.format(-Math.round(hoursAgo / 24), "day");
-  };
 
   return (
     <div className="screen">
