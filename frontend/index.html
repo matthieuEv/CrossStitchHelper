@@ -9,8 +9,32 @@
       content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no"
     />
     <meta name="color-scheme" content="light dark" />
-    <meta name="theme-color" content="#f5ead8" media="(prefers-color-scheme: light)" />
-    <meta name="theme-color" content="#1f1d19" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#f5ead8" />
+    <!-- Applique le thème choisi (clair/sombre/système, `src/lib/theme.tsx`)
+         avant le premier rendu : sans ce script bloquant, un choix explicite
+         différent du système afficherait un éclair de mauvais thème le temps
+         que React démarre. Logique dupliquée depuis `theme.tsx` à dessein —
+         ce script tourne avant que le bundle applicatif ne soit chargé, donc
+         avant que quoi que ce soit d'autre ne soit disponible. Couleurs en
+         dur ici pour la même raison qu'aucune variable CSS n'est encore
+         chargée à ce stade ; les garder synchronisées avec `--color-bg`
+         (`index.css`) est manuel mais volontaire. -->
+    <script>
+      (function () {
+        try {
+          var stored = localStorage.getItem("csh.theme");
+          var choice = stored === "light" || stored === "dark" || stored === "system" ? stored : "system";
+          var systemDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+          var resolved = choice === "system" ? (systemDark ? "dark" : "light") : choice;
+          document.documentElement.dataset.theme = resolved;
+          var meta = document.querySelector('meta[name="theme-color"]');
+          if (meta) meta.setAttribute("content", resolved === "dark" ? "#1f1d19" : "#f5ead8");
+        } catch (e) {
+          // localStorage indisponible (navigation privée) : reste sur le clair
+          // par défaut, déjà posé en dur ci-dessus.
+        }
+      })();
+    </script>
     <!-- Sans cette balise, iOS affiche la barre Safari même une fois l'app
          ajoutée à l'écran d'accueil. -->
     <meta name="apple-mobile-web-app-capable" content="yes" />
