@@ -37,6 +37,10 @@ from pdfplumber.page import Page
 
 from app.dmc_colors import FALLBACK_HEX, dmc_hex
 
+# `app.schemas` ne dépend que de Pydantic — l'importer ici ne rompt pas la
+# pureté du module (aucune dépendance FastAPI/SQLAlchemy, voir docstring).
+from app.schemas import DetectionWarning
+
 # pdfplumber représente chaque caractère/rectangle positionné comme un
 # dictionnaire hétérogène (`T_obj = Dict[str, Any]` côté bibliothèque) — pas
 # de TypedDict public à réutiliser ici.
@@ -128,7 +132,10 @@ class TypeAResult:
     premier. 0 = case vide, n = index 1-based dans `palette`."""
     palette: list[TypeAPaletteEntry]
     confidence: float
-    warnings: list[str] = field(default_factory=list)
+    warnings: list[DetectionWarning] = field(default_factory=list)
+    """Jamais un texte déjà composé en français : un code de message et ses
+    paramètres, traduits côté client (`import.warning.<code>`, audit des
+    traductions du Lot 8)."""
 
 
 @dataclass
@@ -168,33 +175,29 @@ def detect_type_a(pdf_path: Path) -> TypeAResult | None:
         if not grid_pages:
             return None
 
-        warnings: list[str] = []
+        warnings: list[DetectionWarning] = []
         confidence = 1.0
 
         legend_rows = _parse_full_stitches_rows(pages)
         if not legend_rows:
-            warnings.append(
-                "Aucune section « Floss Used for Full Stitches » trouvée dans la "
-                "légende : la palette de couleurs n'a pas pu être reconstruite "
-                "automatiquement."
-            )
+            warnings.append(DetectionWarning(code="type_a.missing_full_stitches_legend"))
             confidence -= 0.5
 
         palette, key_to_index, unknown_codes, ambiguous_codes = _build_palette(legend_rows)
         if unknown_codes:
             warnings.append(
-                "Code(s) DMC absent(s) de la table de couleurs locale : "
-                + ", ".join(unknown_codes)
-                + " — couleur d'affichage approximative utilisée (le code et le nom "
-                "restent ceux imprimés dans le PDF)."
+                DetectionWarning(
+                    code="type_a.unknown_dmc_codes",
+                    params={"count": len(unknown_codes), "codes": ", ".join(unknown_codes)},
+                )
             )
             confidence -= min(0.1, 0.02 * len(unknown_codes))
         if ambiguous_codes:
             warnings.append(
-                "Code(s) DMC dont le symbole et la couleur de repère sont identiques à "
-                "une autre ligne de la légende, rendant leurs cases indistinguables : "
-                + ", ".join(ambiguous_codes)
-                + " — cases attribuées à la première ligne correspondante."
+                DetectionWarning(
+                    code="type_a.ambiguous_dmc_codes",
+                    params={"count": len(ambiguous_codes), "codes": ", ".join(ambiguous_codes)},
+                )
             )
             confidence -= min(0.2, 0.05 * len(ambiguous_codes))
 
@@ -204,7 +207,7 @@ def detect_type_a(pdf_path: Path) -> TypeAResult | None:
 
         declared = _find_declared_dimensions(pages)
         columns, rows, dims_warning, dims_penalty = _resolve_dimensions(declared, placements)
-        if dims_warning:
+        if dims_warning is not None:
             warnings.append(dims_warning)
             confidence -= dims_penalty
 
@@ -214,7 +217,7 @@ def detect_type_a(pdf_path: Path) -> TypeAResult | None:
         cells, unmapped_warning, unmapped_penalty = _fill_cells(
             columns, rows, placements, key_to_index, palette
         )
-        if unmapped_warning:
+        if unmapped_warning is not None:
             warnings.append(unmapped_warning)
             confidence -= unmapped_penalty
 
@@ -697,11 +700,11 @@ def _set_placement(
 def _place_grid_pages(
     grid_pages: list[_GridPage],
     key_to_index: dict[CellKey, int],
-) -> tuple[dict[tuple[int, int], CellKey], list[str], float]:
+) -> tuple[dict[tuple[int, int], CellKey], list[DetectionWarning], float]:
     """Place chaque glyphe de symbole dans des coordonnées absolues
     0-based `(row0, col0) -> (glyphe, couleur de fond)`."""
     placements: dict[tuple[int, int], CellKey] = {}
-    warnings: list[str] = []
+    warnings: list[DetectionWarning] = []
     penalty = 0.0
     fallback_col_offset = 0
     # Nécessaire pour déterminer une police de symboles au singulier avant
@@ -716,8 +719,10 @@ def _place_grid_pages(
         if fit is None:
             page_number = grid_page.index + 1
             warnings.append(
-                f"Page {page_number} : numéros d'axe introuvables, positionnement "
-                "approximatif par ordre de lecture plutôt qu'abandon de la page."
+                DetectionWarning(
+                    code="type_a.axis_numbers_missing_on_page",
+                    params={"page": page_number},
+                )
             )
             penalty += 0.15
             min_x = min(float(c["x0"]) for c in grid_page.symbol_chars)
@@ -766,23 +771,28 @@ def _find_declared_dimensions(pages: list[Page]) -> tuple[int, int] | None:
 def _resolve_dimensions(
     declared: tuple[int, int] | None,
     placements: dict[tuple[int, int], CellKey],
-) -> tuple[int, int, str | None, float]:
+) -> tuple[int, int, DetectionWarning | None, float]:
     max_col_seen = max((col0 for _row0, col0 in placements), default=-1) + 1
     max_row_seen = max((row0 for row0, _col0 in placements), default=-1) + 1
 
     if declared is None:
-        warning = (
-            "Dimensions non annoncées explicitement dans le PDF : déduites de "
-            "l'étendue de la grille assemblée."
+        return (
+            max_col_seen,
+            max_row_seen,
+            DetectionWarning(code="type_a.dimensions_inferred"),
+            0.05,
         )
-        return max_col_seen, max_row_seen, warning, 0.05
 
     columns, rows = declared
     if columns != max_col_seen or rows != max_row_seen:
-        warning = (
-            f"Les dimensions annoncées par le PDF ({columns}×{rows}) ne correspondent "
-            f"pas exactement à l'étendue reconstruite ({max_col_seen}×{max_row_seen}) "
-            "— dimensions annoncées conservées."
+        warning = DetectionWarning(
+            code="type_a.dimensions_mismatch",
+            params={
+                "declared_columns": columns,
+                "declared_rows": rows,
+                "seen_columns": max_col_seen,
+                "seen_rows": max_row_seen,
+            },
         )
         return columns, rows, warning, 0.1
     return columns, rows, None, 0.0
@@ -810,7 +820,7 @@ def _fill_cells(
     placements: dict[tuple[int, int], CellKey],
     key_to_index: dict[CellKey, int],
     palette: list[TypeAPaletteEntry],
-) -> tuple[list[int], str | None, float]:
+) -> tuple[list[int], DetectionWarning | None, float]:
     cells = [0] * (columns * rows)
     unmapped_index: dict[CellKey, int] = {}
     used_symbol_keys = {entry.symbol_key for entry in palette}
@@ -841,10 +851,9 @@ def _fill_cells(
     if not unmapped_index:
         return cells, None, 0.0
 
-    warning = (
-        f"{len(unmapped_index)} symbole(s)/couleur(s) sans correspondance dans la "
-        f"légende ({affected_cells} case(s) concernée(s)) — ajouté(s) à la palette "
-        "comme « Symbole non reconnu »."
+    warning = DetectionWarning(
+        code="type_a.unmapped_symbols",
+        params={"count": len(unmapped_index), "cells": affected_cells},
     )
     fraction = affected_cells / total_placed if total_placed else 0.0
     penalty = min(0.4, fraction)

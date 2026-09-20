@@ -53,6 +53,7 @@ from app.imports_engine import (
 )
 from app.models import Grid, ImportJob, PaletteEntry, Pattern, Progress
 from app.schemas import (
+    DetectionWarning,
     ImportAppliedRecipe,
     ImportCommitRequest,
     ImportCommitResponse,
@@ -278,7 +279,7 @@ class _Detected:
     cells: list[int]
     palette: list[TypeAPaletteEntry] | list[TypeBCPaletteEntry] | list[TypeEPaletteEntry]
     confidence: float
-    warnings: list[str]
+    warnings: list[DetectionWarning]
     uncertain_cells: list[int]
 
 
@@ -367,7 +368,12 @@ def _run_auto_detection(job_id: str, source_path: Path) -> None:
             result["detection"] = {
                 "grid_type": "?",
                 "confidence": 0.0,
-                "warnings": [f"Échec inattendu de la détection automatique : {detection_error}"],
+                "warnings": [
+                    DetectionWarning(
+                        code="detection.unexpected_failure",
+                        params={"error": str(detection_error)},
+                    ).model_dump()
+                ],
             }
             _save_result(job, result)
             session.commit()
@@ -416,16 +422,15 @@ def _run_auto_detection(job_id: str, source_path: Path) -> None:
                     for entry in detected.palette
                 ]
                 result["preview"] = _compute_preview(config)
+            detection_warnings = list(detected.warnings)
+            if already_configured:
+                detection_warnings.append(DetectionWarning(code="detection.manual_config_kept"))
             result["detection"] = {
                 "grid_type": detected.grid_type,
                 "confidence": detected.confidence,
-                "warnings": detected.warnings
-                if not already_configured
-                else [
-                    *detected.warnings,
-                    "Configuration déjà modifiée manuellement avant la fin de "
-                    "l'analyse : la proposition automatique n'a pas été appliquée.",
-                ],
+                # Sérialisé en dictionnaires simples : `result` est stocké tel
+                # quel en JSON (`_save_result`), jamais un modèle Pydantic.
+                "warnings": [warning.model_dump() for warning in detection_warnings],
             }
         _save_result(job, result)
         session.commit()
