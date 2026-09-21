@@ -12,6 +12,14 @@ Export d'un logiciel de charting (police embarquée personnalisée `CROSSSTICH6`
 - Comptages exacts par couleur en page 11 (ex. DMC 310 "Black" = 3839 points pleins, DMC 3031 "Mocha Brown-VY DK" = 3756 points pleins + 4 quarts + 128,8 cm de point arrière)
 - Toile de référence : Aida 16, blanche
 
+**Points spéciaux — mesuré au Lot 9 (`backend/tests/test_type_a.py`), pas supposé :**
+- La légende ne s'arrête pas aux points entiers : pages 9–10, cinq sections « Floss Used for ... » se suivent — *Full* (34 lignes), *Half* (762, 3756, B5200), *Quarter* (3031), *French Knots* (742), *Back Stitches* (310, 640, 642, 742, 814, 839, 938, 3031). Les deux dernières sections n'ont **pas** de glyphe de symbole : leur colonne « Symbol » est un échantillon vectoriel tracé dans la couleur exacte utilisée sur les pages de grille — c'est la clé de rapprochement couleur → code DMC, mesurée dans le fichier, et non une ressemblance colorimétrique (un plus proche voisin Lab se trompe sur ce fichier : il intervertit 938 et 3031, et n'attribue jamais 310, tracé en (35, 40, 29) et non en noir).
+- Chaque point arrière est tracé **deux fois** au même endroit (passe sombre de 2.4 pt puis passe claire de 2.08 pt) : le compter deux fois double la longueur. En prime, chaque page redessine en teintes délavées la bande qu'elle partage avec la page voisine — 8 teintes supplémentaires qui ne doivent jamais s'ajouter au total (elles ne recouvrent que des tracés déjà comptés).
+- Extrémités de point arrière : toutes sur le réseau demi-case (5 120 sur des coins de case, 52 sur des milieux), souvent en diagonale — et 36 des 56 diagonales de la page 1 sont *descendantes*, donc illisibles depuis la seule bbox pdfplumber (il faut `pts`).
+- La colonne « Back(cm) » de la page 11 est en réalité exprimée en **pouces** : sa valeur vaut exactement la longueur en cases divisée par le compte de toile déclaré (Aida 16). Les huit codes se retrouvent à moins de 0,1 % près par cette conversion.
+- Les 4 points 1/4 (DMC 3031) sont dessinés en petit **dans un coin de case déjà occupée** par un demi-point DMC 3756, avec le même glyphe et la même couleur de fond que le point entier 3031 : seuls leur décalage dans la case les distingue (48 310 glyphes sur 48 314 sont exactement centrés).
+- Les 3 nœuds (DMC 742) sont sur la seule page 1. À ne pas confondre avec deux autres formes présentes sur les pages de grille : les **flèches de repère de page** (petite forme pleine noire d'exactement une case, en marge, sur chaque page) et des **annotations manuelles** laissées dans le fichier (traits bleu système `#007AFF` tracés à main levée sur les pages 2 et 6, hors de tout alignement sur les cases).
+
 ## `winter-wreath-dmc/PATASS117_2C_2.pdf` — type C
 
 Grille officielle DMC ("Winter Wreath / Couronne d'hiver"), 5 pages, 100 % vectorielle.
