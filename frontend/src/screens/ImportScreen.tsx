@@ -93,6 +93,10 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
   /** Passe à `true` dès que l'utilisateur tape ses propres dimensions —
    * plus aucun sondage de détection ne doit alors venir écraser sa saisie. */
   const manualEditRef = useRef(false);
+  /** Même principe que `manualEditRef`, mais pour le compte de toile seul
+   * (Lot 9) — les deux sont indépendants : corriger les dimensions ne doit
+   * pas geler le compte de toile détecté, et inversement. */
+  const manualFabricEditRef = useRef(false);
 
   const stepLabels = [
     t("import.step.file"),
@@ -116,6 +120,9 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
     setFills(config.fills);
     setDetectedCells(config.detected_cells);
     setUncertainCells(config.uncertain_cells);
+    if (!manualFabricEditRef.current && config.detected_fabric_count !== null) {
+      setFabricCount(String(config.detected_fabric_count));
+    }
   };
 
   const upload = async (file: File): Promise<void> => {
@@ -124,6 +131,7 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
     try {
       const created = await createImport(file);
       manualEditRef.current = false;
+      manualFabricEditRef.current = false;
       setJob(created);
       applyConfig(created.config);
       setDetection(created.detection);
@@ -783,7 +791,10 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
                     className="input"
                     inputMode="numeric"
                     value={fabricCount}
-                    onChange={(event) => setFabricCount(event.target.value.replace(/[^0-9]/g, ""))}
+                    onChange={(event) => {
+                      manualFabricEditRef.current = true;
+                      setFabricCount(event.target.value.replace(/[^0-9]/g, ""));
+                    }}
                     style={{ minHeight: 46 }}
                   />
                 </label>

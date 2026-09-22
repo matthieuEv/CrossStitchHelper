@@ -317,6 +317,10 @@ export interface ApiImportConfig {
    * détection type B/C (Lot 5) — couleur douteuse et/ou symbole ambigu,
    * jamais une case fausse laissée sans indication. */
   uncertain_cells: number[] | null;
+  /** Compte de toile lu dans le PDF (type A, Lot 9) — pré-remplit le champ
+   * de l'écran Récap, jamais imposé : une saisie manuelle l'emporte
+   * toujours, voir `manualFabricEditRef` dans `ImportScreen.tsx`. */
+  detected_fabric_count: number | null;
 }
 
 export interface ApiImportConfigPatch {
