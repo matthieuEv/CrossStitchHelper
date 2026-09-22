@@ -23,9 +23,10 @@ la palette, qui sont propres à chaque motif — voir `app/models.py::Recipe`).
 from __future__ import annotations
 
 import json
+import math
 import shutil
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated, Any, Literal
@@ -53,7 +54,9 @@ from app.imports_engine import (
 )
 from app.models import Grid, ImportJob, PaletteEntry, Pattern, Progress
 from app.schemas import (
+    BackstitchSegment,
     DetectionWarning,
+    FrenchKnot,
     ImportAppliedRecipe,
     ImportCommitRequest,
     ImportCommitResponse,
@@ -118,6 +121,32 @@ def _detected_base(config: dict[str, Any], columns: int, rows: int) -> list[int]
     if detected is None or len(detected) != columns * rows:
         return None
     return list(detected)
+
+
+def _detected_layer(config: dict[str, Any], key: str, columns: int, rows: int) -> list[int] | None:
+    """Même garde-fou que `_detected_base`, généralisé aux couches 1/2 et
+    1/4 (Lot 9) : une couche détectée pour des dimensions précises ne
+    s'applique plus si l'utilisateur a changé `columns`/`rows` depuis."""
+    detected = config.get(key)
+    if detected is None or len(detected) != columns * rows:
+        return None
+    return list(detected)
+
+
+def _detected_special_items(
+    config: dict[str, Any], key: str, palette_size: int
+) -> list[dict[str, Any]]:
+    """Segments de point arrière ou nœuds détectés (Lot 9), en écartant
+    silencieusement ceux dont l'index de palette ne correspond plus à rien.
+
+    La détection fixe ces index au moment où elle tourne ; si l'utilisateur
+    modifie ensuite la palette à la main (ajout/retrait d'une couleur,
+    toujours possible même après une détection réussie — §4.4, « jamais un
+    résultat imposé »), ils peuvent devenir périmés. Mieux vaut perdre
+    silencieusement ces quelques éléments que planter la validation ou
+    écrire une référence à une couleur qui n'existe plus."""
+    items = config.get(key) or []
+    return [item for item in items if 1 <= item.get("palette_index", 0) <= palette_size]
 
 
 def _compute_preview(config: dict[str, Any]) -> dict[str, Any] | None:
@@ -281,6 +310,14 @@ class _Detected:
     confidence: float
     warnings: list[DetectionWarning]
     uncertain_cells: list[int]
+    cells_half: list[int] = field(default_factory=list)
+    """Points 1/2 (Lot 9, type A seulement — B/C/E laissent la valeur par
+    défaut : aucune détection de points spéciaux pour eux dans ce lot)."""
+    cells_quarter: list[int] = field(default_factory=list)
+    backstitch: list[BackstitchSegment] = field(default_factory=list)
+    french_knots: list[FrenchKnot] = field(default_factory=list)
+    fabric_count: int | None = None
+    """Compte de toile déclaré par le PDF, si trouvé (type A seulement)."""
 
 
 def _run_auto_detection(job_id: str, source_path: Path) -> None:
@@ -325,6 +362,11 @@ def _run_auto_detection(job_id: str, source_path: Path) -> None:
                 confidence=type_a.confidence,
                 warnings=type_a.warnings,
                 uncertain_cells=[],
+                cells_half=type_a.cells_half,
+                cells_quarter=type_a.cells_quarter,
+                backstitch=type_a.backstitch,
+                french_knots=type_a.french_knots,
+                fabric_count=type_a.fabric_count,
             )
         else:
             type_bc = detect_type_bc(source_path)
@@ -411,6 +453,20 @@ def _run_auto_detection(job_id: str, source_path: Path) -> None:
                 config["rows"] = detected.rows
                 config["detected_cells"] = detected.cells
                 config["uncertain_cells"] = detected.uncertain_cells or None
+                # Lot 9 : points spéciaux, type A seulement (B/C/E laissent
+                # ces listes vides — voir `_Detected`). Aucun mécanisme de
+                # correction manuelle pour ces couches ; `or None` pour
+                # rester cohérent avec `Grid.layer_half`/`layer_quarter`
+                # (`NULL`, pas une liste vide, quand le motif n'en a aucun).
+                config["detected_half"] = detected.cells_half or None
+                config["detected_quarter"] = detected.cells_quarter or None
+                config["detected_backstitch"] = [
+                    segment.model_dump() for segment in detected.backstitch
+                ] or None
+                config["detected_french_knots"] = [
+                    knot.model_dump() for knot in detected.french_knots
+                ] or None
+                config["detected_fabric_count"] = detected.fabric_count
                 config["palette"] = [
                     {
                         "code": entry.code,
@@ -576,6 +632,18 @@ def commit(
         base=_detected_base(result["config"], columns, rows),
     )
 
+    # Points fractionnés et spéciaux (Lot 9, type A seulement) : aucun
+    # mécanisme de correction manuelle pour ces couches (contrairement à
+    # `cells`, jamais de `fills` équivalent) — elles sont commitées telles
+    # que détectées, ou absentes si la détection ne les a pas produites ou
+    # si les dimensions ont changé depuis (`_detected_layer`).
+    config = result["config"]
+    cells_half = _detected_layer(config, "detected_half", columns, rows)
+    cells_quarter = _detected_layer(config, "detected_quarter", columns, rows)
+    palette_size = len(config["palette"])
+    backstitch = _detected_special_items(config, "detected_backstitch", palette_size)
+    french_knots = _detected_special_items(config, "detected_french_knots", palette_size)
+
     pattern = Pattern(
         id=pattern_id,
         owner_id=None,
@@ -593,8 +661,19 @@ def commit(
     )
     session.add(pattern)
 
+    # Longueur cumulée (en cases) par index de palette, pour
+    # `backstitch_length_cm` ci-dessous — jamais un centimètre inventé si le
+    # PDF ne déclare pas de compte de toile (`payload.fabric_count`, saisi ou
+    # corrigé par l'utilisateur à cette étape, voir `ImportCommitRequest`).
+    backstitch_length_by_index: dict[int, float] = {}
+    for segment in backstitch:
+        length = math.hypot(segment["x2"] - segment["x1"], segment["y2"] - segment["y1"])
+        index = segment["palette_index"]
+        backstitch_length_by_index[index] = backstitch_length_by_index.get(index, 0.0) + length
+
     for position, entry in enumerate(result["config"]["palette"]):
         index_in_grid = position + 1
+        length_cells = backstitch_length_by_index.get(index_in_grid)
         session.add(
             PaletteEntry(
                 id=uuid.uuid4().hex,
@@ -609,11 +688,17 @@ def commit(
                 strands_full=2,
                 strands_back=1,
                 count_full=sum(1 for value in cells if value == index_in_grid),
-                count_half=0,
-                count_quarter=0,
-                count_french=0,
+                count_half=sum(1 for value in cells_half or () if value == index_in_grid),
+                count_quarter=sum(1 for value in cells_quarter or () if value == index_in_grid),
+                count_french=sum(
+                    1 for knot in french_knots if knot["palette_index"] == index_in_grid
+                ),
                 count_beads=0,
-                backstitch_length_cm=None,
+                backstitch_length_cm=(
+                    length_cells * 2.54 / payload.fabric_count
+                    if length_cells and payload.fabric_count
+                    else None
+                ),
             )
         )
 
@@ -621,10 +706,10 @@ def commit(
         Grid(
             pattern_id=pattern_id,
             layer_full=encode_uint16_layer(cells),
-            layer_half=None,
-            layer_quarter=None,
-            backstitch_json="[]",
-            french_knots_json="[]",
+            layer_half=encode_uint16_layer(cells_half) if cells_half else None,
+            layer_quarter=encode_uint16_layer(cells_quarter) if cells_quarter else None,
+            backstitch_json=json.dumps(backstitch),
+            french_knots_json=json.dumps(french_knots),
             encoding="uint16le",
             version=1,
         )

@@ -83,6 +83,14 @@ def test_create_import_accepts_pdf(client: TestClient) -> None:
         "fills": [],
         "detected_cells": None,
         "uncertain_cells": None,
+        # Points spéciaux (Lot 9, type A) : rien à cette étape, avant même
+        # que la détection en tâche de fond n'ait eu la moindre chance de
+        # tourner.
+        "detected_half": None,
+        "detected_quarter": None,
+        "detected_backstitch": None,
+        "detected_french_knots": None,
+        "detected_fabric_count": None,
     }
     assert job["preview"] is None
 
@@ -405,12 +413,14 @@ def test_create_import_of_real_type_a_pdf_prefills_config_from_detection(
     config = job["config"]
     assert config["columns"] == 255
     assert config["rows"] == 180
-    # 34 couleurs DMC de la légende « Full Stitches », plus d'éventuelles
-    # entrées « Symbole non reconnu » (glyphes de demi/quart-point hors
-    # périmètre du Lot 4, voir `app/type_a.py`) — comptées séparément ici,
-    # exactement comme `tests/test_type_a.py`.
+    # 34 couleurs DMC de la légende « Full Stitches » — un même fil compte
+    # une fois même s'il est aussi utilisé en points 1/2, 1/4, arrière ou
+    # nœud (Lot 9, `app/type_a.py::_build_palette`). Depuis ce lot, plus
+    # aucune entrée « Symbole non reconnu » ne subsiste sur ce fichier (voir
+    # `tests/test_type_a.py::test_no_symbol_is_left_unmapped`).
     dmc_entries = [entry for entry in config["palette"] if entry["code"]]
     assert len(dmc_entries) == 34
+    assert len(config["palette"]) == 34
     assert config["detected_cells"] is not None
     assert len(config["detected_cells"]) == 255 * 180
 
@@ -454,6 +464,68 @@ def test_symbol_images_survive_commit_into_a_real_pattern(client: TestClient) ->
     for entry in dmc_entries:
         assert entry["symbol_svg"] is not None
         assert "image/png;base64," in entry["symbol_svg"]
+
+
+def test_special_stitches_survive_commit_into_a_real_pattern(client: TestClient) -> None:
+    """Bout en bout du Lot 9 : les points 1/2, 1/4, arrière et nœuds détectés
+    par `app/type_a.py` (vérifiés exhaustivement dans `tests/test_type_a.py`)
+    doivent réellement atteindre le motif commité, pas seulement le job
+    d'import — c'est tout le sujet du câblage `commit()` ajouté ce lot-ci.
+    Valeurs de référence : page 11 du PDF (voir `fixtures/README.md`,
+    section « Points spéciaux »)."""
+    job = _wait_for_detection(client, _upload_real_type_a_pdf(client)["id"], timeout=30.0)
+
+    # Le compte de toile détecté (« Fabric: Aida 16 ») doit être disponible
+    # pour que le frontend puisse pré-remplir l'étape récapitulative — voir
+    # `ImportScreen.tsx`. On le réutilise ici tel quel pour committer, comme
+    # le ferait un utilisateur qui n'a pas touché à la valeur pré-remplie.
+    assert job["config"]["detected_fabric_count"] == 16
+
+    response = client.post(
+        f"/api/imports/{job['id']}/commit",
+        json={
+            "name": "Café Brasserie Lot 9",
+            "fabric_count": job["config"]["detected_fabric_count"],
+        },
+    )
+    assert response.status_code == 200
+    pattern_id = response.json()["pattern_id"]
+
+    grid = client.get(f"/api/patterns/{pattern_id}/grid").json()
+    assert grid["layer_half"] is not None
+    assert grid["layer_quarter"] is not None
+    assert len(grid["backstitch"]) > 1000  # 1182 mesuré (voir le rapport du Lot 9)
+    assert len(grid["french_knots"]) == 3
+
+    detail = client.get(f"/api/patterns/{pattern_id}").json()
+    palette = {entry["code"]: entry for entry in detail["palette"]}
+    # DMC 3031 : 4 points 1/4 annoncés page 11.
+    assert palette["3031"]["count_quarter"] == 4
+    # DMC 742 : 3 nœuds annoncés page 11.
+    assert palette["742"]["count_french"] == 3
+    # DMC 310 : 114.2 (unité réelle : pouces, voir fixtures/README.md) — donc
+    # 114.2 * 2.54 cm, à 1 % près (même tolérance que `tests/test_type_a.py`).
+    expected_cm = 114.2 * 2.54
+    assert palette["310"]["backstitch_length_cm"] is not None
+    assert abs(palette["310"]["backstitch_length_cm"] - expected_cm) < 0.01 * expected_cm
+
+
+def test_backstitch_length_is_none_without_a_declared_fabric_count(client: TestClient) -> None:
+    """Jamais un centimètre inventé (§3, `TypeAPaletteEntry.backstitch_length_cells`)
+    : si l'utilisateur retire la valeur pré-remplie sans la remplacer, la
+    longueur reste `None` plutôt qu'une conversion approximative silencieuse."""
+    job = _wait_for_detection(client, _upload_real_type_a_pdf(client)["id"], timeout=30.0)
+    response = client.post(
+        f"/api/imports/{job['id']}/commit", json={"name": "Sans compte de toile"}
+    )
+    assert response.status_code == 200
+    pattern_id = response.json()["pattern_id"]
+
+    detail = client.get(f"/api/patterns/{pattern_id}").json()
+    palette = {entry["code"]: entry for entry in detail["palette"]}
+    assert palette["310"]["backstitch_length_cm"] is None
+    # Les comptages qui ne dépendent pas du compte de toile restent, eux, corrects.
+    assert palette["3031"]["count_quarter"] == 4
 
 
 def test_manual_config_started_before_detection_finishes_is_not_overwritten(

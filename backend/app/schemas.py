@@ -287,6 +287,37 @@ class ImportConfig(BaseModel):
             "`pdf-extraction-specialist`)."
         ),
     )
+    detected_half: list[int] | None = Field(
+        default=None,
+        description=(
+            "Points 1/2 proposés par la détection automatique (Lot 9, type A "
+            "seulement) — même convention que `detected_cells`. Aucun mécanisme de "
+            "correction manuelle pour cette couche : commité tel quel si les "
+            "dimensions n'ont pas changé depuis la détection."
+        ),
+    )
+    detected_quarter: list[int] | None = Field(
+        default=None, description="Points 1/4 proposés par la détection automatique (Lot 9)."
+    )
+    detected_backstitch: list[BackstitchSegment] | None = Field(
+        default=None,
+        description=(
+            "Segments de point arrière proposés par la détection automatique (Lot 9, "
+            "type A seulement) — coordonnées dans le référentiel de la grille "
+            "détectée (`columns`/`rows` de ce même job)."
+        ),
+    )
+    detected_french_knots: list[FrenchKnot] | None = Field(
+        default=None, description="Nœuds proposés par la détection automatique (Lot 9)."
+    )
+    detected_fabric_count: int | None = Field(
+        default=None,
+        description=(
+            "Compte de toile déclaré en clair par le PDF (Lot 9, type A seulement) — "
+            "sert uniquement à pré-remplir le champ de l'étape récapitulative, jamais "
+            "consommé par l'extraction elle-même ni imposé à l'utilisateur."
+        ),
+    )
 
 
 class ImportConfigPatch(BaseModel):
@@ -303,6 +334,11 @@ class ImportConfigPatch(BaseModel):
     fills: list[ImportFillZone] | None = None
     detected_cells: list[int] | None = None
     uncertain_cells: list[int] | None = None
+    detected_half: list[int] | None = None
+    detected_quarter: list[int] | None = None
+    detected_backstitch: list[BackstitchSegment] | None = None
+    detected_french_knots: list[FrenchKnot] | None = None
+    detected_fabric_count: int | None = None
 
 
 class ImportPreview(BaseModel):
