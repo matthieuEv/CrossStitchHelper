@@ -168,4 +168,4 @@ extraction automatique à partir du Lot 4.
 
 ## Licence
 
-À décider avant toute publication publique (voir `docs/roadmap.md`).
+[MIT](LICENSE) — décidé le 23/09/2026 (voir `docs/cahier-des-charges.md` §13).
