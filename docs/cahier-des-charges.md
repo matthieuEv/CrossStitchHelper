@@ -457,5 +457,5 @@ Les lots 0 à 3 constituent la **V1 utilisable** et devraient être menés d'un 
 | 13/09/2026 | **Progression stockée séparément de la grille**, pour survivre à un ré-import |
 | 14/09/2026 | Ajout du **type E** (grilles en images bitmap réutilisées) à la typologie, après analyse de 4 PDF supplémentaires — hors périmètre du Lot 5, à repositionner dans la roadmap |
 | 18/09/2026 | **Abandon du type D** (reconnaissance automatique par vision par ordinateur sur photo libre) et retrait du bouton de prise de photo de l'assistant, avant tout début d'implémentation — voir §4.4. L'import manuel universel (Lot 2) reste le filet de sécurité pour tout fichier, image comprise, qu'aucun connecteur automatique ne reconnaît |
-| À trancher | Licence open source (MIT pour la diffusion, AGPL pour garantir l'ouverture des forks) |
+| 23/09/2026 | **Licence MIT** retenue plutôt qu'AGPL — priorité à la diffusion et à l'adoption pour un petit projet, pas de besoin identifié d'empêcher un fork fermé. Voir `LICENSE` à la racine. |
 | 18/09/2026 | **Partage communautaire des recettes retiré du périmètre** — évoqué comme piste éventuelle au §8.7, jamais un engagement ; l'usage visé n'en a pas besoin |
