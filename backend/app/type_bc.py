@@ -39,6 +39,7 @@ from pdfplumber.page import Page
 from PIL import Image
 
 from app.dmc_catalog import lab_distance, nearest_dmc, rgb_to_lab
+from app.grid_lines import is_grid_ruling
 
 # `app.schemas` ne dépend que de Pydantic — l'importer ici ne rompt pas la
 # pureté du module (aucune dépendance FastAPI/SQLAlchemy, voir docstring).
@@ -908,16 +909,23 @@ def _is_grid_ruling(line: Obj, grid: _GridGeometry, tol_ratio: float = 0.15) -> 
     aligné exactement sur une frontière de case, contrairement à un trait de
     symbole qui se trouve à l'intérieur d'une case. Filtré uniquement pour
     les `lines` (axe-alignées par construction) — jamais pour les courbes,
-    qui ne sont jamais utilisées pour tracer un quadrillage rectiligne."""
-    dx = abs(float(line["x1"]) - float(line["x0"]))
-    dy = abs(float(line["bottom"]) - float(line["top"]))
-    if dx < 0.5 and dy >= 0.5:
-        offset = ((float(line["x0"]) - grid.origin_x) / grid.pitch_x) % 1.0
-        return bool(offset < tol_ratio or offset > 1 - tol_ratio)
-    if dy < 0.5 and dx >= 0.5:
-        offset = ((float(line["top"]) - grid.origin_top) / grid.pitch_y) % 1.0
-        return bool(offset < tol_ratio or offset > 1 - tol_ratio)
-    return False
+    qui ne sont jamais utilisées pour tracer un quadrillage rectiligne.
+
+    La règle elle-même vit dans `app/grid_lines.py` depuis le Lot 9 (le
+    type A en a besoin pour ses points arrière) ; l'appel ci-dessous lui
+    passe la bbox, exactement comme la version d'origine du Lot 5, et sans
+    critère de longueur — le comportement type B/C est inchangé."""
+    return is_grid_ruling(
+        float(line["x0"]),
+        float(line["top"]),
+        float(line["x1"]),
+        float(line["bottom"]),
+        origin_x=grid.origin_x,
+        origin_top=grid.origin_top,
+        pitch_x=grid.pitch_x,
+        pitch_y=grid.pitch_y,
+        tol_ratio=tol_ratio,
+    )
 
 
 def _build_symbol_signatures(
