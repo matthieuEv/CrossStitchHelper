@@ -1,4 +1,4 @@
-"""Lot 8 : bitmaps de progression pour les points fractionnés et spéciaux
+"""Lot 8: progress bitmaps for fractional and special stitches
 
 Revision ID: 0005_progress_extra_layers
 Revises: 0004_recipes

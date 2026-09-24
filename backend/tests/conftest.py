@@ -18,7 +18,7 @@ def _reset_caches() -> None:
 
 @pytest.fixture
 def frontend_dist(tmp_path: Path) -> Path:
-    """Faux répertoire de build imitant la sortie de Vite."""
+    """Fake build directory mimicking Vite's output."""
     dist = tmp_path / "dist"
     (dist / "assets").mkdir(parents=True)
     (dist / "index.html").write_text("<!doctype html><title>CrossStitchHelper</title>")
@@ -32,15 +32,15 @@ def frontend_dist(tmp_path: Path) -> Path:
 def make_client(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> Iterator[object]:
-    """Fabrique un client de test, avec ou sans frontend construit."""
+    """Build a test client, with or without a built frontend."""
 
     def factory(dist: Path | None = None) -> TestClient:
         monkeypatch.setenv("CSH_DATA_DIR", str(tmp_path / "data"))
-        # Boucle de sauvegarde automatique (Lot 8, `app/auto_backup.py`) :
-        # désactivée par défaut dans les tests, même principe que les
-        # migrations — pas de tâche de fond qui écrit sur disque à chaque
-        # test qui instancie un client. `test_auto_backup.py` la réactive
-        # explicitement pour ce qu'elle a besoin de vérifier.
+        # Automatic backup loop (Lot 8, `app/auto_backup.py`): disabled by
+        # default in tests, same principle as migrations — no background task
+        # writing to disk in every test that instantiates a client.
+        # `test_auto_backup.py` re-enables it explicitly for what it needs
+        # to check.
         monkeypatch.setenv("CSH_RUN_AUTO_BACKUP_LOOP", "false")
         if dist is not None:
             monkeypatch.setenv("CSH_FRONTEND_DIST", str(dist))

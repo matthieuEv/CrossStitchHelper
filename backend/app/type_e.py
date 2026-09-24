@@ -1,83 +1,79 @@
-"""Détection automatique du type E (catalogue fermé d'images bitmap
-réutilisées, couleur + symbole déjà combinés dans chaque image — cahier des
-charges §4.3, §4.4, Lot 7).
+"""Automatic detection of type E (closed catalogue of reused bitmap images,
+colour + symbol already combined in each image — specification §4.3, §4.4,
+Lot 7).
 
-Contrairement aux types A (police de symboles, `app/type_a.py`) et B/C
-(rectangles + tracés vectoriels, `app/type_bc.py`), une page de grille type E
-n'a **ni texte positionné, ni rectangle de couleur, ni tracé vectoriel** : la
-grille entière est composée de petites images bitmap réutilisées des
-centaines ou milliers de fois. Identifier la case revient donc à un problème
-de *classification d'image sur un petit catalogue fermé*, jamais une lecture
-directe de couleur ou de glyphe.
+Unlike types A (symbol font, `app/type_a.py`) and B/C (rectangles + vector
+paths, `app/type_bc.py`), a type E grid page has **no positioned text, no
+colour rectangle, no vector path**: the whole grid is made of small bitmap
+images reused hundreds or thousands of times. Identifying a cell is
+therefore an *image classification problem over a small closed catalogue*,
+never a direct reading of a colour or a glyph.
 
-**Mesures faites sur l'unique fixture de ce type
-(`river-and-mountains-laserarts/RiverAndMountains-CS.pdf`, 18 pages, éditeur
-LaserArtsDesigns) avant d'écrire une seule ligne de ce module** — voir aussi
-`fixtures/README.md` :
+**Measurements taken on the only fixture of this type
+(`river-and-mountains-laserarts/RiverAndMountains-CS.pdf`, 18 pages,
+publisher LaserArtsDesigns) before writing a single line of this module** —
+see also `fixtures/README.md`:
 
-- Les pages de grille réelles (2 à 16 dans ce fichier) forment un mosaïque de
-  5 pages en largeur x 3 pages en hauteur. Chacune place des images d'une
-  seule taille homogène (64x64 px), occupant 100 % de ses placements
-  (`dominant_frac`) — jamais un mélange de tailles.
-- La page 1 (prévisualisation photoréaliste) mélange DEUX tailles d'image
-  (48x48 et 64x64 px) pour un rendu par empâtement de texture : sa taille
-  dominante ne couvre que **69,8 %** de ses 40 084 placements, très en
-  dessous de `_MIN_DOMINANT_SIZE_FRACTION` — c'est ce qui l'exclut, jamais sa
-  position de "page 1" supposée a priori (cf. `CLAUDE.md` : ne jamais
-  supposer une structure fixe sans la mesurer).
-- La page 18 (carte d'assemblage des 15 pages de grille, jamais une page de
-  travail) place des images bien plus grandes (207x294 pt) et **non
-  carrées** (ratio largeur/hauteur ≈ 0,70) — exclue par
-  `_MAX_ASPECT_DEVIATION`, très en dessous du seuil mesuré ici.
-- La page de légende (17 dans ce fichier) réutilise les mêmes images 64x64
-  que les pages de grille (mêmes symboles, en aperçu) : ni la taille
-  d'image, ni le taux de réutilisation ne suffisent à l'exclure. C'est
-  l'absence de texte d'axe (voir `_fit_axes` ci-dessous) qui l'exclut : ses
-  images sont alignées en une seule colonne verticale (une ligne de légende
-  par couleur), jamais pavées sur un quadrillage à deux axes numérotés.
-- **Nombre réel d'images distinctes utilisées par les pages de grille : 20,
-  pas ~531 ni ~41.** Mesuré en cumulant les `digest` distincts (empreinte de
-  contenu déjà calculée par PyMuPDF, `page.get_image_info(xrefs=True)`) sur
-  les pages de grille strictement (2 à 16) : la convergence se stabilise dès
-  la page 5, aucune nouvelle image sur les pages suivantes. Un chiffre plus
-  élevé (531, ou 41 en cumulant par erreur avec les images de la page 1 de
-  prévisualisation, dont le catalogue est totalement disjoint : 21 images
-  distinctes, zéro chevauchement avec les 20 des pages de grille) provenait
-  d'une confusion entre nombre de *placements* sur une seule page (531 est
-  le nombre de placements de la page 2, pas un nombre d'images distinctes)
-  et nombre d'images réellement distinctes. Voir `docs/cahier-des-charges.md`
-  §4.3 et `fixtures/README.md`, corrigés en conséquence.
-- Ces 20 images correspondent **exactement** aux 20 couleurs DMC de la
-  légende (page 17) — une image par couleur, jamais deux variantes par
-  couleur comme on aurait pu le supposer avant de les avoir rendues et
-  regardées (`doc.extract_image` + Pillow) : chaque image combine déjà un
-  aplat de fond uni (la couleur du fil) et un petit symbole dessiné par
-  dessus en couleur contrastante (blanc sur fond sombre, noir sur fond
-  clair) — confirmé visuellement sur une planche de contact des 20 images.
-- **Rapprocher la couleur de fond de chaque image vers le code DMC le plus
-  proche (même restreint aux 20 codes de la légende) est peu fiable sur ce
-  fichier : 12 des 20 images sur 20 sont mal identifiées par ce seul signal**
-  (distances Lab de 5 à plus de 20, et 8 des 20 codes de légende
-  n'existaient même pas dans `app/dmc_catalog.py`, catalogue communautaire
-  nécessairement partiel, §3.3). La couleur réellement rendue par cet
-  éditeur ne correspond visiblement pas exactement aux teintes DMC
-  officielles approximées par ce catalogue. **Signal bien plus fiable et
-  vérifié exact sur les 20 couleurs (aucune erreur) : le nombre total de
-  placements de chaque image dans les pages de grille correspond
-  exactement au nombre de points ("Stitches") déclaré par la légende pour
-  chaque code DMC** — valeur différente pour chacune des 20 couleurs de ce
-  fichier (de 332 à 2935), donc sans ambiguïté ici. Ce module
-  utilise donc cette correspondance de comptage comme signal *primaire* de
-  rapprochement image -> couleur, la couleur perceptuelle (restreinte aux
-  codes de légende, comme le suggère le cahier des charges §8.5) servant de
-  repli explicite pour les images qui ne pourraient pas être départagées
-  ainsi (comptages en doublon, ou plus d'images que de lignes de légende) —
-  toujours signalé comme moins fiable (cases marquées incertaines).
+- The real grid pages (2 to 16 in this file) form a mosaic 5 pages wide x
+  3 pages high. Each places images of a single uniform size (64x64 px),
+  accounting for 100% of its placements (`dominant_frac`) — never a mix of
+  sizes.
+- Page 1 (photorealistic preview) mixes TWO image sizes (48x48 and
+  64x64 px) for an impasto-style texture rendering: its dominant size covers
+  only **69.8%** of its 40,084 placements, far below
+  `_MIN_DOMINANT_SIZE_FRACTION` — that is what excludes it, never its
+  "page 1" position assumed a priori (cf. `CLAUDE.md`: never assume a fixed
+  structure without measuring it).
+- Page 18 (assembly map of the 15 grid pages, never a working page) places
+  much larger (207x294 pt) and **non-square** images (width/height ratio
+  ≈ 0.70) — excluded by `_MAX_ASPECT_DEVIATION`, far below the threshold
+  measured here.
+- The legend page (17 in this file) reuses the same 64x64 images as the
+  grid pages (same symbols, as previews): neither the image size nor the
+  reuse rate is enough to exclude it. It is the absence of axis text (see
+  `_fit_axes` below) that excludes it: its images are aligned in a single
+  vertical column (one legend row per colour), never tiled on a grid with
+  two numbered axes.
+- **Real number of distinct images used by the grid pages: 20, not ~531 or
+  ~41.** Measured by accumulating the distinct `digest`s (content
+  fingerprint already computed by PyMuPDF, `page.get_image_info(xrefs=True)`)
+  over the grid pages strictly (2 to 16): convergence stabilises from page 5,
+  with no new image on the following pages. A higher figure (531, or 41 when
+  wrongly accumulating together with the images of the page 1 preview, whose
+  catalogue is entirely disjoint: 21 distinct images, zero overlap with the
+  20 of the grid pages) came from confusing the number of *placements* on a
+  single page (531 is page 2's placement count, not a number of distinct
+  images) with the number of genuinely distinct images. See
+  `docs/specification.md` §4.3 and `fixtures/README.md`, corrected
+  accordingly.
+- These 20 images match **exactly** the 20 DMC colours of the legend
+  (page 17) — one image per colour, never two variants per colour as one
+  might have assumed before rendering and looking at them
+  (`doc.extract_image` + Pillow): each image already combines a flat
+  background fill (the thread colour) and a small symbol drawn on top in a
+  contrasting colour (white on a dark background, black on a light one) —
+  confirmed visually on a contact sheet of the 20 images.
+- **Matching each image's background colour to the nearest DMC code (even
+  restricted to the legend's 20 codes) is unreliable on this file: 12 of the
+  20 images are misidentified by this signal alone** (Lab distances from 5 to
+  over 20, and 8 of the 20 legend codes did not even exist in
+  `app/dmc_catalog.py`, a necessarily partial community catalogue, §3.3).
+  The colour actually rendered by this publisher visibly does not match
+  exactly the official DMC shades approximated by that catalogue. **A far
+  more reliable signal, verified exact on all 20 colours (no error): the
+  total number of placements of each image in the grid pages matches exactly
+  the number of stitches ("Stitches") declared by the legend for each DMC
+  code** — a different value for each of this file's 20 colours (from 332 to
+  2935), hence unambiguous here. This module therefore uses this count match
+  as the *primary* image -> colour matching signal, perceptual colour
+  (restricted to the legend codes, as specification §8.5 suggests) serving as
+  an explicit fallback for images that could not be told apart this way
+  (duplicate counts, or more images than legend rows) — always flagged as
+  less reliable (cells marked uncertain).
 
-Module pur : aucune dépendance FastAPI/SQLAlchemy. Le point d'entrée
-`detect_type_e` ne lève jamais d'exception — il renvoie `None` si le PDF ne
-ressemble pas à un export type E (y compris pour un type A/B/C authentique,
-cf. tests de non-régression)."""
+Pure module: no FastAPI/SQLAlchemy dependency. The `detect_type_e` entry
+point never raises — it returns `None` if the PDF does not look like a type E
+export (including for a genuine type A/B/C, cf. non-regression tests)."""
 
 from __future__ import annotations
 
@@ -96,97 +92,95 @@ from PIL import Image
 
 from app.dmc_catalog import nearest_dmc_among
 
-# `app.schemas` ne dépend que de Pydantic — l'importer ici ne rompt pas la
-# pureté du module (aucune dépendance FastAPI/SQLAlchemy, voir docstring).
+# `app.schemas` only depends on Pydantic — importing it here does not break
+# the module's purity (no FastAPI/SQLAlchemy dependency, see docstring).
 from app.schemas import DetectionWarning
 from app.type_a import SymbolGlyphLocation
 
 Bbox = tuple[float, float, float, float]
 
 # --------------------------------------------------------------------------
-# Seuils — tous mesurés sur la fixture de référence, jamais devinés (voir la
-# docstring du module pour le détail des mesures).
+# Thresholds — all measured on the reference fixture, never guessed (see the
+# module docstring for the details of the measurements).
 # --------------------------------------------------------------------------
 
-# Fraction des placements d'image d'une page qui doivent partager la même
-# taille (largeur, hauteur) pour que cette page soit candidate "grille" —
-# mesuré : 1.0 sur les pages de grille (2-16), la légende (17) et la carte
-# d'assemblage (18) ; seulement 0.698 sur la page de prévisualisation (1),
-# qui empâte deux tailles d'image (48x48 et 64x64) pour un rendu
-# photoréaliste. Grande marge entre les deux régimes observés.
+# Fraction of a page's image placements that must share the same size
+# (width, height) for that page to be a "grid" candidate — measured: 1.0 on
+# the grid pages (2-16), the legend (17) and the assembly map (18); only
+# 0.698 on the preview page (1), which layers two image sizes (48x48 and
+# 64x64) for a photorealistic rendering. A wide margin between the two
+# observed regimes.
 _MIN_DOMINANT_SIZE_FRACTION = 0.98
-# Écart relatif largeur/hauteur toléré pour la taille dominante d'une page —
-# une case de grille de point de croix est toujours (quasi) carrée. Mesuré :
-# 0.0 sur les pages de grille et la légende (64x64 exact) contre ~0.296 sur
-# la carte d'assemblage (207x294 pt) — marge large entre les deux régimes.
+# Tolerated relative width/height deviation for a page's dominant size — a
+# cross-stitch grid cell is always (nearly) square. Measured: 0.0 on the grid
+# pages and the legend (exactly 64x64) versus ~0.296 on the assembly map
+# (207x294 pt) — a wide margin between the two regimes.
 _MAX_ASPECT_DEVIATION = 0.15
-# Nombre total minimal de placements d'image (toutes pages candidates
-# confondues) en dessous duquel ce n'est probablement pas une grille de
-# points de croix mais une réutilisation incidente d'un petit nombre
-# d'images (logo répété en en-tête, par exemple) — mesuré : 27 984
-# placements sur les pages de grille de la fixture de référence, trois
-# ordres de grandeur au-dessus.
+# Minimum total number of image placements (all candidate pages together)
+# below which this is probably not a cross-stitch grid but an incidental
+# reuse of a small number of images (a logo repeated in a header, for
+# example) — measured: 27,984 placements on the reference fixture's grid
+# pages, three orders of magnitude above.
 _MIN_TOTAL_GRID_PLACEMENTS = 100
-# Nombre minimal d'images distinctes pour parler de "catalogue" plutôt que
-# d'une simple texture de fond répétée une fois. Mesuré : 20 sur la fixture
-# de référence.
+# Minimum number of distinct images to speak of a "catalogue" rather than a
+# simple background texture repeated once. Measured: 20 on the reference
+# fixture.
 _MIN_DISTINCT_CATALOG_IMAGES = 2
 
-# Bande de marge gauche (en points PDF) où les numéros d'axe de ligne
-# (numéros de rangée, empilés verticalement) sont imprimés — mesuré à
-# x0 ∈ {30.0, 32.6} sur toutes les pages de grille de la fixture de
-# référence (le numéro d'en-tête de colonne le plus proche du bord gauche
-# observé est à x0 = 67.8, largement au-dessus) : cette bande sépare sans
-# ambiguïté "numéro de ligne empilé dans la marge gauche" de "numéro de
-# colonne aligné avec le quadrillage", sans dépendre de la géométrie des
-# images de cette page précise (contrairement à une fenêtre relative à
-# l'étendue des images, qui échoue sur une page ne portant qu'une poignée
-# de cases peintes — voir le rapport de tâche pour le diagnostic complet).
+# Left margin band (in PDF points) where the row axis numbers (row numbers,
+# stacked vertically) are printed — measured at x0 ∈ {30.0, 32.6} on all grid
+# pages of the reference fixture (the column header number closest to the
+# left edge observed is at x0 = 67.8, well above): this band unambiguously
+# separates "row number stacked in the left margin" from "column number
+# aligned with the grid", without depending on the geometry of that
+# particular page's images (unlike a window relative to the images' extent,
+# which fails on a page carrying only a handful of painted cells — see the
+# task report for the full diagnosis).
 _LEFT_AXIS_BAND_MAX_X = 50.0
-# Une ligne de texte candidate axe est composée uniquement de chiffres et
-# d'espaces (« 10 20 30 40 50 », ou un numéro seul « 10 ») — un texte de
-# légende ("DMC 168 Pewter very light...") ou de copyright ne matche jamais.
+# A candidate axis text line consists only of digits and spaces
+# ("10 20 30 40 50", or a single number "10") — legend text ("DMC 168 Pewter
+# very light...") or a copyright line never matches.
 _AXIS_LINE_RE = re.compile(r"^\d+(?:\s+\d+)*$")
-# Dimensions annoncées en clair par la légende, p. ex. « 217x206 Stitches »
-# (répété une fois par jauge de toile proposée — 10/14/16/18 ct — toujours
-# avec les mêmes valeurs, donc la première occurrence suffit).
+# Dimensions stated plainly by the legend, e.g. "217x206 Stitches" (repeated
+# once per fabric gauge offered — 10/14/16/18 ct — always with the same
+# values, so the first occurrence is enough).
 _DECLARED_DIMENSIONS_RE = re.compile(r"(\d+)x(\d+)\s+Stitches")
-# Légende : « DMC <code>\n<nom>\n<brins>\n<n>,<n> Skeins\n<points> » — un code
-# alphabétique (ex. BLANC) partage parfois la même ligne que « DMC » sans
-# retour à la ligne intermédiaire (observé sur cette fixture précise :
-# « DMC BLANC\nWhite\n... » alors que toutes les autres lignes ont
-# « DMC\n<code>\n... ») — `\s+` plutôt que `\n` absorbe les deux formes.
+# Legend: "DMC <code>\n<name>\n<strands>\n<n>,<n> Skeins\n<stitches>" — an
+# alphabetic code (e.g. BLANC) sometimes shares the same line as "DMC" with no
+# line break in between (observed on this particular fixture:
+# "DMC BLANC\nWhite\n..." while all the other rows have
+# "DMC\n<code>\n...") — `\s+` rather than `\n` absorbs both forms.
 _LEGEND_ROW_RE = re.compile(r"DMC\s+(\S+)\n(.+?)\n(\d+)\n[\d.,]+\s*Skeins\n(\d+)")
 
-# Au-delà de cette distance Lab, un rapprochement de repli par couleur
-# (voir docstring du module) est jugé trop douteux pour être appliqué sans
-# réserve supplémentaire — même barème que `app/type_bc.py`
-# (`_UNCERTAIN_COLOR_DISTANCE`), la couleur DMC théorique n'étant de toute
-# façon ici qu'un dernier recours, jamais la source première d'identité.
+# Beyond this Lab distance, a colour-based fallback match (see the module
+# docstring) is deemed too doubtful to be applied without further caveat —
+# same scale as `app/type_bc.py` (`_UNCERTAIN_COLOR_DISTANCE`), the
+# theoretical DMC colour being only a last resort here anyway, never the
+# primary source of identity.
 _UNCERTAIN_COLOR_DISTANCE = 12.0
 
 
 @dataclass
 class TypeEPaletteEntry:
     code: str
-    """Code DMC tel qu'imprimé dans la légende — vide (`""`) pour une image
-    du catalogue qui n'a pas pu être rapprochée d'une ligne de légende
-    (« Symbole non reconnu », jamais une case fausse en silence)."""
+    """DMC code as printed in the legend — empty (`""`) for a catalogue image
+    that could not be matched to a legend row ("Unrecognised symbol", never a
+    silently wrong cell)."""
 
     name: str
     rgb_hex: str
-    """Couleur réellement extraite de l'image du catalogue (pixel dominant
-    du fond, voir `_dominant_color`) — jamais la teinte théorique du
-    catalogue DMC, dont la docstring du module montre qu'elle ne correspond
-    pas fidèlement au rendu réel de cet éditeur (cahier des charges §8.4 :
-    la couleur réellement extraite fait toujours foi pour l'affichage)."""
+    """Colour actually extracted from the catalogue image (dominant
+    background pixel, see `_dominant_color`) — never the DMC catalogue's
+    theoretical shade, which the module docstring shows does not faithfully
+    match this publisher's real rendering (specification §8.4: the actually
+    extracted colour is always authoritative for display)."""
 
     symbol_key: str
     symbol_glyph: SymbolGlyphLocation | None = None
     match_method: str = "unmatched"
-    """« count » (comptage exact, fiable), « color » (repli perceptuel,
-    signalé incertain) ou « unmatched » (aucune ligne de légende
-    disponible : entrée "Symbole non reconnu")."""
+    """"count" (exact count, reliable), "color" (perceptual fallback, flagged
+    uncertain) or "unmatched" (no legend row available: "Unrecognised symbol"
+    entry)."""
 
 
 @dataclass
@@ -194,23 +188,23 @@ class TypeEResult:
     columns: int
     rows: int
     cells: list[int]
-    """Longueur `columns * rows`, ligne par ligne, (0,0) en haut à gauche en
-    premier. 0 = case vide, n = index 1-based dans `palette`."""
+    """Length `columns * rows`, row by row, (0,0) at the top left first.
+    0 = empty cell, n = 1-based index into `palette`."""
     palette: list[TypeEPaletteEntry]
     confidence: float
     uncertain_cells: list[int] = field(default_factory=list)
-    """Index 0-based dans `cells` des cases dont l'identification est
-    incertaine (repli couleur plutôt que comptage, ou image non reconnue) —
-    jamais une case fausse laissée sans signalement."""
+    """0-based indices into `cells` of the cells whose identification is
+    uncertain (colour fallback rather than count, or unrecognised image) —
+    never a wrong cell left unflagged."""
     warnings: list[DetectionWarning] = field(default_factory=list)
-    """Jamais un texte déjà composé en français : un code de message et ses
-    paramètres, traduits côté client (`import.warning.<code>`, audit des
-    traductions du Lot 8)."""
+    """Never text already composed in French: a message code and its
+    parameters, translated on the client (`import.warning.<code>`, Lot 8
+    translation audit)."""
 
 
 def detect_type_e(pdf_path: Path) -> TypeEResult | None:
-    """Renvoie `None` (sans jamais lever) si le PDF ne ressemble pas à un
-    export type E — voir le module pour le détail de la détection."""
+    """Return `None` (never raising) if the PDF does not look like a type E
+    export — see the module for the details of the detection."""
     try:
         with pdfplumber.open(pdf_path) as pdf, pymupdf.open(pdf_path) as doc:  # type: ignore[no-untyped-call]
             pages_pl = pdf.pages
@@ -292,12 +286,11 @@ def detect_type_e(pdf_path: Path) -> TypeEResult | None:
 
             fraction_placed = sum(1 for v in cells if v != 0) / (columns * rows)
             if fraction_placed < 0.02:
-                # Garde-fou : une "grille" qui ne couvre presque aucune case
-                # n'est probablement pas une vraie détection exploitable —
-                # mieux vaut refuser proprement que proposer une page quasi
-                # vide comme point de départ (cahier des charges §10 :
-                # jamais une impasse, mais jamais non plus une proposition
-                # trompeuse).
+                # Guard: a "grid" covering almost no cell is probably not a
+                # usable real detection — better to refuse cleanly than to
+                # offer an almost empty page as a starting point
+                # (specification §10: never a dead end, but never a
+                # misleading proposal either).
                 return None
 
             confidence = max(0.0, min(1.0, confidence))
@@ -310,12 +303,12 @@ def detect_type_e(pdf_path: Path) -> TypeEResult | None:
                 uncertain_cells=uncertain_cells,
                 warnings=warnings,
             )
-    except Exception:  # pragma: no cover - filet de sécurité, voir docstring
+    except Exception:  # pragma: no cover - safety net, see docstring
         return None
 
 
 # --------------------------------------------------------------------------
-# Analyse structurelle par page : identifier les pages de grille candidates
+# Per-page structural analysis: identify the candidate grid pages
 # --------------------------------------------------------------------------
 
 
@@ -364,10 +357,10 @@ def _analyze_page(page_pl: Page, page_mu: Any) -> _PageInfo:
 
 
 def _is_candidate_page(info: _PageInfo) -> bool:
-    """Signal structurel seul (indépendant des numéros d'axe, voir
-    `_fit_axes`) : une page dont l'écrasante majorité des placements
-    d'image partagent la même taille (quasi) carrée — voir les constantes
-    en tête de module pour les valeurs mesurées qui justifient les seuils."""
+    """Structural signal alone (independent of axis numbers, see
+    `_fit_axes`): a page where the overwhelming majority of image placements
+    share the same (nearly) square size — see the constants at the top of
+    the module for the measured values that justify the thresholds."""
     if not info.images:
         return False
     sizes = Counter(img.size for img in info.images)
@@ -383,11 +376,10 @@ def _is_candidate_page(info: _PageInfo) -> bool:
 
 
 def _dominant_catalog_size(fitted: list[_PageInfo]) -> tuple[int, int]:
-    """Taille d'image dominante à travers toutes les pages retenues,
-    pondérée par le nombre de placements — sert à ignorer une éventuelle
-    image isolée d'une autre taille au sein d'une page par ailleurs
-    conforme (défense en profondeur, non observée sur la fixture de
-    référence mais pas coûteuse à vérifier)."""
+    """Dominant image size across all retained pages, weighted by the number
+    of placements — used to ignore a possible isolated image of another size
+    within an otherwise conforming page (defence in depth, not observed on
+    the reference fixture but cheap to check)."""
     sizes: Counter[tuple[int, int]] = Counter()
     for info in fitted:
         for img in info.images:
@@ -396,15 +388,15 @@ def _dominant_catalog_size(fitted: list[_PageInfo]) -> tuple[int, int]:
 
 
 # --------------------------------------------------------------------------
-# Numéros d'axe : position absolue de chaque page dans la mosaïque globale
+# Axis numbers: absolute position of each page in the global mosaic
 # --------------------------------------------------------------------------
 
 
 def _cluster_header_numbers(line_chars: list[dict[str, Any]]) -> list[tuple[float, int]]:
-    """Une ligne d'en-tête porte plusieurs nombres espacés horizontalement
-    (« 10 20 30 40 50 ») : les re-regrouper par grand écart de position
-    plutôt que de se fier aux espaces du texte extrait (peu fiable d'un
-    exporteur à l'autre, cf. `app/type_a.py::_chain_clusters`)."""
+    """A header line carries several horizontally spaced numbers
+    ("10 20 30 40 50"): regroup them by large position gaps rather than
+    relying on the spaces in the extracted text (unreliable from one
+    exporter to another, cf. `app/type_a.py::_chain_clusters`)."""
     clusters: list[list[dict[str, Any]]] = []
     current: list[dict[str, Any]] = []
     for ch in line_chars:
@@ -423,21 +415,20 @@ def _cluster_header_numbers(line_chars: list[dict[str, Any]]) -> list[tuple[floa
 
 
 def _fit_axes(page: Page) -> _AxisFit | None:
-    """`_AxisFit` tel que le numéro de colonne absolu (1-based) d'un point à
-    `x0` vaut `a_col + b_col*x0`, et de même pour la ligne via `top`. `None`
-    si moins de 2 numéros d'axe exploitables sur un des deux axes.
+    """`_AxisFit` such that the absolute (1-based) column number of a point
+    at `x0` is `a_col + b_col*x0`, and likewise for the row via `top`. `None`
+    if fewer than 2 usable axis numbers on either axis.
 
-    Contrairement à `app/type_a.py::_fit_axes`, la fenêtre de recherche des
-    numéros n'est **jamais** dérivée de l'étendue des images de cette page
-    précise : une page ne portant qu'une poignée de cases peintes (mesuré :
-    une seule sur `RiverAndMountains-CS.pdf` page 6) a une étendue d'image
-    bien trop étroite pour cadrer la règle d'axe complète, qui elle est
-    toujours imprimée en entier quel que soit le contenu de la page (même
-    régle de marge sur toutes les pages de grille de ce fichier). La
-    position dans la marge suffit seule à distinguer un numéro de ligne
-    (empilé à gauche, `x0 < _LEFT_AXIS_BAND_MAX_X`) d'un numéro de colonne
-    (aligné avec le quadrillage, `x0` variable) — voir la constante pour les
-    valeurs mesurées qui la justifient."""
+    Unlike `app/type_a.py::_fit_axes`, the search window for the numbers is
+    **never** derived from the extent of that particular page's images: a
+    page carrying only a handful of painted cells (measured: a single one on
+    `RiverAndMountains-CS.pdf` page 6) has an image extent far too narrow to
+    frame the full axis ruler, which is always printed in full whatever the
+    page's content (same margin ruler on all grid pages of this file). The
+    position in the margin alone is enough to tell a row number (stacked on
+    the left, `x0 < _LEFT_AXIS_BAND_MAX_X`) from a column number (aligned
+    with the grid, variable `x0`) — see the constant for the measured values
+    that justify it."""
     col_points: list[tuple[float, int]] = []
     row_points: list[tuple[float, int]] = []
     for line in page.extract_text_lines():
@@ -472,18 +463,18 @@ def _fit_axes(page: Page) -> _AxisFit | None:
 
 
 # --------------------------------------------------------------------------
-# Placement des images dans la grille absolue
+# Placing images in the absolute grid
 # --------------------------------------------------------------------------
 
 
 def _place_images(
     fitted: list[_PageInfo], catalog_size: tuple[int, int]
 ) -> tuple[dict[tuple[int, int], bytes], Counter[bytes], dict[bytes, tuple[int, Bbox]], int]:
-    """Place chaque image de taille `catalog_size` dans des coordonnées
-    absolues `(row1, col1)` **non normalisées** (l'origine n'est pas
-    garantie être 0 — voir `_resolve_dimensions`, qui renormalise sur
-    l'étendue réellement observée plutôt que de supposer que la numérotation
-    d'axe démarre à 1 au bord du motif brodé)."""
+    """Place each image of size `catalog_size` at **non-normalised** absolute
+    coordinates `(row1, col1)` (the origin is not guaranteed to be 0 — see
+    `_resolve_dimensions`, which renormalises on the actually observed extent
+    rather than assuming the axis numbering starts at 1 at the edge of the
+    stitched pattern)."""
     placements: dict[tuple[int, int], bytes] = {}
     digest_count: Counter[bytes] = Counter()
     digest_sample: dict[bytes, tuple[int, Bbox]] = {}
@@ -510,9 +501,9 @@ def _place_images(
 
 
 def _find_declared_dimensions(pages: list[Page]) -> tuple[int, int] | None:
-    """Dimensions annoncées en clair par la légende (p. ex. « 217x206
-    Stitches ») — préférées à l'étendue déduite des images placées quand
-    elles sont disponibles, comme pour le type A (§7.2 étape 6)."""
+    """Dimensions stated plainly by the legend (e.g. "217x206 Stitches") —
+    preferred over the extent inferred from the placed images when
+    available, as for type A (§7.2 step 6)."""
     for page in pages:
         match = _DECLARED_DIMENSIONS_RE.search(page.extract_text())
         if match is not None:
@@ -524,18 +515,18 @@ def _resolve_dimensions(
     declared: tuple[int, int] | None,
     placements: dict[tuple[int, int], bytes],
 ) -> tuple[int, int, tuple[int, int], DetectionWarning | None, float]:
-    """`(columns, rows, origin, warning, confidence_penalty)` — `origin`
-    est le `(row1, col1)` absolu à soustraire de chaque placement pour
-    obtenir des coordonnées 0-based.
+    """`(columns, rows, origin, warning, confidence_penalty)` — `origin` is
+    the absolute `(row1, col1)` to subtract from each placement to get
+    0-based coordinates.
 
-    Contrairement à `app/type_a.py` (où le numéro de colonne 1 correspond
-    toujours à la première case du motif), les numéros d'axe imprimés ici
-    ne démarrent pas nécessairement à 1 au bord du motif réellement brodé
-    (marge non numérotée à 1 observée sur la fixture de référence) :
-    l'origine est donc toujours calée sur le placement le plus proche du
-    bord (`min`), jamais sur la valeur 1 de la règle elle-même — mesuré :
-    ça fait correspondre l'étendue obtenue exactement aux dimensions
-    annoncées par la légende (217x206) sur la fixture de référence."""
+    Unlike `app/type_a.py` (where column number 1 always matches the
+    pattern's first cell), the axis numbers printed here do not necessarily
+    start at 1 at the edge of the actually stitched pattern (a margin not
+    numbered 1 observed on the reference fixture): the origin is therefore
+    always aligned on the placement closest to the edge (`min`), never on the
+    ruler's value 1 itself — measured: this makes the resulting extent match
+    exactly the dimensions declared by the legend (217x206) on the reference
+    fixture."""
     min_row1 = min(row1 for row1, _ in placements)
     min_col1 = min(col1 for _, col1 in placements)
     max_row1 = max(row1 for row1, _ in placements)
@@ -569,7 +560,7 @@ def _resolve_dimensions(
 
 
 # --------------------------------------------------------------------------
-# Légende texte (comptages DMC exacts par couleur)
+# Text legend (exact DMC counts per colour)
 # --------------------------------------------------------------------------
 
 
@@ -581,12 +572,12 @@ class _LegendRow:
 
 
 def _parse_legend(doc: Any, n_pages: int) -> list[_LegendRow]:
-    """Parsée depuis le texte brut PyMuPDF (`page.get_text()`), pas
-    `pdfplumber` : chaque champ de la légende est sur sa propre ligne
-    (« DMC\\n168\\nPewter very light\\n2\\n0,9 Skeins\\n1238\\n... »),
-    reconstruite fidèlement par PyMuPDF sans étape de mise en page
-    supplémentaire. Renvoie les lignes dans l'ordre imprimé (fait autorité
-    pour l'ordre de palette exposé — voir `_match_catalog_to_legend`)."""
+    """Parsed from PyMuPDF's raw text (`page.get_text()`), not `pdfplumber`:
+    each legend field is on its own line
+    ("DMC\\n168\\nPewter very light\\n2\\n0,9 Skeins\\n1238\\n..."), faithfully
+    rebuilt by PyMuPDF with no extra layout step. Returns the rows in printed
+    order (authoritative for the exposed palette order — see
+    `_match_catalog_to_legend`)."""
     for i in range(n_pages):
         text = doc[i].get_text()
         matches = _LEGEND_ROW_RE.findall(text)
@@ -600,7 +591,7 @@ def _parse_legend(doc: Any, n_pages: int) -> list[_LegendRow]:
 
 
 # --------------------------------------------------------------------------
-# Catalogue d'images : couleur dominante réelle par image
+# Image catalogue: real dominant colour per image
 # --------------------------------------------------------------------------
 
 
@@ -609,30 +600,30 @@ class _CatalogImage:
     digest: bytes
     count: int
     rgb: tuple[float, float, float]
-    """Composantes 0-1, couleur de fond dominante réellement rendue."""
+    """0-1 components, the actually rendered dominant background colour."""
     page_number: int
     bbox: Bbox
 
 
 def _dominant_color(png_or_jpeg_bytes: bytes) -> tuple[float, float, float]:
-    """Couleur de pixel la plus fréquente de l'image (mode statistique, pas
-    la moyenne) : le fond de chaque icône du catalogue est un aplat uni
-    (voir docstring du module) et couvre toujours la majorité des pixels —
-    la moyenne, elle, est biaisée par l'encre du symbole dessiné par-dessus
-    (mesuré : moyenne visiblement plus proche du gris neutre que le fond
-    réel sur les icônes sombres/saturées de la fixture de référence, alors
-    que le mode reste identique au pixel de coin, hors symbole)."""
+    """The image's most frequent pixel colour (statistical mode, not the
+    mean): each catalogue icon's background is a flat fill (see the module
+    docstring) and always covers the majority of pixels — the mean, on the
+    other hand, is biased by the ink of the symbol drawn on top (measured:
+    mean visibly closer to neutral grey than the real background on the
+    reference fixture's dark/saturated icons, while the mode stays identical
+    to the corner pixel, outside the symbol)."""
     with Image.open(io.BytesIO(png_or_jpeg_bytes)) as source:
         image = source.convert("RGB")
-        # `maxcolors` couvre large (bien au-delà du nombre de pixels d'une
-        # icône 64x64) : `getcolors` renvoie `None`, jamais une liste
-        # tronquée en silence, au-delà de cette borne.
+        # `maxcolors` is generous (well beyond the pixel count of a 64x64
+        # icon): `getcolors` returns `None`, never a silently truncated list,
+        # beyond this bound.
         raw_colors = image.getcolors(maxcolors=image.width * image.height)
-    if not raw_colors:  # pragma: no cover - défensif, non observé sur nos fixtures
+    if not raw_colors:  # pragma: no cover - defensive, not observed on our fixtures
         return 0.0, 0.0, 0.0
-    # Les stubs PIL typent `getcolors` très large (image RGB, palette ou
-    # niveaux de gris) ; `image` est garantie RGB ici (`.convert("RGB")`
-    # ci-dessus) donc chaque pixel est bien un triplet à l'exécution.
+    # PIL's stubs type `getcolors` very broadly (RGB, palette or greyscale
+    # image); `image` is guaranteed RGB here (`.convert("RGB")` above) so
+    # each pixel is indeed a triplet at runtime.
     _count, dominant_rgb = max(raw_colors, key=lambda item: item[0])
     r, g, b = (int(v) for v in dominant_rgb)  # type: ignore[attr-defined]
     return r / 255, g / 255, b / 255
@@ -649,7 +640,7 @@ def _build_catalog(
         try:
             raw = doc.extract_image(xref)
             rgb = _dominant_color(raw["image"])
-        except Exception:  # pragma: no cover - image corrompue, chemin défensif
+        except Exception:  # pragma: no cover - corrupt image, defensive path
             continue
         catalog.append(
             _CatalogImage(
@@ -675,14 +666,14 @@ def _xref_for_bbox(doc: Any, page_number: int, bbox: Bbox) -> int | None:
 
 
 # --------------------------------------------------------------------------
-# Rapprochement catalogue -> légende (comptage exact, puis repli couleur)
+# Catalogue -> legend matching (exact count, then colour fallback)
 # --------------------------------------------------------------------------
 
 
 def _symbol_key(index0: int) -> str:
-    """Identique à `app/type_a.py::_symbol_key` — petite fonction pure
-    dupliquée volontairement plutôt qu'importée d'un module privé d'un
-    autre connecteur, pour garder ce module autonome (même convention que
+    """Identical to `app/type_a.py::_symbol_key` — a small pure function
+    deliberately duplicated rather than imported from another connector's
+    private module, to keep this module self-contained (same convention as
     `app/type_bc.py::_symbol_key`)."""
     n = index0
     letters = ""
@@ -702,12 +693,12 @@ def _rgb_hex(rgb: tuple[float, float, float]) -> str:
 def _match_catalog_to_legend(
     catalog: list[_CatalogImage], legend_rows: list[_LegendRow]
 ) -> tuple[list[TypeEPaletteEntry], dict[bytes, int], list[DetectionWarning], float]:
-    """Associe chaque image du catalogue à une ligne de légende. Signal
-    primaire : comptage exact (voir docstring du module — bien plus fiable
-    ici que la couleur). Repli : plus proche voisin de couleur perceptuelle,
-    restreint aux codes de légende encore non attribués (cahier des charges
-    §8.5), pour les images que le comptage ne peut départager sans ambiguïté
-    (comptages en doublon, ou plus d'images que de lignes de légende)."""
+    """Associate each catalogue image with a legend row. Primary signal:
+    exact count (see the module docstring — far more reliable here than
+    colour). Fallback: perceptual colour nearest neighbour, restricted to the
+    legend codes not yet assigned (specification §8.5), for images the count
+    cannot tell apart unambiguously (duplicate counts, or more images than
+    legend rows)."""
     warnings: list[DetectionWarning] = []
     penalty = 0.0
 
@@ -740,8 +731,8 @@ def _match_catalog_to_legend(
             )
         )
         penalty += min(0.3, 0.05 * len(remaining_images))
-        # Appariement glouton par distance Lab croissante, jamais un ordre
-        # arbitraire — la paire la plus fiable est fixée en premier.
+        # Greedy pairing by increasing Lab distance, never an arbitrary
+        # order — the most reliable pair is fixed first.
         pending_codes = set(remaining_codes)
         candidates: list[tuple[float, bytes, str]] = []
         for img in remaining_images:
@@ -820,9 +811,9 @@ def _fill_cells(
     cells = [0] * (columns * rows)
     uncertain_positions: set[int] = set()
     uncertain_methods = {"color", "unmatched"}
-    # Index 1-based (comme `cells`) -> méthode de rapprochement de l'entrée
-    # de palette correspondante, pour marquer les cases incertaines sans
-    # dépendre de l'ordre d'itération d'un dict (jamais garanti stable ici).
+    # 1-based index (like `cells`) -> matching method of the corresponding
+    # palette entry, to mark uncertain cells without depending on a dict's
+    # iteration order (never guaranteed stable here).
     index_to_method = {i + 1: entry.match_method for i, entry in enumerate(palette)}
 
     for (row1, col1), digest in placements.items():

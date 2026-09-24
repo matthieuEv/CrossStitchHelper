@@ -1,7 +1,7 @@
 [project]
 name = "crossstitchhelper-backend"
 version = "0.1.0"
-description = "API et moteur d'extraction de CrossStitchHelper"
+description = "CrossStitchHelper API and extraction engine"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }
@@ -41,7 +41,7 @@ pythonpath = ["."]
 python_version = "3.11"
 strict = true
 files = ["app", "tests"]
-# Alembic génère des modules de migration non typés : les exclure du strict.
+# Alembic generates untyped migration modules: exclude them from strict mode.
 exclude = ["^alembic/"]
 
 [[tool.mypy.overrides]]
@@ -49,8 +49,8 @@ module = ["alembic.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
-# pymupdf n'expose aucune information de type (pas de py.typed, pas de stubs
-# tiers disponibles) : impossible de rester strict sur ce module précis.
+# pymupdf exposes no type information (no py.typed, no third-party stubs
+# available): impossible to stay strict on this particular module.
 module = ["pymupdf", "pymupdf.*"]
 ignore_missing_imports = true
 disallow_untyped_calls = false

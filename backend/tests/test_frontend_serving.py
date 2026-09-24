@@ -1,10 +1,9 @@
-"""Le même processus sert l'API et le frontend construit.
+"""The same process serves the API and the built frontend.
 
-Ces tests protègent trois comportements dont dépend l'installation en une
-commande : les routes applicatives profondes doivent renvoyer la coquille HTML,
-une route d'API inconnue doit rester une erreur JSON, et le manifeste doit
-partir avec le bon type MIME — sans quoi Safari refuse l'ajout à l'écran
-d'accueil.
+These tests protect three behaviours the one-command installation depends
+on: deep application routes must return the HTML shell, an unknown API route
+must remain a JSON error, and the manifest must be sent with the right MIME
+type — otherwise Safari refuses to add it to the home screen.
 """
 
 from __future__ import annotations
@@ -25,7 +24,7 @@ def test_root_serves_the_built_index(make_client: object, frontend_dist: Path) -
 def test_deep_application_route_falls_back_to_index(
     make_client: object, frontend_dist: Path
 ) -> None:
-    # `/track` n'existe pas sur le disque : c'est une route gérée côté client.
+    # `/track` does not exist on disk: it is a client-side route.
     with make_client(frontend_dist) as client:  # type: ignore[operator]
         response = client.get("/track")
 
@@ -65,8 +64,8 @@ def test_service_worker_and_manifest_are_never_cached(
 
 
 def test_path_traversal_is_refused(make_client: object, frontend_dist: Path) -> None:
-    # Une tentative de sortir du répertoire de build doit retomber sur l'index,
-    # jamais servir un fichier du système.
+    # An attempt to escape the build directory must fall back to the index,
+    # never serve a system file.
     with make_client(frontend_dist) as client:  # type: ignore[operator]
         response: TestClient = client.get("/../../etc/passwd")
 

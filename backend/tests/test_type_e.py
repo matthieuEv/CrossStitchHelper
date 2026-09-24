@@ -1,10 +1,10 @@
-"""Tests du moteur d'extraction type E (Lot 7) contre la fixture réelle
-`river-and-mountains-laserarts` — voir `fixtures/README.md` et le skill
-`.claude/skills/verify-extraction-fixtures/`.
+"""Tests for the type E extraction engine (Lot 7) against the real
+`river-and-mountains-laserarts` fixture — see `fixtures/README.md` and the
+`.claude/skills/verify-extraction-fixtures/` skill.
 
-Comme `test_type_a.py`/`test_type_bc.py` : aucune valeur attendue n'est
-recopiée à la main pour les comptages par couleur — ils sont reparsés depuis
-la légende (page 17 du PDF) à chaque exécution."""
+Like `test_type_a.py`/`test_type_bc.py`: no expected value is copied by hand
+for the per-colour counts — they are re-parsed from the legend (page 17 of
+the PDF) on every run."""
 
 from __future__ import annotations
 
@@ -24,10 +24,10 @@ from app.type_e import TypeEResult, detect_type_e
 FIXTURES_ROOT = Path(__file__).resolve().parents[2] / "fixtures"
 FIXTURE_PATH = FIXTURES_ROOT / "river-and-mountains-laserarts" / "RiverAndMountains-CS.pdf"
 
-# Les cinq autres fixtures du dépôt (types A/B/C, cahier des charges §4.4)
-# doivent continuer à être ignorées proprement par ce nouveau connecteur —
-# exactement comme `detect_type_a`/`detect_type_bc` s'effacent déjà sur les
-# fixtures d'un autre type (voir `test_type_a.py`/`test_type_bc.py`).
+# The repository's other five fixtures (types A/B/C, specification §4.4) must
+# keep being cleanly ignored by this new connector — exactly as
+# `detect_type_a`/`detect_type_bc` already step aside on fixtures of another
+# type (see `test_type_a.py`/`test_type_bc.py`).
 OTHER_TYPE_FIXTURES = [
     FIXTURES_ROOT / "cafe-brasserie-charting-export" / "CaffeBrasseriecoloursymbols.pdf",
     FIXTURES_ROOT / "winter-wreath-dmc" / "PATASS117_2C_2.pdf",
@@ -41,9 +41,9 @@ _DECLARED_DIMENSIONS_RE = re.compile(r"(\d+)x(\d+)\s+Stitches")
 
 
 def _expected_legend_rows() -> list[tuple[str, str, int]]:
-    """`(code, name, comptage_points)` dans l'ordre imprimé de la légende
-    (page 17) — reparsé du PDF lui-même via PyMuPDF, jamais recopié à la
-    main (même règle que `test_type_a.py::_expected_full_stitch_counts`)."""
+    """`(code, name, stitch_count)` in the legend's printed order (page 17) —
+    re-parsed from the PDF itself via PyMuPDF, never copied by hand (same
+    rule as `test_type_a.py::_expected_full_stitch_counts`)."""
     with pymupdf.open(FIXTURE_PATH) as doc:  # type: ignore[no-untyped-call]
         for page in doc:
             matches = _LEGEND_ROW_RE.findall(page.get_text())
@@ -76,7 +76,7 @@ def test_fixture_file_present() -> None:
 
 def test_dimensions_match_declared_legend(result: TypeEResult) -> None:
     expected = _expected_declared_dimensions()
-    assert expected is not None, "la légende doit annoncer des dimensions en clair"
+    assert expected is not None, "the legend must state its dimensions plainly"
     assert (result.columns, result.rows) == expected
     assert len(result.cells) == result.columns * result.rows
 
@@ -95,8 +95,8 @@ def test_palette_has_20_dmc_colours_matching_legend_order(result: TypeEResult) -
 
 
 def test_full_stitch_counts_match_legend_exactly(result: TypeEResult) -> None:
-    """Cœur de la vérification (cahier des charges §7.4 : quand le PDF
-    fournit lui-même les comptages, ils servent à vérifier l'extraction)."""
+    """Core of the verification (specification §7.4: when the PDF itself
+    provides the counts, they are used to verify the extraction)."""
     expected_rows = _expected_legend_rows()
     dmc_entries = [entry for entry in result.palette if entry.code]
 
@@ -118,22 +118,22 @@ def test_full_stitch_counts_match_legend_exactly(result: TypeEResult) -> None:
 
 
 def test_all_matches_use_the_reliable_count_method(result: TypeEResult) -> None:
-    """Vérifie que le signal primaire (comptage exact, voir la docstring de
-    `app/type_e.py`) suffit réellement sur cette fixture — pas seulement en
-    théorie : aucune des 20 couleurs ne devrait avoir besoin du repli
-    couleur, nettement moins fiable ici (12/20 mal identifiées si on ne se
-    fiait qu'à la couleur, mesuré lors du développement de ce module)."""
+    """Checks that the primary signal (exact count, see the `app/type_e.py`
+    docstring) is really enough on this fixture — not just in theory: none
+    of the 20 colours should need the colour fallback, clearly less reliable
+    here (12/20 misidentified if relying on colour alone, measured while
+    developing this module)."""
     dmc_entries = [entry for entry in result.palette if entry.code]
     assert all(entry.match_method == "count" for entry in dmc_entries)
 
 
 def test_no_cells_flagged_uncertain_on_this_clean_fixture(result: TypeEResult) -> None:
-    """Conséquence directe du test précédent : aucun repli couleur ni
-    symbole non reconnu ne devrait avoir été nécessaire sur cette fixture
-    propre — `uncertain_cells` doit donc être vide ici (contrairement à
-    `test_type_bc.py`, où une incertitude réelle subsiste toujours : ce
-    n'est pas le même mécanisme de repli, et rien n'oblige les deux
-    connecteurs à se comporter pareil sur ce point précis)."""
+    """Direct consequence of the previous test: no colour fallback or
+    unrecognised symbol should have been needed on this clean fixture —
+    `uncertain_cells` must therefore be empty here (unlike `test_type_bc.py`,
+    where real uncertainty always remains: it is not the same fallback
+    mechanism, and nothing requires both connectors to behave alike on this
+    particular point)."""
     assert result.uncertain_cells == []
 
 
@@ -159,9 +159,9 @@ def test_palette_entries_carry_symbol_glyph_location(result: TypeEResult) -> Non
 
 
 def test_render_symbol_svg_produces_a_real_legible_icon_crop(result: TypeEResult) -> None:
-    """Bout en bout, comme `test_type_a.py` : la position capturée doit
-    vraiment permettre de découper une image lisible de l'icône couleur +
-    symbole combinée."""
+    """End to end, like `test_type_a.py`: the captured position must really
+    make it possible to cut out a readable image of the combined colour +
+    symbol icon."""
     entry = result.palette[0]
     assert entry.symbol_glyph is not None
     svg = render_symbol_svg(FIXTURE_PATH, entry.symbol_glyph.page_number, entry.symbol_glyph.bbox)
@@ -173,9 +173,9 @@ def test_render_symbol_svg_produces_a_real_legible_icon_crop(result: TypeEResult
 
 
 def test_grid_is_densely_filled_not_mostly_blank(result: TypeEResult) -> None:
-    """Filet contre une fausse détection qui ne placerait presque aucune
-    case (garde-fou déjà présent dans `detect_type_e`, vérifié ici de bout
-    en bout) : ce motif doit être majoritairement rempli."""
+    """Safety net against a false detection that would place almost no cell
+    (guard already present in `detect_type_e`, verified end to end here):
+    this pattern must be mostly filled."""
     filled = sum(1 for v in result.cells if v != 0)
     fraction = filled / len(result.cells)
     assert fraction > 0.5
@@ -206,17 +206,17 @@ def test_never_raises_on_empty_pdf(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize("path", OTHER_TYPE_FIXTURES, ids=lambda p: p.parent.name)
 def test_returns_none_for_other_fixture_types(path: Path) -> None:
-    """Types A/B/C (police de symboles ou grilles vectorielles, aucune image
-    bitmap réutilisée) : pas de faux positif type E."""
+    """Types A/B/C (symbol font or vector grids, no reused bitmap image): no
+    type E false positive."""
     if not path.is_file():
         pytest.skip(f"fixture manquante : {path}")
     assert detect_type_e(path) is None
 
 
 def test_runs_within_reasonable_time() -> None:
-    """Repère de performance généreux (cahier des charges §10 : « moins de
-    30 secondes » pour un PDF de 10 pages ; celui-ci en a 18, avec des
-    dizaines de milliers de placements d'image)."""
+    """Generous performance benchmark (specification §10: "under 30 seconds"
+    for a 10-page PDF; this one has 18, with tens of thousands of image
+    placements)."""
     start = time.perf_counter()
     detect_type_e(FIXTURE_PATH)
     assert time.perf_counter() - start < 30.0

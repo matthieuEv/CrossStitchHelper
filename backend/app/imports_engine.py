@@ -1,10 +1,10 @@
-"""Moteur manuel de l'assistant d'import (Lot 2).
+"""Manual engine of the import wizard (Lot 2).
 
-Aucune détection automatique ici — c'est ce qui distingue le Lot 2 des
-Lots 4 à 7 (cahier des charges §8, roadmap). Ce module ne fait que :
-rendre une page (PDF ou image) en raster pour l'aperçu de cadrage, et
-assembler une grille à partir des zones peintes manuellement par
-l'utilisateur (« remplissage des couleurs par zone », roadmap Lot 2).
+No automatic detection here — that is what distinguishes Lot 2 from Lots 4
+to 7 (specification §8, roadmap). This module only: renders a page (PDF or
+image) as a raster for the cropping preview, and assembles a grid from the
+areas painted by hand by the user ("filling colours by area", roadmap
+Lot 2).
 """
 
 from __future__ import annotations
@@ -18,25 +18,25 @@ import pymupdf
 from PIL import Image
 
 MAX_PREVIEW_DIMENSION = 2000
-"""Borne raisonnable pour un aperçu : assez net pour cadrer à la main, sans
-transmettre une image à pleine résolution scanner sur une connexion mobile."""
+"""Reasonable bound for a preview: sharp enough to crop by hand, without
+sending a full scanner-resolution image over a mobile connection."""
 
 
 class UnsupportedFileError(ValueError):
-    """Le fichier déposé n'est ni un PDF ni une image prise en charge."""
+    """The dropped file is neither a PDF nor a supported image."""
 
 
 class PageOutOfRangeError(ValueError):
-    """Numéro de page demandé hors des pages réelles du PDF.
+    """Requested page number outside the PDF's real pages.
 
-    Porte `page_number`/`page_count` en attributs typés plutôt qu'un message
-    déjà formaté — traduit côté client (audit des traductions, Lot 8), voir
-    `app/schemas.py::ApiErrorDetail` et `app/api/imports.py`."""
+    Carries `page_number`/`page_count` as typed attributes rather than an
+    already formatted message — translated on the client (translation audit,
+    Lot 8), see `app/schemas.py::ApiErrorDetail` and `app/api/imports.py`."""
 
     def __init__(self, page_number: int, page_count: int) -> None:
         self.page_number = page_number
         self.page_count = page_count
-        super().__init__(f"Page {page_number} hors limites (1..{page_count})")
+        super().__init__(f"Page {page_number} out of range (1..{page_count})")
 
 
 def sha256_file(path: Path) -> str:
@@ -48,8 +48,8 @@ def sha256_file(path: Path) -> str:
 
 
 def pdf_page_count(path: Path) -> int:
-    # pymupdf n'est pas typé (pas de py.typed) : `int(...)` documente et
-    # vérifie le type réel à la frontière plutôt que de renvoyer `Any`.
+    # pymupdf is untyped (no py.typed): `int(...)` documents and checks the
+    # real type at the boundary rather than returning `Any`.
     with pymupdf.open(path) as doc:  # type: ignore[no-untyped-call]
         return int(doc.page_count)
 
@@ -57,13 +57,13 @@ def pdf_page_count(path: Path) -> int:
 def render_pdf_page(
     path: Path, page_number: int, max_dimension: int = MAX_PREVIEW_DIMENSION
 ) -> bytes:
-    """Rend la page `page_number` (1-based) d'un PDF en PNG raster."""
+    """Render page `page_number` (1-based) of a PDF as a raster PNG."""
     with pymupdf.open(path) as doc:  # type: ignore[no-untyped-call]
         if page_number < 1 or page_number > doc.page_count:
             raise PageOutOfRangeError(page_number, int(doc.page_count))
         page = doc[page_number - 1]
-        # Le zoom est calculé pour que la plus grande dimension de page
-        # n'excède pas `max_dimension`, sans jamais agrandir une petite page.
+        # The zoom is computed so the largest page dimension does not exceed
+        # `max_dimension`, without ever enlarging a small page.
         zoom = min(max_dimension / page.rect.width, max_dimension / page.rect.height, 3.0)
         matrix = pymupdf.Matrix(zoom, zoom)  # type: ignore[no-untyped-call]
         pixmap = page.get_pixmap(matrix=matrix, alpha=False)
@@ -71,14 +71,14 @@ def render_pdf_page(
 
 
 _SYMBOL_GLYPH_PADDING = 0.14
-"""Marge autour du glyphe, en fraction de son plus grand côté — assez pour
-ne pas rogner l'antialiasing du bord, sans trop réduire le symbole dans son
-cadre."""
+"""Margin around the glyph, as a fraction of its longest side — enough not
+to clip the edge antialiasing, without shrinking the symbol too much within
+its frame."""
 
 _SYMBOL_GLYPH_TARGET_PX = 64
-"""Résolution du carré normalisé : net à la taille d'affichage d'une case
-(quelques dizaines de pixels CSS), sans gonfler inutilement chaque motif de
-34+ couleurs."""
+"""Resolution of the normalised square: sharp at a cell's display size (a
+few dozen CSS pixels), without needlessly bloating every pattern of 34+
+colours."""
 
 
 def render_symbol_svg(
@@ -87,21 +87,21 @@ def render_symbol_svg(
     bbox: tuple[float, float, float, float],
     target_px: int = _SYMBOL_GLYPH_TARGET_PX,
 ) -> str:
-    """Découpe le symbole réel (`bbox`, coordonnées `pdfplumber`) depuis la
-    page rendue et le renvoie comme un `<svg>` autonome (image encodée en
-    base64 dedans) prêt à être stocké et affiché tel quel.
+    """Cut the real symbol (`bbox`, `pdfplumber` coordinates) out of the
+    rendered page and return it as a self-contained `<svg>` (with a
+    base64-encoded image inside) ready to be stored and displayed as is.
 
-    Rogner un raster de la page déjà rendue plutôt que d'interpréter les
-    tables de la police embarquée (glyphe -> contour vectoriel) : la seconde
-    approche est fragile d'un exportateur PDF à l'autre (CID -> GID direct
-    ou via table, police Type3 vs TrueType/CFF...), alors que rendre la page
-    est déjà le mécanisme éprouvé de l'aperçu de cadrage (`render_pdf_page`)
-    — fidèle par construction, quel que soit le PDF.
+    Cropping a raster of the already rendered page rather than interpreting
+    the embedded font's tables (glyph -> vector outline): the latter approach
+    is fragile from one PDF exporter to another (direct CID -> GID or via a
+    table, Type3 vs TrueType/CFF font...), whereas rendering the page is
+    already the proven mechanism of the cropping preview (`render_pdf_page`)
+    — faithful by construction, whatever the PDF.
 
-    Carré recentré sur le glyphe (pas son `bbox` brut) : les proportions du
-    glyphe varient d'un symbole à l'autre dans un même fichier, alors qu'une
-    case de grille est toujours carrée — un carré normalisé compose de façon
-    prévisible quelle que soit la forme d'origine."""
+    Square re-centred on the glyph (not its raw `bbox`): glyph proportions
+    vary from one symbol to another within the same file, while a grid cell
+    is always square — a normalised square composes predictably whatever the
+    original shape."""
     x0, top, x1, bottom = bbox
     width, height = x1 - x0, bottom - top
     side = max(width, height) * (1 + 2 * _SYMBOL_GLYPH_PADDING)
@@ -110,7 +110,7 @@ def render_symbol_svg(
 
     with pymupdf.open(path) as doc:  # type: ignore[no-untyped-call]
         if page_number < 1 or page_number > doc.page_count:
-            raise ValueError(f"Page {page_number} hors limites (1..{doc.page_count})")
+            raise ValueError(f"Page {page_number} out of range (1..{doc.page_count})")
         page = doc[page_number - 1]
         zoom = target_px / side if side > 0 else 1.0
         matrix = pymupdf.Matrix(zoom, zoom)  # type: ignore[no-untyped-call]
@@ -125,7 +125,7 @@ def render_symbol_svg(
 
 
 def render_image_page(path: Path, max_dimension: int = MAX_PREVIEW_DIMENSION) -> bytes:
-    """Redimensionne (si besoin) une photo déposée et la renvoie en PNG."""
+    """Resize (if needed) a dropped photo and return it as PNG."""
     with Image.open(path) as source:
         image = source.convert("RGB")
         if image.width > max_dimension or image.height > max_dimension:
@@ -138,24 +138,23 @@ def render_image_page(path: Path, max_dimension: int = MAX_PREVIEW_DIMENSION) ->
 def apply_fills(
     columns: int, rows: int, fills: list[dict[str, int]], base: list[int] | None = None
 ) -> list[int]:
-    """Assemble une grille `columns` × `rows` à partir des zones peintes.
+    """Assemble a `columns` × `rows` grid from the painted areas.
 
-    Chaque zone est un rectangle inclusif de coordonnées de case
-    (``x0``, ``y0``, ``x1``, ``y1``) associé à ``palette_index`` (1-based,
-    0 = case vide). Les zones sont appliquées dans l'ordre reçu — la
-    dernière à toucher une case l'emporte, exactement comme
-    `fillSelection` côté client (`frontend/src/state/useTracker.ts`), pour
-    que le comportement du pinceau soit identique pendant l'import et
-    pendant le suivi.
+    Each area is an inclusive rectangle of cell coordinates
+    (``x0``, ``y0``, ``x1``, ``y1``) associated with ``palette_index``
+    (1-based, 0 = empty cell). Areas are applied in the order received — the
+    last one to touch a cell wins, exactly like `fillSelection` on the client
+    (`frontend/src/state/useTracker.ts`), so the brush behaves identically
+    during import and during tracking.
 
-    `base` (Lot 4) : une grille détectée automatiquement (`app/type_a.py`)
-    sert de fond plutôt qu'une case vide — les zones peintes par
-    l'utilisateur restent des *corrections* par-dessus la proposition, sans
-    aucun nouveau mécanisme de peinture à écrire côté client.
+    `base` (Lot 4): an automatically detected grid (`app/type_a.py`) serves
+    as the background rather than an empty cell — areas painted by the user
+    remain *corrections* on top of the proposal, with no new painting
+    mechanism to write on the client.
     """
     if base is not None:
         if len(base) != columns * rows:
-            raise ValueError("`base` doit avoir exactement columns*rows cases")
+            raise ValueError("`base` must have exactly columns*rows cells")
         cells = list(base)
     else:
         cells = [0] * (columns * rows)

@@ -1,13 +1,13 @@
 #!/usr/bin/env python
-"""Injecte le motif de démonstration 255×180 en base (Lot 1).
+"""Inject the 255×180 demo pattern into the database (Lot 1).
 
-Usage : depuis `backend/`, avec l'environnement virtuel activé :
+Usage: from `backend/`, with the virtual environment activated:
 
     python scripts/seed_demo_pattern.py [--force]
 
-`--force` recrée le motif s'il existe déjà (perd sa progression). Sans cette
-option, le script ne fait rien si le motif est déjà présent — un ré-import
-ne doit jamais écraser une progression déjà cochée.
+`--force` recreates the pattern if it already exists (losing its progress).
+Without this option, the script does nothing if the pattern is already
+present — a re-import must never overwrite progress already checked.
 """
 
 from __future__ import annotations
@@ -26,14 +26,14 @@ from app.seed import seed_demo_pattern  # noqa: E402
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "--force", action="store_true", help="Recrée le motif s'il existe déjà."
+        "--force", action="store_true", help="Recreate the pattern if it already exists."
     )
     args = parser.parse_args()
 
     upgrade_to_head()
     with get_session_factory()() as session:
         pattern = seed_demo_pattern(session, force=args.force)
-        print(f"Motif de démonstration prêt : {pattern.id} ({pattern.width}×{pattern.height})")
+        print(f"Demo pattern ready: {pattern.id} ({pattern.width}×{pattern.height})")
 
 
 if __name__ == "__main__":

@@ -1,10 +1,10 @@
-"""Tests de la bibliothèque de recettes (Lot 6, cahier des charges §8.7, §9).
+"""Tests for the recipe library (Lot 6, specification §8.7, §9).
 
-Le cas de bout en bout (`test_recipe_prefills_crop_on_a_second_file_of_the_same_dmc_template`)
-utilise `botanical-citrus-dmc` puis `cucurbit-dmc` : deux fichiers réels,
-même gabarit d'export DMC officiel mais motifs différents (voir
-`fixtures/README.md` et `tests/test_fingerprint.py`) — exactement le cas
-d'usage du lot, sans avoir à fabriquer une fausse paire de fichiers."""
+The end-to-end case (`test_recipe_prefills_crop_on_a_second_file_of_the_same_dmc_template`)
+uses `botanical-citrus-dmc` then `cucurbit-dmc`: two real files, same
+official DMC export template but different patterns (see
+`fixtures/README.md` and `tests/test_fingerprint.py`) — exactly the lot's
+use case, without having to fabricate a fake pair of files."""
 
 from __future__ import annotations
 
@@ -28,12 +28,12 @@ def _wait_for_detection(client: TestClient, job_id: str, timeout: float = 30.0) 
         if not job["detecting"]:
             return job
         time.sleep(0.05)
-    raise AssertionError(f"détection toujours en cours après {timeout}s pour le job {job_id}")
+    raise AssertionError(f"detection still running after {timeout}s for job {job_id}")
 
 
 def _upload(client: TestClient, path: Path) -> dict[str, Any]:
     if not path.is_file():
-        pytest.skip(f"fixture manquante : {path}")
+        pytest.skip(f"missing fixture: {path}")
     with path.open("rb") as handle:
         response = client.post(
             "/api/imports", files={"file": (path.name, handle, "application/pdf")}
@@ -47,10 +47,9 @@ _SOME_CROP = {"1": {"left": 6.0, "top": 5.0, "right": 4.0, "bottom": 7.0}}
 
 
 def _tiny_pdf_bytes() -> bytes:
-    """Un PDF trivial, sans rapport avec aucune recette DMC — sa propre
-    empreinte ne correspond jamais à celle de `BOTANICAL_CITRUS`/`CUCURBIT`,
-    utile pour construire un job stabilisé avant d'y substituer un vrai
-    fichier (même technique que
+    """A trivial PDF, unrelated to any DMC recipe — its own fingerprint never
+    matches that of `BOTANICAL_CITRUS`/`CUCURBIT`, useful for building a
+    settled job before substituting a real file into it (same technique as
     `test_imports.py::test_manual_config_started_before_detection_finishes_is_not_overwritten`)."""
     doc = pymupdf.open()  # type: ignore[no-untyped-call]
     doc.new_page(width=300, height=200)
@@ -82,8 +81,8 @@ def test_create_recipe_from_a_validated_job(client: TestClient) -> None:
 
 
 def test_recipe_config_never_carries_dimensions_or_palette(client: TestClient) -> None:
-    """Garde-fou direct de `CLAUDE.md` : une recette ne doit jamais pouvoir
-    transporter le contenu créatif d'un motif (dimensions, couleurs)."""
+    """Direct guard from `CLAUDE.md`: a recipe must never be able to carry a
+    pattern's creative content (dimensions, colours)."""
     job = _wait_for_detection(client, _upload(client, BOTANICAL_CITRUS)["id"])
     response = client.post("/api/recipes", json={"job_id": job["id"], "label": "Test"})
     recipe = response.json()
@@ -123,12 +122,12 @@ def test_recipe_prefills_crop_on_a_second_file_of_the_same_dmc_template(
 
     second_job = _wait_for_detection(client, _upload(client, CUCURBIT)["id"])
 
-    # Le cadrage vient de la recette...
+    # The cropping comes from the recipe...
     assert second_job["config"]["crop_by_page"] == _SOME_CROP
     assert second_job["applied_recipe"] == {"id": recipe["id"], "label": "DMC officiel"}
-    # ...mais dimensions et palette restent celles, propres, de ce fichier —
-    # jamais copiées depuis la recette (contenu créatif, cahier des charges
-    # §8.7 : « jamais à partir du contenu créatif »).
+    # ...but dimensions and palette remain this file's own — never copied
+    # from the recipe (creative content, specification §8.7: "never from the
+    # creative content").
     assert second_job["config"]["columns"] is not None
     assert second_job["config"]["rows"] is not None
     assert len(second_job["config"]["palette"]) > 0
@@ -151,13 +150,13 @@ def test_recipe_prefills_crop_on_a_second_file_of_the_same_dmc_template(
 
 
 def test_recipe_never_overwrites_an_already_started_manual_crop(client: TestClient) -> None:
-    """Même principe de test que
+    """Same test principle as
     `test_manual_config_started_before_detection_finishes_is_not_overwritten`
-    de `test_imports.py` : le minutage réel de la tâche de fond n'est
-    garanti ni par le serveur ni par `TestClient`, donc plutôt que de
-    deviner une fenêtre de course, ce test construit un job déjà stabilisé
-    puis invoque `_run_auto_detection` directement après le cadrage manuel,
-    reproduisant l'ordre exact sans dépendre d'aucun minutage."""
+    in `test_imports.py`: the background task's real timing is guaranteed
+    neither by the server nor by `TestClient`, so rather than guessing a race
+    window, this test builds an already settled job then invokes
+    `_run_auto_detection` directly after the manual cropping, reproducing the
+    exact order without depending on any timing."""
     from app.api.imports import _run_auto_detection
     from app.config import get_settings
 
@@ -166,9 +165,9 @@ def test_recipe_never_overwrites_an_already_started_manual_crop(client: TestClie
     client.post("/api/recipes", json={"job_id": first_job["id"], "label": "DMC officiel"})
 
     if not CUCURBIT.is_file():
-        pytest.skip(f"fixture manquante : {CUCURBIT}")
+        pytest.skip(f"missing fixture: {CUCURBIT}")
     job_id = _upload_tiny_pdf(client)["id"]
-    _wait_for_detection(client, job_id)  # PDF trivial, sans empreinte connue : rien à appliquer
+    _wait_for_detection(client, job_id)  # trivial PDF, no known fingerprint: nothing to apply
 
     source_path = get_settings().imports_dir / job_id / "source.pdf"
     source_path.write_bytes(CUCURBIT.read_bytes())

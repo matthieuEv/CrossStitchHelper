@@ -1,30 +1,28 @@
-"""Empreinte de fichier pour les recettes réutilisables (Lot 6, cahier des
-charges §8.7).
+"""File fingerprint for reusable recipes (Lot 6, specification §8.7).
 
-L'empreinte identifie le **logiciel/éditeur/boutique** qui a produit le PDF
-— jamais le motif lui-même. Elle ne doit donc jamais dépendre d'une valeur
-qui varie avec le contenu créatif d'un fichier à l'autre (dimensions de la
-grille, couleurs utilisées, nombre de pages de grille, titre du motif) :
-seule la structure du gabarit d'export compte — taille de page, polices
-embarquées, et présence de libellés génériques que le logiciel imprime sur
-chaque export quel que soit le motif (« Floss Used for », « Symbol »...).
+The fingerprint identifies the **software/publisher/shop** that produced the
+PDF — never the pattern itself. It must therefore never depend on a value
+that varies with the creative content from one file to the next (grid
+dimensions, colours used, number of grid pages, pattern title): only the
+structure of the export template counts — page size, embedded fonts, and the
+presence of generic labels the software prints on every export whatever the
+pattern ("Floss Used for", "Symbol"...).
 
-Ne lève jamais : un PDF illisible ou atypique doit simplement ne pas avoir
-d'empreinte réutilisable, jamais faire échouer l'import (cahier des charges
-§10, même contrat que `type_a.detect_type_a`/`type_bc.detect_type_bc`).
+Never raises: an unreadable or atypical PDF must simply have no reusable
+fingerprint, never make the import fail (specification §10, same contract as
+`type_a.detect_type_a`/`type_bc.detect_type_bc`).
 
-PyMuPDF plutôt que `pdfplumber` (utilisé par `app/type_a.py` pour l'analyse
-fine de police/texte) : `pdfplumber` reconstruit un layout par glyphe
-(clustering géométrique) même pour une simple liste de noms de polices, et
-s'est mesuré à ~2s **par page** sur `cafe-brasserie-charting-export`
-(police de symboles dense, des milliers de glyphes par page de grille),
-largement trop pour une tâche de fond — voir l'historique de ce fichier :
-la première version utilisait `pdfplumber` et a dû être corrigée après une
-régression observée sur les suites e2e (calcul d'empreinte devenu le poste
-dominant du temps de détection). `page.get_fonts()`/`page.get_text()` de
-PyMuPDF n'ont pas ce coût (mesuré à quelques millisecondes sur ce même
-fichier, toutes pages confondues) : ils lisent le dictionnaire de
-ressources et le flux de texte de la page, sans reclustering géométrique."""
+PyMuPDF rather than `pdfplumber` (used by `app/type_a.py` for fine-grained
+font/text analysis): `pdfplumber` rebuilds a per-glyph layout (geometric
+clustering) even for a simple list of font names, and was measured at ~2s
+**per page** on `cafe-brasserie-charting-export` (dense symbol font,
+thousands of glyphs per grid page), far too much for a background task — see
+this file's history: the first version used `pdfplumber` and had to be fixed
+after a regression observed on the e2e suites (fingerprint computation had
+become the dominant cost of detection time). PyMuPDF's
+`page.get_fonts()`/`page.get_text()` do not have this cost (measured at a few
+milliseconds on the same file, all pages together): they read the page's
+resource dictionary and text stream, with no geometric reclustering."""
 
 from __future__ import annotations
 
@@ -35,10 +33,10 @@ from pathlib import Path
 
 import pymupdf
 
-# Libellés génériques qu'un logiciel de charting imprime sur chaque export,
-# indépendamment du motif — jamais le titre du motif ou le nom d'une couleur
-# spécifique, qui seraient du contenu créatif. Repérés sur les fixtures de
-# référence (`cafe-brasserie-charting-export`, les quatre fichiers DMC).
+# Generic labels a charting program prints on every export, independently of
+# the pattern — never the pattern title or a specific colour name, which
+# would be creative content. Spotted on the reference fixtures
+# (`cafe-brasserie-charting-export`, the four DMC files).
 _BOILERPLATE_PHRASES = (
     "floss used for",
     "symbol",
@@ -56,15 +54,15 @@ _BOILERPLATE_PHRASES = (
 
 _SUBSET_TAG_RE = re.compile(r"^[A-Z]{6}\+")
 
-# Pages sondées pour le texte générique — pas le document entier : la
-# légende/l'en-tête s'y trouve toujours sur les fixtures de référence, et
-# `get_text()` reste cher à l'échelle de plusieurs dizaines de pages.
+# Pages sampled for generic text — not the whole document: the legend/header
+# is always there on the reference fixtures, and `get_text()` remains
+# expensive at the scale of several dozen pages.
 _TEXT_SAMPLE_PAGES = 3
 
 
 def compute_fingerprint(source_path: Path, kind: str) -> str | None:
-    """`None` pour tout ce qui n'est pas un PDF (une photo n'a pas de
-    structure de logiciel à reconnaître), ou si l'analyse échoue."""
+    """`None` for anything that is not a PDF (a photo has no software
+    structure to recognise), or if the analysis fails."""
     if kind != "pdf":
         return None
     try:
@@ -100,9 +98,9 @@ def _compute(source_path: Path) -> str:
 
 
 def _strip_subset_tag(base_font_name: str) -> str:
-    """« ABCDEE+Wingdings » -> « Wingdings ». Le préfixe de six lettres
-    capitales suivi de « + » est un tag de sous-ensemble de police généré
-    aléatoirement à chaque export (convention PDF standard, cf. PDF 32000-1
-    §9.6.4) : il ne serait jamais commun à deux fichiers d'un même éditeur,
-    contrairement au nom de police lui-même."""
+    """"ABCDEE+Wingdings" -> "Wingdings". The six-capital-letter prefix
+    followed by "+" is a font subset tag randomly generated on every export
+    (standard PDF convention, cf. PDF 32000-1 §9.6.4): it would never be
+    shared by two files from the same publisher, unlike the font name
+    itself."""
     return _SUBSET_TAG_RE.sub("", base_font_name)

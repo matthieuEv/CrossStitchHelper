@@ -1,4 +1,4 @@
-"""Schémas Pydantic de l'API (cahier des charges §9)."""
+"""Pydantic API schemas (specification §9)."""
 
 from __future__ import annotations
 
@@ -9,13 +9,13 @@ from pydantic import BaseModel, Field
 
 
 class ApiErrorDetail(BaseModel):
-    """Corps d'une erreur HTTP (`HTTPException(detail=...)`) — un code plutôt
-    qu'un texte figé côté serveur (audit des traductions, Lot 8), traduit
-    côté client via la clé `error.<code>` de `frontend/src/i18n/fr.ts`/
-    `en.ts`. Même principe que `DetectionWarning` pour les avertissements de
-    détection automatique. `frontend/src/lib/api.ts` sait retomber sur un
-    message générique si un `detail` ne respecte pas cette forme (erreur de
-    validation FastAPI native, par exemple — hors de ce mécanisme)."""
+    """Body of an HTTP error (`HTTPException(detail=...)`) — a code rather
+    than text frozen on the server (translation audit, Lot 8), translated on
+    the client via the `error.<code>` key of `frontend/src/i18n/fr.ts`/
+    `en.ts`. Same principle as `DetectionWarning` for automatic detection
+    warnings. `frontend/src/lib/api.ts` can fall back to a generic message if
+    a `detail` does not follow this shape (a native FastAPI validation error,
+    for example — outside this mechanism)."""
 
     code: str
     params: dict[str, str | int | float] = Field(default_factory=dict)
@@ -42,7 +42,7 @@ class PaletteEntryOut(BaseModel):
 
 
 class PatternSummary(BaseModel):
-    """Ce qu'il faut pour une vignette de la bibliothèque (§7.1)."""
+    """What a library thumbnail needs (§7.1)."""
 
     id: str
     name: str
@@ -73,12 +73,12 @@ class PatternDetail(BaseModel):
 
 
 class BackstitchSegment(BaseModel):
-    """Un trait de point arrière, en coordonnées de **coins** de case (Lot 8) :
-    (0, 0) est le coin haut-gauche de la case (0, 0) de la grille, (1, 0) le
-    coin haut-droit de cette même case (= coin haut-gauche de la case
-    (1, 0)), etc. — jamais un pixel ni un centre de case, pour que le tracé
-    reste correct quel que soit le zoom ou la taille de case affichée à
-    l'écran (même principe que `Grid.layer_full`, indépendant du rendu)."""
+    """A backstitch stroke, in cell **corner** coordinates (Lot 8): (0, 0) is
+    the top-left corner of the grid's cell (0, 0), (1, 0) the top-right
+    corner of that same cell (= top-left corner of cell (1, 0)), etc. — never
+    a pixel or a cell centre, so the stroke stays correct whatever the zoom
+    or the cell size displayed on screen (same principle as
+    `Grid.layer_full`, independent of rendering)."""
 
     x1: float
     y1: float
@@ -88,9 +88,9 @@ class BackstitchSegment(BaseModel):
 
 
 class FrenchKnot(BaseModel):
-    """Un point de nœud, en coordonnées de **centre de case** (Lot 8) :
-    (0.5, 0.5) est le centre de la case (0, 0) — jamais un coin (contrairement
-    à `BackstitchSegment`) ni un pixel."""
+    """A French knot, in **cell centre** coordinates (Lot 8): (0.5, 0.5) is
+    the centre of cell (0, 0) — never a corner (unlike `BackstitchSegment`)
+    nor a pixel."""
 
     x: float
     y: float
@@ -103,7 +103,7 @@ class GridOut(BaseModel):
     height: int
     encoding: str
     version: int
-    layer_full: str = Field(description="Uint16Array encodée en base64, ligne par ligne.")
+    layer_full: str = Field(description="Base64-encoded Uint16Array, row by row.")
     layer_half: str | None = None
     layer_quarter: str | None = None
     backstitch: list[BackstitchSegment]
@@ -114,30 +114,30 @@ class ProgressOut(BaseModel):
     pattern_id: str
     version: int
     stitched_count: int
-    """Points entiers cochés — seule catégorie comptant pour le pourcentage
-    global d'avancement (§7.1), inchangé depuis le Lot 1."""
+    """Checked full stitches — the only category counting towards the overall
+    completion percentage (§7.1), unchanged since Lot 1."""
     cell_count: int
-    bitmap: str = Field(description="1 bit par case, encodé en base64, ligne par ligne.")
+    bitmap: str = Field(description="1 bit per cell, base64-encoded, row by row.")
 
     bitmap_half: str | None = Field(
         default=None,
-        description="Points 1/2 cochés, même forme que `bitmap` — absent si `Grid.layer_half` "
-        "est vide (aucun point 1/2 dans ce motif).",
+        description="Checked 1/2 stitches, same shape as `bitmap` — absent if `Grid.layer_half` "
+        "is empty (no 1/2 stitch in this pattern).",
     )
     bitmap_quarter: str | None = Field(
         default=None,
-        description="Points 1/4 cochés, même forme que `bitmap` — absent si `Grid.layer_quarter` "
-        "est vide.",
+        description="Checked 1/4 stitches, same shape as `bitmap` — absent if `Grid.layer_quarter` "
+        "is empty.",
     )
     bitmap_backstitch: str | None = Field(
         default=None,
-        description="Segments de point arrière cochés — 1 bit par élément de "
-        "`GridOut.backstitch`, dans le même ordre (jamais une grille : absent si aucun segment).",
+        description="Checked backstitch segments — 1 bit per element of "
+        "`GridOut.backstitch`, in the same order (never a grid: absent if there is no segment).",
     )
     bitmap_knots: str | None = Field(
         default=None,
-        description="Nœuds cochés — 1 bit par élément de `GridOut.french_knots`, même "
-        "convention que `bitmap_backstitch`.",
+        description="Checked knots — 1 bit per element of `GridOut.french_knots`, same "
+        "convention as `bitmap_backstitch`.",
     )
     stitched_count_half: int = 0
     stitched_count_quarter: int = 0
@@ -146,16 +146,16 @@ class ProgressOut(BaseModel):
 
 
 class ProgressOp(BaseModel):
-    """Une modification de case ou d'élément, exprimée en état absolu — donc
-    idempotente (cahier des charges §9 : « cocher une case est une opération
-    idempotente, ce qui rend les conflits triviaux à résoudre »).
+    """A change to a cell or element, expressed as an absolute state — hence
+    idempotent (specification §9: "checking a cell is an idempotent
+    operation, which makes conflicts trivial to resolve").
 
-    `layer` distingue la catégorie de point visée (Lot 8) : `index` se lit
-    alors dans l'espace de cette catégorie précise — un index de grille
-    (0-based, ligne par ligne) pour `full`/`half`/`quarter`, un index dans
-    `GridOut.backstitch`/`french_knots` pour `backstitch`/`knot`. Jamais un
-    espace d'index partagé entre catégories, pour ne jamais faire cocher la
-    mauvaise case/le mauvais segment par une confusion de couche."""
+    `layer` identifies the targeted stitch category (Lot 8): `index` is then
+    read in that particular category's space — a grid index (0-based, row by
+    row) for `full`/`half`/`quarter`, an index into
+    `GridOut.backstitch`/`french_knots` for `backstitch`/`knot`. Never an
+    index space shared between categories, so the wrong cell/segment is never
+    checked through a layer mix-up."""
 
     layer: Literal["full", "half", "quarter", "backstitch", "knot"] = "full"
     index: int = Field(ge=0)
@@ -163,7 +163,7 @@ class ProgressOp(BaseModel):
 
 
 class ProgressSyncRequest(BaseModel):
-    base_version: int = Field(ge=0, description="Dernière version de progression connue du client.")
+    base_version: int = Field(ge=0, description="Last progress version known to the client.")
     ops: list[ProgressOp] = Field(default_factory=list)
 
 
@@ -171,32 +171,32 @@ class ProgressSyncResponse(BaseModel):
     version: int
     stitched_count: int
     conflict: bool = Field(
-        description="Vrai si le client avait manqué des changements faits par un autre appareil."
+        description="True if the client had missed changes made by another device."
     )
     missing_ops: list[ProgressOp] = Field(
         description=(
-            "Opérations appliquées par d'autres appareils depuis `base_version`, "
-            "à rejouer côté client."
+            "Operations applied by other devices since `base_version`, "
+            "to be replayed on the client."
         )
     )
 
 
-# --- Historique d'activité (Lot 3, cahier des charges §11) -----------------
+# --- Activity history (Lot 3, specification §11) ---------------------------
 #
-# Dérivé de `progress_events`, jamais stocké séparément : le journal des
-# deltas déjà écrit pour la synchronisation multi-appareils (Lot 1) est la
-# seule source de vérité de « qui a brodé quand ».
+# Derived from `progress_events`, never stored separately: the delta log
+# already written for multi-device synchronisation (Lot 1) is the only source
+# of truth for "who stitched when".
 
 
 class ActivityDayOut(BaseModel):
-    """Cases brodées un jour donné des 7 derniers jours glissants."""
+    """Cells stitched on a given day of the last 7 rolling days."""
 
-    weekday: int = Field(ge=0, le=6, description="0 = lundi, ISO.")
+    weekday: int = Field(ge=0, le=6, description="0 = Monday, ISO.")
     stitches: int
 
 
 class ActivitySessionOut(BaseModel):
-    """Une séance = des événements de progression sans coupure de plus de 30 min."""
+    """A session = progress events with no gap longer than 30 min."""
 
     hours_ago: float
     stitches: int
@@ -208,20 +208,20 @@ class PatternActivityOut(BaseModel):
     sessions: list[ActivitySessionOut]
 
 
-# --- Assistant d'import (Lot 2, cahier des charges §7.2, §9) ---------------
+# --- Import wizard (Lot 2, specification §7.2, §9) -------------------------
 #
-# Lot 2 : aucune détection automatique, `ImportCrop`, dimensions et palette
-# sont entièrement saisis par l'utilisateur dans l'assistant.
+# Lot 2: no automatic detection, `ImportCrop`, dimensions and palette are
+# entered entirely by the user in the wizard.
 #
-# Lot 4 (`detected_cells`, `ImportDetection`) : pour un PDF de type A
-# reconnu, `app/type_a.py` pré-remplit `columns`/`rows`/`palette` et une
-# grille de fond — l'utilisateur corrige toujours via le même mécanisme de
-# zones peintes (`fills`) qu'en Lot 2, jamais une proposition imposée
-# (cahier des charges §4.4 : « jamais un résultat imposé »).
+# Lot 4 (`detected_cells`, `ImportDetection`): for a recognised type A PDF,
+# `app/type_a.py` pre-fills `columns`/`rows`/`palette` and a background grid
+# — the user always corrects through the same painted-area mechanism
+# (`fills`) as in Lot 2, never an imposed proposal (specification §4.4:
+# "never an imposed result").
 
 
 class ImportCrop(BaseModel):
-    """Cadrage de la page, en pourcentage de chaque bord (0-49)."""
+    """Page cropping, as a percentage of each edge (0-49)."""
 
     left: float = Field(ge=0, le=49)
     top: float = Field(ge=0, le=49)
@@ -235,17 +235,19 @@ class ImportPaletteEntry(BaseModel):
     rgb_hex: str
     symbol_key: str
     symbol_svg: str | None = None
-    """Symbole réel découpé depuis le PDF (Lot 4, `detect_type_a`) — absent
-    pour une entrée saisie à la main (Lot 2), qui reste rendue via
-    `symbol_key`. Voir `app.type_a.SymbolGlyphLocation`."""
+    """Real symbol cut out of the PDF (Lot 4, `detect_type_a`) — absent for
+    an entry typed by hand (Lot 2), which is still rendered via
+    `symbol_key`. See `app.type_a.SymbolGlyphLocation`."""
 
 
 class ImportFillZone(BaseModel):
-    """Une zone peinte d'un même index de palette — voir `app.imports_engine.apply_fills`.
+    """An area painted with a single palette index — see
+    `app.imports_engine.apply_fills`.
 
-    ``palette_index`` à 0 efface la zone (la ramène à « case vide »), même
-    convention que le blob de grille (§6.3) : c'est ce qui permet de corriger
-    une zone mal peinte sans avoir à retirer l'entrée de la liste.
+    ``palette_index`` 0 erases the area (turns it back into "empty cell"),
+    same convention as the grid blob (§6.3): that is what allows a wrongly
+    painted area to be corrected without having to remove the entry from the
+    list.
     """
 
     x0: int = Field(ge=0)
@@ -259,9 +261,9 @@ class ImportConfig(BaseModel):
     crop_by_page: dict[str, ImportCrop] = Field(
         default_factory=dict,
         description=(
-            "Cadrage manuel, par numéro de page (clé str car JSON) — une page non "
-            "présente n'a pas encore été cadrée par l'utilisateur. Repère purement "
-            "visuel pour aider à compter les cases, jamais consommé par l'extraction."
+            "Manual cropping, by page number (str key because JSON) — a page not "
+            "present has not been cropped by the user yet. A purely visual aid for "
+            "counting cells, never consumed by extraction."
         ),
     )
     columns: int | None = Field(default=None, ge=1, le=1000)
@@ -271,61 +273,60 @@ class ImportConfig(BaseModel):
     detected_cells: list[int] | None = Field(
         default=None,
         description=(
-            "Grille proposée par la détection automatique (Lot 4), même convention "
-            "que le blob de grille : longueur columns*rows, 0 = case vide, n = index "
-            "1-based dans `palette`. `fills` s'applique par-dessus, jamais en dessous."
+            "Grid proposed by automatic detection (Lot 4), same convention as the "
+            "grid blob: length columns*rows, 0 = empty cell, n = 1-based index into "
+            "`palette`. `fills` is applied on top, never underneath."
         ),
     )
     uncertain_cells: list[int] | None = Field(
         default=None,
         description=(
-            "Index (0-based, dans `detected_cells`) des cases que la détection "
-            "automatique de type B/C (Lot 5) signale explicitement comme incertaines "
-            "— couleur douteuse et/ou symbole ambigu. Jamais consommé par "
-            "l'extraction elle-même, purement indicatif pour l'assistant d'import : "
-            "une case incertaine n'est jamais fausse en silence (règle impérative du "
-            "`pdf-extraction-specialist`)."
+            "Indices (0-based, into `detected_cells`) of the cells that type B/C "
+            "automatic detection (Lot 5) explicitly flags as uncertain — doubtful "
+            "colour and/or ambiguous symbol. Never consumed by extraction itself, "
+            "purely indicative for the import wizard: an uncertain cell is never "
+            "silently wrong (mandatory rule of the `pdf-extraction-specialist`)."
         ),
     )
     detected_half: list[int] | None = Field(
         default=None,
         description=(
-            "Points 1/2 proposés par la détection automatique (Lot 9, type A "
-            "seulement) — même convention que `detected_cells`. Aucun mécanisme de "
-            "correction manuelle pour cette couche : commité tel quel si les "
-            "dimensions n'ont pas changé depuis la détection."
+            "1/2 stitches proposed by automatic detection (Lot 9, type A only) — "
+            "same convention as `detected_cells`. No manual correction mechanism "
+            "for this layer: committed as is if the dimensions have not changed "
+            "since detection."
         ),
     )
     detected_quarter: list[int] | None = Field(
-        default=None, description="Points 1/4 proposés par la détection automatique (Lot 9)."
+        default=None, description="1/4 stitches proposed by automatic detection (Lot 9)."
     )
     detected_backstitch: list[BackstitchSegment] | None = Field(
         default=None,
         description=(
-            "Segments de point arrière proposés par la détection automatique (Lot 9, "
-            "type A seulement) — coordonnées dans le référentiel de la grille "
-            "détectée (`columns`/`rows` de ce même job)."
+            "Backstitch segments proposed by automatic detection (Lot 9, type A "
+            "only) — coordinates in the frame of the detected grid (`columns`/`rows` "
+            "of this same job)."
         ),
     )
     detected_french_knots: list[FrenchKnot] | None = Field(
-        default=None, description="Nœuds proposés par la détection automatique (Lot 9)."
+        default=None, description="Knots proposed by automatic detection (Lot 9)."
     )
     detected_fabric_count: int | None = Field(
         default=None,
         description=(
-            "Compte de toile déclaré en clair par le PDF (Lot 9, type A seulement) — "
-            "sert uniquement à pré-remplir le champ de l'étape récapitulative, jamais "
-            "consommé par l'extraction elle-même ni imposé à l'utilisateur."
+            "Fabric count stated plainly by the PDF (Lot 9, type A only) — only "
+            "used to pre-fill the summary step's field, never consumed by extraction "
+            "itself nor imposed on the user."
         ),
     )
 
 
 class ImportConfigPatch(BaseModel):
-    """Comme `ImportConfig`, mais chaque champ fourni remplace entièrement
-    l'existant plutôt que de le fusionner finement — le client renvoie
-    toujours l'état complet qu'il détient (mêmes principes que `done` côté
-    suivi), ce qui rend une resynchronisation triviale après une navigation
-    avant/arrière dans l'assistant."""
+    """Like `ImportConfig`, but each field provided entirely replaces the
+    existing one rather than being merged finely — the client always sends
+    back the complete state it holds (same principles as `done` on the
+    tracking side), which makes resynchronisation trivial after navigating
+    back and forth in the wizard."""
 
     crop_by_page: dict[str, ImportCrop] | None = None
     columns: int | None = Field(default=None, ge=1, le=1000)
@@ -342,43 +343,43 @@ class ImportConfigPatch(BaseModel):
 
 
 class ImportPreview(BaseModel):
-    """La grille assemblée à partir de la configuration courante — absente
-    tant que `columns`/`rows`/`palette` ne sont pas encore renseignés."""
+    """The grid assembled from the current configuration — absent as long as
+    `columns`/`rows`/`palette` are not filled in yet."""
 
     width: int
     height: int
     cell_count: int
     filled_count: int
-    layer_full: str = Field(description="Uint16Array encodée en base64, comme `GridOut`.")
+    layer_full: str = Field(description="Base64-encoded Uint16Array, like `GridOut`.")
     palette: list[ImportPaletteEntry]
 
 
 class DetectionWarning(BaseModel):
-    """Un avertissement de détection automatique — jamais un texte déjà
-    formaté côté serveur (audit des traductions, Lot 8) : `code` identifie le
-    message (clé `import.warning.<code>` de `frontend/src/i18n/fr.ts`/
-    `en.ts`), `params` porte les valeurs interpolées (comptages, codes DMC,
-    pourcentages…) que la clé de traduction consomme via `{nom}`. Le message
-    final est composé côté client, dans la langue choisie par
-    l'utilisateur — jamais figé en français au moment de la détection."""
+    """An automatic detection warning — never text already formatted on the
+    server (translation audit, Lot 8): `code` identifies the message (key
+    `import.warning.<code>` of `frontend/src/i18n/fr.ts`/`en.ts`), `params`
+    carries the interpolated values (counts, DMC codes, percentages…) that
+    the translation key consumes via `{name}`. The final message is composed
+    on the client, in the language chosen by the user — never frozen in
+    French at detection time."""
 
     code: str
     params: dict[str, str | int | float] = Field(default_factory=dict)
 
 
 class ImportDetection(BaseModel):
-    """Résumé de la détection automatique (Lots 4-5) — jamais une certitude,
-    toujours un score exploitable pour que l'assistant d'import invite à
-    vérifier plutôt qu'à faire confiance aveuglément (§4.4)."""
+    """Summary of automatic detection (Lots 4-5) — never a certainty, always
+    a usable score so the import wizard invites checking rather than blind
+    trust (§4.4)."""
 
-    grid_type: str = Field(description='"A", "B", "C" ou "E" — voir cahier des charges §4.4.')
+    grid_type: str = Field(description='"A", "B", "C" or "E" — see specification §4.4.')
     confidence: float = Field(ge=0, le=1)
     warnings: list[DetectionWarning] = Field(default_factory=list)
 
 
 class ImportAppliedRecipe(BaseModel):
-    """Recette (Lot 6) dont `crop_by_page` a été repris pour ce job — jamais
-    les dimensions ni la palette, voir `app/models.py::Recipe`."""
+    """Recipe (Lot 6) whose `crop_by_page` was reused for this job — never
+    the dimensions or the palette, see `app/models.py::Recipe`."""
 
     id: str
     label: str
@@ -396,7 +397,7 @@ class ImportJobOut(BaseModel):
     detection: ImportDetection | None = None
     detecting: bool = Field(
         default=False,
-        description="Détection automatique (Lot 4) en cours en tâche de fond pour ce PDF.",
+        description="Automatic detection (Lot 4) running as a background task for this PDF.",
     )
     applied_recipe: ImportAppliedRecipe | None = None
     error: str | None
@@ -413,15 +414,15 @@ class ImportCommitResponse(BaseModel):
     pattern_id: str
 
 
-# --- Recettes réutilisables (Lot 6, cahier des charges §8.7, §6.2) ---------
+# --- Reusable recipes (Lot 6, specification §8.7, §6.2) --------------------
 
 
 class RecipeConfig(BaseModel):
-    """Le sous-ensemble de `ImportConfig` qu'une recette peut porter —
-    volontairement restreint aux paramètres géométriques/structurels
-    (`CLAUDE.md` : jamais le contenu créatif du motif). Ni dimensions, ni
-    palette, ni zones peintes : elles diffèrent toujours d'un motif à
-    l'autre, même au sein d'un même éditeur."""
+    """The subset of `ImportConfig` a recipe can carry — deliberately
+    restricted to geometric/structural parameters (`CLAUDE.md`: never the
+    pattern's creative content). No dimensions, palette or painted areas:
+    they always differ from one pattern to another, even within the same
+    publisher."""
 
     crop_by_page: dict[str, ImportCrop] = Field(default_factory=dict)
 
@@ -441,12 +442,12 @@ class RecipeOut(BaseModel):
     usage_count: int
 
 
-# --- Sauvegarde/restauration complète (Lot 8, cahier des charges §7.5) -----
+# --- Full backup/restore (Lot 8, specification §7.5) -----------------------
 #
-# Format JSON autonome (voir `app/backup.py`), distinct de l'export `.cshp`
-# (Lot 2) qui ne couvre qu'un seul motif à la fois : celui-ci couvre toute
-# l'instance (tous les motifs, toute la progression, toutes les recettes),
-# pour l'utilisateur qui n'a accès qu'à son téléphone, pas au volume Docker.
+# Self-contained JSON format (see `app/backup.py`), distinct from the `.cshp`
+# export (Lot 2), which only covers one pattern at a time: this one covers
+# the whole instance (all patterns, all progress, all recipes), for the user
+# who only has access to their phone, not to the Docker volume.
 
 
 class BackupPaletteEntry(BaseModel):
@@ -469,7 +470,7 @@ class BackupPaletteEntry(BaseModel):
 
 
 class BackupGrid(BaseModel):
-    layer_full: str = Field(description="Uint16Array encodée en base64, comme `GridOut`.")
+    layer_full: str = Field(description="Base64-encoded Uint16Array, like `GridOut`.")
     layer_half: str | None = None
     layer_quarter: str | None = None
     backstitch_json: str = "[]"
@@ -479,7 +480,7 @@ class BackupGrid(BaseModel):
 
 
 class BackupProgress(BaseModel):
-    bitmap: str = Field(description="1 bit par case, encodé en base64, comme `ProgressOut`.")
+    bitmap: str = Field(description="1 bit per cell, base64-encoded, like `ProgressOut`.")
     bitmap_half: str | None = None
     bitmap_quarter: str | None = None
     bitmap_backstitch: str | None = None
@@ -490,9 +491,9 @@ class BackupProgress(BaseModel):
 
 
 class BackupProgressEvent(BaseModel):
-    """Un événement du journal `progress_events` — sans lui, l'historique
-    d'activité (§11) disparaîtrait d'une restauration même si la progression
-    elle-même est intacte."""
+    """An event from the `progress_events` log — without it, the activity
+    history (§11) would vanish on restore even if progress itself is
+    intact."""
 
     id: int
     ts: datetime
@@ -531,11 +532,11 @@ class BackupRecipe(BaseModel):
 
 
 class BackupDocument(BaseModel):
-    """Le document exporté/restauré dans son ensemble.
+    """The exported/restored document as a whole.
 
-    Volontairement hors périmètre (`app/backup.py`) : ``ImportJob`` (état
-    transitoire d'un assistant d'import en cours, jamais une donnée durable)
-    et ``AppMeta`` (bookkeeping interne, pas une donnée utilisateur)."""
+    Deliberately out of scope (`app/backup.py`): ``ImportJob`` (transient
+    state of an import wizard in progress, never durable data) and
+    ``AppMeta`` (internal bookkeeping, not user data)."""
 
     format: Literal["csh-backup"] = "csh-backup"
     format_version: int = 1
