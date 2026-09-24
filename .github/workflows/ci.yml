@@ -14,8 +14,8 @@ jobs:
       run:
         working-directory: backend
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
           cache: pip
@@ -34,8 +34,8 @@ jobs:
       run:
         working-directory: frontend
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: "22"
           cache: npm
@@ -52,7 +52,7 @@ jobs:
     # L'image n'a de sens que si les deux moitiés passent.
     needs: [backend, frontend]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Construire l'image
         run: docker build -t crossstitchhelper:ci .
       - name: Démarrer l'instance et attendre qu'elle réponde
@@ -74,7 +74,7 @@ jobs:
         # Les tests e2e (Lot 1) ont besoin d'au moins un motif en base pour
         # vérifier la persistance de la progression.
         run: docker exec csh python scripts/seed_demo_pattern.py
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: "22"
           cache: npm
@@ -89,7 +89,7 @@ jobs:
         run: npm run test:e2e
       - name: Rapport e2e
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: playwright-report
           path: frontend/playwright-report/
