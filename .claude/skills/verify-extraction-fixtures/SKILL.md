@@ -1,36 +1,36 @@
 ---
 name: verify-extraction-fixtures
-description: Vérifie le moteur d'extraction PDF contre les six fixtures de référence et leurs valeurs attendues. À utiliser après toute modification du moteur d'extraction (backend), avant de considérer la tâche terminée.
+description: Verifies the PDF extraction engine against the six reference fixtures and their expected values. Use after any change to the extraction engine (backend), before considering the task done.
 ---
 
-# Vérifier l'extraction contre les fixtures de référence
+# Verifying extraction against the reference fixtures
 
-Procédure à suivre après toute modification touchant à l'analyse structurelle des PDF, à la détection de grille, aux parseurs de type A/B/C/E, ou au rapprochement couleur → DMC.
+Procedure to follow after any change touching PDF structural analysis, grid detection, the type A/B/C/E parsers, or colour → DMC matching.
 
-## 1. Identifier les fixtures concernées
+## 1. Identify the relevant fixtures
 
-Six PDF réels couvrent les types A/B/C/E connus (voir `fixtures/README.md` pour la liste complète des valeurs attendues, et `docs/cahier-des-charges.md` §4 pour le détail de chaque cas) :
+Six real PDFs cover the known A/B/C/E types (see `fixtures/README.md` for the full list of expected values, and `docs/specification.md` §4 for the details of each case):
 
-- `fixtures/cafe-brasserie-charting-export/` — type A (police de symboles embarquée, légende texte) → `backend/app/type_a.py`.
-- `fixtures/winter-wreath-dmc/`, `fixtures/summer-flight-dmc/` — type C, cas piège : la page couleur porte déjà ses propres tracés de symbole, ne jamais superposer une deuxième page à l'aveugle → `backend/app/type_bc.py`.
-- `fixtures/botanical-citrus-dmc/`, `fixtures/cucurbit-dmc/` — type C, superposition à deux pages réellement nécessaire → `backend/app/type_bc.py`.
-- `fixtures/river-and-mountains-laserarts/` — type E (catalogue fermé d'images bitmap réutilisées, couleur+symbole déjà combinés) → `backend/app/type_e.py`. Sert aussi à vérifier l'absence de faux positif des connecteurs A/B/C sur ce fichier structurellement très différent.
+- `fixtures/cafe-brasserie-charting-export/` — type A (embedded symbol font, text legend) → `backend/app/type_a.py`.
+- `fixtures/winter-wreath-dmc/`, `fixtures/summer-flight-dmc/` — type C, trap case: the colour page already carries its own symbol paths, never blindly overlay a second page → `backend/app/type_bc.py`.
+- `fixtures/botanical-citrus-dmc/`, `fixtures/cucurbit-dmc/` — type C, two-page overlay genuinely needed → `backend/app/type_bc.py`.
+- `fixtures/river-and-mountains-laserarts/` — type E (closed catalogue of reused bitmap images, colour+symbol already combined) → `backend/app/type_e.py`. Also serves to check that the A/B/C connectors produce no false positive on this structurally very different file.
 
-N'importe lequel de ces six fichiers peut, à l'œil, sembler suivre une structure différente de sa réalité mesurée (`winter-wreath-dmc` en est la preuve directe, corrigée au Lot 5 après une première description erronée dans le cahier des charges) — ne jamais faire confiance à un premier examen visuel ou à une description déjà écrite sans la revérifier par la mesure sur le fichier réel.
+Any of these six files can, to the eye, seem to follow a structure different from its measured reality (`winter-wreath-dmc` is the direct proof, corrected in Lot 5 after an initially wrong description in the specification) — never trust a first visual examination or an already written description without re-checking it by measurement on the real file.
 
-## 2. Lancer l'extraction sur chaque fixture concernée par le changement
+## 2. Run the extraction on each fixture affected by the change
 
-Utiliser le point d'entrée du moteur d'extraction backend concerné (`detect_type_a`, `detect_type_bc`, `detect_type_e`) — voir `docs/cahier-des-charges.md` §8 pour le détail des étapes du pipeline : analyse structurelle → détection de grille → parseur spécifique → rapprochement couleur → assemblage.
+Use the relevant backend extraction engine entry point (`detect_type_a`, `detect_type_bc`, `detect_type_e`) — see `docs/specification.md` §8 for the details of the pipeline stages: structural analysis → grid detection → specific parser → colour matching → assembly.
 
-## 3. Comparer aux valeurs attendues
+## 3. Compare with the expected values
 
-Les valeurs exactes (dimensions, nombre de couleurs, comptages, stratégie de page) sont dans `fixtures/README.md` — ne pas les recopier ici, un seul endroit par information (voir `CLAUDE.md`). Les suites `backend/tests/test_type_a.py`, `backend/tests/test_type_bc.py` et `backend/tests/test_type_e.py` les vérifient déjà automatiquement ; les relancer est le moyen le plus rapide de faire cette comparaison.
+The exact values (dimensions, number of colours, counts, page strategy) are in `fixtures/README.md` — do not copy them here, one place per piece of information (see `CLAUDE.md`). The `backend/tests/test_type_a.py`, `backend/tests/test_type_bc.py` and `backend/tests/test_type_e.py` suites already check them automatically; re-running them is the fastest way to do this comparison.
 
-## 4. En cas d'écart
+## 4. If there is a discrepancy
 
-- Si l'écart est mineur et documenté (score de confiance bas, ou case listée dans `uncertain_cells`, signalés correctement) : c'est attendu, l'assistant d'import doit permettre la correction manuelle — vérifier que le signalement de confiance fonctionne, pas que le résultat est parfait.
-- Si l'écart est silencieux (valeur fausse sans signalement de confiance bas ni case incertaine) : c'est un bug à corriger avant de considérer la tâche terminée. Ne jamais laisser une extraction incorrecte non signalée.
+- If the discrepancy is minor and documented (low confidence score, or cell listed in `uncertain_cells`, correctly flagged): this is expected, the import wizard must allow manual correction — check that confidence flagging works, not that the result is perfect.
+- If the discrepancy is silent (wrong value with no low confidence score or uncertain cell): it is a bug to fix before considering the task done. Never leave an incorrect extraction unflagged.
 
-## 5. Si le changement couvre un cas non représenté par les six fixtures
+## 5. If the change covers a case not represented by the six fixtures
 
-Envisager l'ajout d'une nouvelle fixture (voir le skill `add-import-connector`) plutôt que de valider uniquement par inspection manuelle ponctuelle — les fixtures sont ce qui empêche une régression silencieuse plus tard.
+Consider adding a new fixture (see the `add-import-connector` skill) rather than validating only by one-off manual inspection — fixtures are what prevent a silent regression later.
