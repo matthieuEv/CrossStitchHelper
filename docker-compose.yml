@@ -1,16 +1,10 @@
-# Exemple d'installation auto-hébergée.
-#
-# Un seul service, un seul volume. Sauvegarder `./data` suffit à sauvegarder
-# l'intégralité de vos motifs et de votre progression.
-
 services:
   crossstitchhelper:
-    build: .
-    image: crossstitchhelper:latest
+    image: ghcr.io/matthieuev/crossstitchhelper:latest
+    # build: .
     container_name: crossstitchhelper
     restart: unless-stopped
     ports:
-      # Hôte:conteneur. Changez le port de gauche s'il est déjà pris.
       - "8765:8000"
     volumes:
       - ./data:/data
