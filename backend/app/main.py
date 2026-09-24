@@ -19,7 +19,6 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 
-from app import __version__
 from app.api.backup import router as backup_router
 from app.api.health import router as health_router
 from app.api.imports import router as imports_router
@@ -49,7 +48,9 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     settings.ensure_directories()
     if settings.run_migrations_on_startup:
         upgrade_to_head()
-    logger.info("CrossStitchHelper %s prêt — données dans %s", __version__, settings.data_dir)
+    logger.info(
+        "CrossStitchHelper %s prêt — données dans %s", settings.app_version, settings.data_dir
+    )
 
     task: asyncio.Task[None] | None = None
     if settings.run_auto_backup_loop:
@@ -104,7 +105,7 @@ def create_app() -> FastAPI:
     settings = get_settings()
     app = FastAPI(
         title="CrossStitchHelper",
-        version=__version__,
+        version=settings.app_version,
         summary="API locale de suivi de grilles de point de croix.",
         lifespan=lifespan,
         docs_url="/api/docs",

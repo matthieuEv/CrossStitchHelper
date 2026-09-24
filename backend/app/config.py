@@ -30,6 +30,15 @@ class Settings(BaseSettings):
     data_dir: Path = Path("data")
     """Répertoire unique contenant la base SQLite et les fichiers utilisateur."""
 
+    app_version: str = "v0.0.0-dev"
+    """Version affichée dans l'interface et par `/api/health`.
+
+    Injectée au build de l'image Docker (`ARG VERSION` dans le `Dockerfile`)
+    à partir du tag git qui déclenche `.github/workflows/release.yml` —
+    jamais maintenue à la main dans le code. Vaut ``v0.0.0-dev`` par défaut,
+    y compris en développement, tant qu'aucune version n'a été injectée.
+    """
+
     frontend_dist: Path | None = None
     """Répertoire du frontend construit.
 

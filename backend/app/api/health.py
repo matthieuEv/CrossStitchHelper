@@ -15,7 +15,7 @@ from sqlalchemy import select, text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from app import __version__
+from app.config import get_settings
 from app.db import get_session
 from app.models import AppMeta
 
@@ -50,7 +50,7 @@ def health(session: Annotated[Session, Depends(get_session)]) -> HealthResponse:
 
     return HealthResponse(
         status="ok" if database == "ok" and schema_revision is not None else "degraded",
-        version=__version__,
+        version=get_settings().app_version,
         database=database,
         schema_revision=schema_revision,
     )

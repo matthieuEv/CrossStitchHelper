@@ -22,11 +22,17 @@ RUN npm run build
 # ---------------------------------------------------------------------------
 FROM python:3.12-slim AS runtime
 
+# Injecté par `.github/workflows/release.yml` (`--build-arg VERSION=<tag>`) au
+# push d'un tag git : la version affichée dans l'app est ainsi toujours celle
+# du tag qui a produit l'image, jamais maintenue à la main dans le code.
+ARG VERSION=v0.0.0-dev
+
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
     CSH_DATA_DIR=/data \
-    CSH_FRONTEND_DIST=/app/frontend-dist
+    CSH_FRONTEND_DIST=/app/frontend-dist \
+    CSH_APP_VERSION=$VERSION
 
 WORKDIR /app
 
