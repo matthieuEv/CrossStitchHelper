@@ -20,7 +20,7 @@ RUN npm run build
 # ---------------------------------------------------------------------------
 # 2. Exécution
 # ---------------------------------------------------------------------------
-FROM python:3.12-slim AS runtime
+FROM python:3.14-slim AS runtime
 
 # Injecté par `.github/workflows/release.yml` (`--build-arg VERSION=<tag>`) au
 # push d'un tag git : la version affichée dans l'app est ainsi toujours celle
