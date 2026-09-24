@@ -3,29 +3,28 @@ import { useMemo } from "react";
 import { useI18n, type Language } from "../i18n";
 
 /**
- * Balise de locale `Intl` pour la langue de l'interface — jamais celle du
- * navigateur (`undefined`) : sans ça, un réglage de langue explicite dans
- * l'appli (Réglages) n'a aucun effet sur les API `Intl` si la locale du
- * navigateur diffère (jours de la semaine, dates relatives affichés dans la
- * mauvaise langue malgré le choix explicite — bug trouvé lors de l'audit des
- * traductions du Lot 8).
+ * `Intl` locale tag for the interface language — never the browser's
+ * (`undefined`): without it, an explicit language setting in the app
+ * (Settings) has no effect on the `Intl` APIs if the browser locale differs
+ * (weekdays and relative dates shown in the wrong language despite the
+ * explicit choice — a bug found during the Lot 8 translation audit).
  */
 function localeTag(language: Language): string {
   return language === "fr" ? "fr-FR" : "en-GB";
 }
 
 /**
- * Formateur de nombres suivant la langue de l'interface.
+ * Number formatter following the interface language.
  *
- * Les comptages de points se lisent par milliers : sans séparateur, « 45900 »
- * demande un effort de lecture que « 45 900 » n'exige pas.
+ * Stitch counts are read in thousands: without a separator, "45900" takes a
+ * reading effort that "45 900" does not.
  */
 export function useNumberFormat(): (value: number) => string {
   const { language } = useI18n();
   return useMemo(() => {
     const formatter = new Intl.NumberFormat(localeTag(language));
-    // L'espace fine insécable de Safari passe mal dans certaines polices :
-    // on la normalise en espace insécable ordinaire.
+    // Safari's narrow no-break space renders badly in some fonts: normalise
+    // it to a regular no-break space.
     return (value: number) => formatter.format(value).replace(/ /g, " ");
   }, [language]);
 }
@@ -35,10 +34,10 @@ export function percent(value: number): string {
 }
 
 /**
- * Formate une ancienneté (« il y a 3 jours »).
+ * Formats an age ("3 days ago").
  *
- * Les maquettes affichaient des dates écrites en dur ; une date relative reste
- * juste sans dépendre du moment où l'on regarde l'écran, et se traduit seule.
+ * The mockups showed hard-coded dates; a relative date stays correct without
+ * depending on when you look at the screen, and translates itself.
  */
 export function useRelativeTime(): (hoursAgo: number) => string {
   const { language } = useI18n();
@@ -53,24 +52,23 @@ export function useRelativeTime(): (hoursAgo: number) => string {
   }, [language]);
 }
 
-/** Nom court d'un jour de la semaine (« lun. »/« Mon ») — `index` : 0 = lundi
- * (ISO), même convention que `ActivityDayOut.weekday` (cahier des charges
- * §11). */
+/** Short weekday name ("lun."/"Mon") — `index`: 0 = Monday (ISO), same
+ * convention as `ActivityDayOut.weekday` (specification §11). */
 export function useWeekdayLabel(): (index: number) => string {
   const { language } = useI18n();
   return useMemo(() => {
     const formatter = new Intl.DateTimeFormat(localeTag(language), { weekday: "short" });
     return (index: number) =>
-      // 2024-01-01 était un lundi : décalage stable quelle que soit la locale.
+      // 2024-01-01 was a Monday: a stable offset whatever the locale.
       formatter.format(new Date(Date.UTC(2024, 0, 1 + index)));
   }, [language]);
 }
 
 /**
- * Ancienneté d'une séance de broderie (« il y a 12 min ») — granularité plus
- * fine que `useRelativeTime` (minutes dès la première heure), utile pour une
- * séance qui vient tout juste de se terminer ; distinct exprès de
- * `useRelativeTime`, qui commence à l'heure pour un historique plus large.
+ * Age of a stitching session ("12 min ago") — finer granularity than
+ * `useRelativeTime` (minutes within the first hour), useful for a session
+ * that has only just ended; deliberately distinct from `useRelativeTime`,
+ * which starts at hours for a broader history.
  */
 export function useSessionRelativeTime(): (hoursAgo: number) => string {
   const { language } = useI18n();

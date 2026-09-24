@@ -1,12 +1,12 @@
 /**
- * Routage minimal fondé sur l'History API.
+ * Minimal routing based on the History API.
  *
- * `track` et `stats` portent l'identifiant du motif dans l'URL
- * (`/track/{id}`) : c'est ce qui permet à un rechargement de page — ou à un
- * lien partagé — de rouvrir le même motif plutôt que de retomber sur le
- * premier de la liste. Avant le Lot 2, un seul motif existait jamais
- * réellement en base, donc rien ne distinguait un rechargement correct d'un
- * rechargement qui retombait par coïncidence sur le bon motif.
+ * `track` and `stats` carry the pattern id in the URL (`/track/{id}`): that
+ * is what lets a page reload — or a shared link — reopen the same pattern
+ * rather than falling back to the first one in the list. Before Lot 2, only
+ * one pattern ever really existed in the database, so nothing distinguished a
+ * correct reload from one that happened to land on the right pattern by
+ * coincidence.
  */
 
 import { useCallback, useEffect, useState } from "react";
@@ -14,7 +14,7 @@ import { useCallback, useEffect, useState } from "react";
 export const SCREENS = ["library", "import", "track", "stats", "settings"] as const;
 export type Screen = (typeof SCREENS)[number];
 
-/** Écrans qui portent un identifiant de motif dans leur URL. */
+/** Screens that carry a pattern id in their URL. */
 const SCREENS_WITH_PATTERN: readonly Screen[] = ["track", "stats"];
 
 const BASE_PATHS: Record<Screen, string> = {
@@ -53,9 +53,9 @@ function pathFor(screen: Screen, patternId: string | null): string {
 
 export function useRouter(): {
   screen: Screen;
-  /** Motif porté par l'URL courante ; toujours `null` hors `track`/`stats`. */
+  /** Pattern carried by the current URL; always `null` outside `track`/`stats`. */
   patternId: string | null;
-  /** `patternId` n'est nécessaire que pour `track` et `stats`. */
+  /** `patternId` is only needed for `track` and `stats`. */
   navigate: (screen: Screen, patternId?: string) => void;
 } {
   const [route, setRoute] = useState<Route>(() => routeFromPath(window.location.pathname));

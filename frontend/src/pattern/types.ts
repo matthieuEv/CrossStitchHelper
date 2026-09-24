@@ -1,26 +1,26 @@
-/** Types du noyau « motif ». */
+/** Types of the "pattern" core. */
 
 export interface PaletteEntry {
-  /** Code du fil dans la marque choisie (ex. « 3346 » pour DMC). */
+  /** Thread code in the chosen brand (e.g. "3346" for DMC). */
   code: string;
   name: string;
-  /** Couleur d'affichage, en hexadécimal `#rrggbb`. */
+  /** Display colour, as hexadecimal `#rrggbb`. */
   hex: string;
-  /** Symbole affiché dans la case au zoom élevé — repli textuel tant que
-   * `symbolSvg` n'est pas disponible ou pas encore chargé. */
+  /** Symbol shown in the cell at high zoom — text fallback while
+   * `symbolSvg` is unavailable or not loaded yet. */
   symbol: string;
-  /** Symbole réel découpé depuis le PDF source (Lot 4), un `<svg>` autonome
-   * prêt à être affiché — voir `pattern/render.ts` pour le rendu et le
-   * cache d'images. Absent pour une palette saisie à la main (Lot 2). */
+  /** Real symbol cut out of the source PDF (Lot 4), a self-contained `<svg>`
+   * ready to display — see `pattern/render.ts` for rendering and the image
+   * cache. Absent for a palette entered by hand (Lot 2). */
   symbolSvg?: string;
 }
 
 /**
- * Un trait de point arrière (Lot 8), en coordonnées de **coins** de case :
- * (0, 0) est le coin haut-gauche de la case (0, 0), (1, 0) le coin
- * haut-droit de cette même case — jamais un pixel ni un centre de case, même
- * convention que `backend/app/schemas.py::BackstitchSegment`. `paletteIndex`
- * est 1-based, comme `Pattern.cells`.
+ * A backstitch stroke (Lot 8), in cell **corner** coordinates: (0, 0) is the
+ * top-left corner of cell (0, 0), (1, 0) the top-right corner of that same
+ * cell — never a pixel or a cell centre, same convention as
+ * `backend/app/schemas.py::BackstitchSegment`. `paletteIndex` is 1-based,
+ * like `Pattern.cells`.
  */
 export interface BackstitchSegment {
   readonly x1: number;
@@ -31,10 +31,9 @@ export interface BackstitchSegment {
 }
 
 /**
- * Un point de nœud (Lot 8), en coordonnées de **centre** de case : (0.5,
- * 0.5) est le centre de la case (0, 0) — jamais un coin (contrairement à
- * `BackstitchSegment`) ni un pixel. Même convention que
- * `backend/app/schemas.py::FrenchKnot`.
+ * A French knot (Lot 8), in cell **centre** coordinates: (0.5, 0.5) is the
+ * centre of cell (0, 0) — never a corner (unlike `BackstitchSegment`) nor a
+ * pixel. Same convention as `backend/app/schemas.py::FrenchKnot`.
  */
 export interface FrenchKnot {
   readonly x: number;
@@ -42,27 +41,25 @@ export interface FrenchKnot {
   readonly paletteIndex: number;
 }
 
-/** Les cinq catégories de points suivies (Lot 8) — même énumération que
- * `backend/app/schemas.py::ProgressOp.layer`, jamais un espace d'index
- * partagé entre catégories (un index de grille pour `full`/`half`/`quarter`,
- * un index dans `Pattern.backstitch`/`frenchKnots` pour `backstitch`/`knot`). */
+/** The five tracked stitch categories (Lot 8) — same enumeration as
+ * `backend/app/schemas.py::ProgressOp.layer`, never an index space shared
+ * between categories (a grid index for `full`/`half`/`quarter`, an index into
+ * `Pattern.backstitch`/`frenchKnots` for `backstitch`/`knot`). */
 export type StitchLayer = "full" | "half" | "quarter" | "backstitch" | "knot";
 
 /**
- * Une grille de motif.
+ * A pattern grid.
  *
- * `cells` contient un index de palette par case (0 = case vide), rangée par
- * rangée. Un octet par case : un motif de 255 × 180 tient dans 45 Ko, ce qui
- * autorise à le garder entièrement en mémoire et à ne redessiner que la
- * portion visible.
+ * `cells` holds one palette index per cell (0 = empty cell), row by row. One
+ * byte per cell: a 255 × 180 pattern fits in 45 KB, which allows keeping it
+ * entirely in memory and redrawing only the visible portion.
  *
- * `cellsHalf`/`cellsQuarter` (Lot 8) suivent exactement la même convention
- * que `cells`, même taille — toujours présents (jamais `undefined`), remplis
- * de zéros quand le motif n'a aucun point 1/2 ou 1/4 : le rendu et le suivi
- * n'ont ainsi jamais besoin de cas particulier « couche absente ». Une case
- * peut porter une valeur non nulle dans plusieurs de ces couches à la fois
- * (§6.3 : ce sont des couches indépendantes, pas des variantes exclusives
- * d'une même case).
+ * `cellsHalf`/`cellsQuarter` (Lot 8) follow exactly the same convention as
+ * `cells`, same size — always present (never `undefined`), filled with zeros
+ * when the pattern has no 1/2 or 1/4 stitch: rendering and tracking thus
+ * never need a "missing layer" special case. A cell can carry a non-zero
+ * value in several of these layers at once (§6.3: they are independent
+ * layers, not mutually exclusive variants of the same cell).
  */
 export interface Pattern {
   readonly id: string;
@@ -78,16 +75,16 @@ export interface Pattern {
 }
 
 /**
- * Progression des quatre catégories de points spéciaux (Lot 8), séparée de
- * `Progress` (point entier, ci-dessous) — volontairement, pour ne changer la
- * forme de `Progress` nulle part où elle est déjà consommée (statistiques,
- * bibliothèque, démonstration...) : `Progress` continue de ne représenter
- * que le point entier, seul comptant pour le pourcentage global (§7.1).
+ * Progress of the four special stitch categories (Lot 8), separate from
+ * `Progress` (full stitch, below) — deliberately, so as not to change the
+ * shape of `Progress` anywhere it is already consumed (statistics, library,
+ * demo...): `Progress` still represents only the full stitch, the only one
+ * counting towards the overall percentage (§7.1).
  *
- * `half`/`quarter` ont la même taille que `Pattern.cells` (1 octet 0/1 par
- * case, comme `Progress`) ; `backstitch`/`knot` ont la taille de
- * `Pattern.backstitch`/`frenchKnots` (1 octet 0/1 par élément, jamais par
- * case — ce ne sont pas des grilles).
+ * `half`/`quarter` have the same size as `Pattern.cells` (one 0/1 byte per
+ * cell, like `Progress`); `backstitch`/`knot` have the size of
+ * `Pattern.backstitch`/`frenchKnots` (one 0/1 byte per element, never per
+ * cell — these are not grids).
  */
 export interface SpecialProgress {
   half: Uint8Array;
@@ -106,11 +103,11 @@ export function emptySpecialProgress(pattern: Pattern): SpecialProgress {
 }
 
 /**
- * Progression de broderie.
+ * Stitching progress.
  *
- * Stockée **séparément** de la grille (contrainte structurante du cahier des
- * charges) : un ré-import du PDF source remplace `Pattern`, jamais `done`.
- * Même indexation que `Pattern.cells` ; 1 signifie « case brodée ».
+ * Stored **separately** from the grid (structural constraint of the
+ * specification): a re-import of the source PDF replaces `Pattern`, never
+ * `done`. Same indexing as `Pattern.cells`; 1 means "stitched cell".
  */
 export type Progress = Uint8Array;
 

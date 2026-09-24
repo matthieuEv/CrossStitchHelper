@@ -1,14 +1,13 @@
 /**
- * État de l'écran de suivi : progression, vue, outil courant.
+ * Tracking screen state: progress, view, current tool.
  *
- * Choix de performance : chaque catégorie de point (`full`/`half`/`quarter`/
- * `backstitch`/`knot`, Lot 8) est un `Uint8Array` muté sur place, regroupées
- * dans une seule structure (`doneRef.current`) plutôt que cinq refs
- * séparées — un seul objet à faire transiter dans l'historique d'annulation
- * et dans `applyRemote`. Un compteur de version déclenche le rendu React ;
- * recopier un tableau à chaque case cochée coûterait une allocation de 45 Ko
- * par tap sur le motif de référence — invisible sur un ordinateur, sensible
- * sur un iPhone.
+ * Performance choice: each stitch category (`full`/`half`/`quarter`/
+ * `backstitch`/`knot`, Lot 8) is a `Uint8Array` mutated in place, grouped in
+ * a single structure (`doneRef.current`) rather than five separate refs — a
+ * single object to pass through the undo history and `applyRemote`. A version
+ * counter triggers the React render; copying an array on every checked cell
+ * would cost a 45 KB allocation per tap on the reference pattern — invisible
+ * on a computer, noticeable on an iPhone.
  */
 
 import { useCallback, useMemo, useRef, useState } from "react";
@@ -38,9 +37,9 @@ export interface CellPosition {
   y: number;
 }
 
-/** Un point de contact en coordonnées de grille fractionnaires (pas encore
- * arrondi à une case) — nécessaire pour viser un segment de point arrière ou
- * un nœud, qui ne sont pas alignés sur la grille de cases. */
+/** A touch point in fractional grid coordinates (not yet rounded to a cell)
+ * — needed to target a backstitch segment or a knot, which are not aligned
+ * on the cell grid. */
 export interface GridPoint {
   gx: number;
   gy: number;
@@ -50,10 +49,10 @@ export interface GridPoint {
 const HISTORY_LIMIT = 16;
 
 /**
- * Tolérance de tap pour le point arrière/les nœuds, en pixels d'écran —
- * convertie en cases au moment du tap (voir `toggleAtPoint`) pour rester
- * constante à l'œil quel que soit le zoom, plafonnée à une demi-case pour ne
- * jamais capter un élément visiblement distant.
+ * Tap tolerance for backstitches/knots, in screen pixels — converted to
+ * cells at tap time (see `toggleAtPoint`) so it stays visually constant
+ * whatever the zoom, capped at half a cell so it never catches a visibly
+ * distant element.
  */
 const SPECIAL_TAP_TOLERANCE_PX = 16;
 const SPECIAL_TAP_TOLERANCE_MAX_CELLS = 0.5;
@@ -84,16 +83,15 @@ function layerArray(state: TrackerState, layer: StitchLayer): Uint8Array {
 export interface Tracker {
   pattern: Pattern;
   done: Progress;
-  /** Progression des quatre catégories de points spéciaux (Lot 8) — voir
-   * `SpecialProgress`. Toujours en phase avec `version` : incrémenté par la
-   * même contrepasse que `done`. */
+  /** Progress of the four special stitch categories (Lot 8) — see
+   * `SpecialProgress`. Always in step with `version`: incremented by the same
+   * update as `done`. */
   special: SpecialProgress;
   /**
-   * Incrémenté à chaque modification de `done` ou `special`.
+   * Incremented on every change to `done` or `special`.
    *
-   * `done`/`special` étant mutés sur place, c'est cette valeur — et non les
-   * tableaux — qui doit figurer dans les dépendances d'un `useEffect` de
-   * rendu.
+   * Since `done`/`special` are mutated in place, it is this value — not the
+   * arrays — that must appear in a rendering `useEffect`'s dependencies.
    */
   version: number;
   counts: ColorCount[];
@@ -104,33 +102,32 @@ export interface Tracker {
   zoomIn: () => void;
   zoomOut: () => void;
   /**
-   * Zoome vers une taille de case cible en gardant un point de l'écran ancré
-   * sur la même case du motif (voir l'implémentation pour le détail du calcul).
-   * Utilisé par le pincement à deux doigts : le point médian du geste doit
-   * rester sous les doigts, pas sauter vers le coin de l'écran.
+   * Zooms to a target cell size while keeping a screen point anchored on the
+   * same pattern cell (see the implementation for the details of the
+   * computation). Used by two-finger pinch: the gesture's midpoint must stay
+   * under the fingers, not jump to the corner of the screen.
    */
   zoomTo: (
     nextCell: number,
     anchorScreenX: number,
     anchorScreenY: number,
     canvasRect: Pick<DOMRect, "left" | "top">,
-    /** Déplacement additionnel à appliquer dans le même geste, en cases du
-     * motif — un glissé diagonal au trackpad zoome et déplace la vue à la
-     * fois (voir TrackScreen.tsx) : sans ça, l'appel à `setOffset` séparé
-     * pour le déplacement serait aussitôt écrasé par celui, interne à
-     * `zoomTo`, qui recalcule l'origine depuis la position d'avant le geste. */
+    /** Additional pan to apply in the same gesture, in pattern cells — a
+     * diagonal trackpad swipe zooms and pans the view at the same time (see
+     * TrackScreen.tsx): without this, the separate `setOffset` call for the
+     * pan would immediately be overwritten by the one inside `zoomTo`, which
+     * recomputes the origin from the position before the gesture. */
     panDeltaX?: number,
   ) => void;
 
   tool: Tool;
   setTool: (tool: Tool) => void;
 
-  /** Catégorie de point ciblée par l'outil « cocher » (Lot 8) — sans effet
-   * sur les outils « déplacer »/« sélectionner ». `backstitch`/`knot` ne
-   * sont interactifs qu'à partir de `SYMBOL_MIN_CELL` (voir `toggleAtPoint`),
-   * même seuil que l'apparition des symboles : en dessous, une case fait
-   * quelques pixels et deux éléments voisins seraient impossibles à
-   * distinguer au doigt. */
+  /** Stitch category targeted by the "check" tool (Lot 8) — no effect on the
+   * "move"/"select" tools. `backstitch`/`knot` are only interactive from
+   * `SYMBOL_MIN_CELL` (see `toggleAtPoint`), the same threshold at which
+   * symbols appear: below it, a cell is a few pixels and two neighbouring
+   * elements would be impossible to tell apart with a finger. */
   activeLayer: StitchLayer;
   setActiveLayer: (layer: StitchLayer) => void;
 
@@ -139,7 +136,7 @@ export interface Tracker {
   toggleHighlight: (index: number) => void;
   clearHighlight: () => void;
 
-  /** Masque les cases déjà brodées plutôt que de les délaver. */
+  /** Hides already stitched cells rather than washing them out. */
   hideDone: boolean;
   toggleHideDone: () => void;
 
@@ -149,16 +146,15 @@ export interface Tracker {
   selection: Selection | null;
   setSelection: (selection: Selection | null) => void;
 
-  /** Coche/décoche une case de la grille en point entier — indépendant de
-   * `activeLayer`, conservé pour les appelants qui visent explicitement le
-   * point entier (voir `fillSelection`, inchangé depuis le Lot 1). */
+  /** Checks/unchecks a grid cell as a full stitch — independent of
+   * `activeLayer`, kept for callers that explicitly target the full stitch
+   * (see `fillSelection`, unchanged since Lot 1). */
   toggleCell: (cell: CellPosition) => void;
   /**
-   * Coche/décoche l'élément ciblé par un point de contact, selon
-   * `activeLayer` : une case pour `full`/`half`/`quarter` (arrondie vers le
-   * bas), le segment de point arrière ou le nœud le plus proche pour
-   * `backstitch`/`knot` (sans effet si rien d'assez proche, ou en dessous du
-   * seuil de zoom d'interaction).
+   * Checks/unchecks the element targeted by a touch point, depending on
+   * `activeLayer`: a cell for `full`/`half`/`quarter` (rounded down), the
+   * nearest backstitch segment or knot for `backstitch`/`knot` (no effect if
+   * nothing is close enough, or below the interaction zoom threshold).
    */
   toggleAtPoint: (point: GridPoint) => void;
   fillSelection: (value: 0 | 1) => void;
@@ -166,11 +162,10 @@ export interface Tracker {
   canUndo: boolean;
 
   /**
-   * Applique des changements venus d'ailleurs (synchronisation serveur,
-   * Lot 1) : met à jour `done`/`special` et déclenche un rendu, mais sans
-   * repasser par `onChange` (ce ne sont pas de nouvelles intentions locales à
-   * resynchroniser) ni par la pile d'annulation (annuler ne doit défaire que
-   * les propres gestes de cet appareil).
+   * Applies changes coming from elsewhere (server sync, Lot 1): updates
+   * `done`/`special` and triggers a render, but without going through
+   * `onChange` again (these are not new local intentions to resync) nor the
+   * undo stack (undo must only revert this device's own gestures).
    */
   applyRemote: (changes: CellChange[]) => void;
 }
@@ -182,10 +177,10 @@ export interface CellChange {
 }
 
 /**
- * `onChange` est appelé de façon synchrone avec les éléments réellement
- * modifiés (jamais un tableau complet) : c'est ce qui permet à un appelant
- * (la synchronisation serveur, Lot 1) d'envoyer des deltas précis sans avoir
- * à comparer deux copies de 45 Ko à chaque case cochée.
+ * `onChange` is called synchronously with the elements actually changed
+ * (never a whole array): that is what lets a caller (server sync, Lot 1) send
+ * precise deltas without having to compare two 45 KB copies on every checked
+ * cell.
  */
 export function useTracker(
   pattern: Pattern,
@@ -203,17 +198,17 @@ export function useTracker(
   const historyRef = useRef<TrackerState[]>([]);
   const [version, setVersion] = useState(0);
 
-  // Ref plutôt que dépendance directe : `onChange` peut changer d'identité à
-  // chaque rendu côté appelant sans que cela invalide les callbacks mémoïsés
-  // ci-dessous.
+  // A ref rather than a direct dependency: `onChange` can change identity on
+  // every render on the caller's side without invalidating the memoised
+  // callbacks below.
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
 
   const [cell, setCell] = useState(16);
-  // Position de départ pensée pour un grand motif (s'écarter du coin pour ne
-  // pas coller la vue au bord) ; sans le même bornage que `setOffset`
-  // ci-dessous, un petit motif peint à la main (Lot 2) s'ouvrirait sur une
-  // vue entièrement vide, en dehors de sa grille.
+  // Starting position designed for a large pattern (move away from the
+  // corner so the view does not stick to the edge); without the same clamping
+  // as `setOffset` below, a small pattern painted by hand (Lot 2) would open
+  // on an entirely empty view, outside its grid.
   const [offset, setOffsetState] = useState(() => ({
     x0: Math.max(-panMargin(pattern.width), Math.min(pattern.width - panMargin(pattern.width), 30)),
     y0: Math.max(-panMargin(pattern.height), Math.min(pattern.height - panMargin(pattern.height), 24)),
@@ -230,7 +225,7 @@ export function useTracker(
 
   const counts = useMemo(
     () => countByColor(pattern, done),
-    // `version` est la dépendance réelle : `done` est muté sur place.
+    // `version` is the real dependency: `done` is mutated in place.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [pattern, version],
   );
@@ -259,8 +254,8 @@ export function useTracker(
         return;
       }
       const index = position.y * pattern.width + position.x;
-      // Une case vide du motif n'est pas brodable : la cocher n'aurait aucun
-      // sens et fausserait les compteurs.
+      // An empty pattern cell cannot be stitched: checking it would make no
+      // sense and would skew the counters.
       if ((pattern.cells[index] ?? 0) === 0) return;
 
       snapshot();
@@ -273,8 +268,8 @@ export function useTracker(
     [pattern, snapshot],
   );
 
-  /** Comme `toggleCell`, pour les couches 1/2 et 1/4 — une case sans point de
-   * cette catégorie (voir `Pattern.cellsHalf`/`cellsQuarter`) est ignorée. */
+  /** Like `toggleCell`, for the 1/2 and 1/4 layers — a cell with no stitch in
+   * that category (see `Pattern.cellsHalf`/`cellsQuarter`) is ignored. */
   const toggleGridLayer = useCallback(
     (layer: "half" | "quarter", position: CellPosition) => {
       if (
@@ -300,8 +295,8 @@ export function useTracker(
     [pattern, snapshot],
   );
 
-  /** Coche/décoche un segment de point arrière ou un nœud, par index dans
-   * `Pattern.backstitch`/`frenchKnots` — jamais un index de grille. */
+  /** Checks/unchecks a backstitch segment or a knot, by index into
+   * `Pattern.backstitch`/`frenchKnots` — never a grid index. */
   const toggleElementLayer = useCallback(
     (layer: "backstitch" | "knot", index: number) => {
       const current = doneRef.current;
@@ -328,11 +323,11 @@ export function useTracker(
         return;
       }
 
-      // Point arrière / nœud : la cible est le segment ou le point le plus
-      // proche du contact, pas une case — coupé en dessous de
-      // `SYMBOL_MIN_CELL` (même seuil que l'apparition des symboles) : à ce
-      // zoom, une case fait quelques pixels et deux éléments voisins
-      // deviendraient impossibles à distinguer au doigt.
+      // Backstitch / knot: the target is the segment or point nearest the
+      // touch, not a cell — disabled below `SYMBOL_MIN_CELL` (the same
+      // threshold at which symbols appear): at that zoom, a cell is a few
+      // pixels and two neighbouring elements would become impossible to tell
+      // apart with a finger.
       if (cell < SYMBOL_MIN_CELL) return;
       const tolerance = Math.min(SPECIAL_TAP_TOLERANCE_MAX_CELLS, SPECIAL_TAP_TOLERANCE_PX / cell);
       if (activeLayer === "backstitch") {
@@ -362,8 +357,8 @@ export function useTracker(
           const index = y * pattern.width + x;
           const colour = pattern.cells[index] ?? 0;
           if (colour === 0) continue;
-          // Avec un filtre actif, on ne remplit que la couleur filtrée : c'est
-          // le geste « termine cette couleur dans la zone visible ».
+          // With an active filter, only the filtered colour is filled: this is
+          // the "finish this colour in the visible area" gesture.
           if (highlight !== 0 && colour !== highlight) continue;
           if (current.full[index] === value) continue;
           current.full[index] = value;
@@ -379,9 +374,9 @@ export function useTracker(
   const undo = useCallback(() => {
     const previous = historyRef.current.pop();
     if (previous === undefined) return;
-    // On réécrit dans les mêmes tableaux plutôt que d'en changer la
-    // référence : la bibliothèque et les statistiques pointent dessus et
-    // doivent continuer à voir la progression réelle après une annulation.
+    // Write back into the same arrays rather than changing their reference:
+    // the library and statistics point to them and must keep seeing the real
+    // progress after an undo.
     const current = doneRef.current;
     const changes: CellChange[] = [];
     const hasListener = onChangeRef.current !== undefined;
@@ -442,16 +437,16 @@ export function useTracker(
       panDeltaX = 0,
     ) => {
       const clampedCell = Math.max(MIN_CELL, Math.min(MAX_CELL, nextCell));
-      // Case du motif actuellement sous le point d'ancrage (le point médian du
-      // pincement), avant que la taille de case ne change.
+      // Pattern cell currently under the anchor point (the pinch midpoint),
+      // before the cell size changes.
       const anchorCellX = offset.x0 + (anchorScreenX - canvasRect.left) / cell;
       const anchorCellY = offset.y0 + (anchorScreenY - canvasRect.top) / cell;
       setCell(clampedCell);
-      // On replace l'origine de la vue pour que cette même case du motif se
-      // retrouve toujours sous le point d'ancrage une fois la taille changée —
-      // c'est ce qui fait « zoomer sous les doigts » plutôt que vers un coin —
-      // puis on ajoute le déplacement du même geste, plutôt qu'un `setOffset`
-      // séparé qui se ferait écraser par ce calcul.
+      // Reposition the view's origin so that this same pattern cell is still
+      // under the anchor point once the size has changed — this is what makes
+      // it "zoom under the fingers" rather than towards a corner — then add
+      // the pan from the same gesture, rather than a separate `setOffset`
+      // that would be overwritten by this computation.
       setOffset(
         anchorCellX - (anchorScreenX - canvasRect.left) / clampedCell + panDeltaX,
         anchorCellY - (anchorScreenY - canvasRect.top) / clampedCell,

@@ -7,19 +7,19 @@ import type { CellPosition, ImportPainter } from "../state/useImportPainter";
 
 interface ImportGridPainterProps {
   painter: ImportPainter;
-  /** Index de palette 1-based actuellement choisi pour peindre ; 0 = gomme. */
+  /** 1-based palette index currently chosen for painting; 0 = eraser. */
   activeIndex: number;
-  /** Cases signalées incertaines par la détection type B/C (Lot 5) — voir
+  /** Cells flagged uncertain by type B/C detection (Lot 5) — see
    * `pattern/render.ts::DrawGridOptions.uncertainCells`. */
   uncertainCells?: ReadonlySet<number> | null;
 }
 
 /**
- * Canvas de peinture par zone (Lot 2) : glisser dessine une sélection
- * rectangulaire, qui se peint immédiatement de la couleur active dès que le
- * doigt se lève — même geste que « marquer toute cette couleur » côté suivi,
- * sans bouton de confirmation séparé pour rester rapide sur une grille peinte
- * à la main case par case.
+ * Area-painting canvas (Lot 2): dragging draws a rectangular selection,
+ * which is painted with the active colour as soon as the finger lifts — the
+ * same gesture as "mark all of this colour" in tracking, with no separate
+ * confirmation button so it stays quick on a grid painted by hand cell by
+ * cell.
  */
 export function ImportGridPainter({
   painter,
@@ -39,8 +39,8 @@ export function ImportGridPainter({
   const [tool, setTool] = useState<"paint" | "pan">("paint");
   const { pattern, view, cursor, selection } = painter;
 
-  // Voir TrackScreen.tsx : force un nouveau rendu une fois qu'un symbole
-  // réel (Lot 4) termine de se décoder de façon asynchrone.
+  // See TrackScreen.tsx: forces a re-render once a real symbol (Lot 4)
+  // finishes decoding asynchronously.
   const [symbolImageTick, setSymbolImageTick] = useState(0);
   useEffect(() => onSymbolImageLoaded(() => setSymbolImageTick((value) => value + 1)), []);
 
@@ -62,19 +62,19 @@ export function ImportGridPainter({
     drawOverlay(canvas, { view, accent, cursor, selection });
   }, [pattern, view, cursor, selection, resolved, symbolImageTick, uncertainCells]);
 
-  // Molette/trackpad : zoome sous le curseur — voir TrackScreen.tsx pour le
-  // détail (écouteur DOM natif, pas `onWheel` React, pour que
-  // `preventDefault()` empêche vraiment le défilement de la page).
+  // Wheel/trackpad: zooms under the cursor — see TrackScreen.tsx for the
+  // details (native DOM listener, not React `onWheel`, so that
+  // `preventDefault()` really prevents page scrolling).
   useEffect(() => {
     const canvas = canvasRef.current;
     if (canvas === null) return;
 
     const onWheel = (event: WheelEvent): void => {
       event.preventDefault();
-      // Glissé horizontal du trackpad : déplace la vue plutôt que de zoomer
-      // — voir TrackScreen.tsx pour le détail du même choix, et pour
-      // pourquoi un geste en diagonale doit passer par le même appel à
-      // `zoomTo` plutôt qu'un `setOffset` séparé.
+      // Horizontal trackpad swipe: pans the view rather than zooming — see
+      // TrackScreen.tsx for the details of the same choice, and for why a
+      // diagonal gesture must go through the same `zoomTo` call rather than
+      // a separate `setOffset`.
       const panDeltaX = event.deltaX !== 0 ? event.deltaX / view.cell : 0;
       if (event.deltaY !== 0) {
         const rect = canvas.getBoundingClientRect();

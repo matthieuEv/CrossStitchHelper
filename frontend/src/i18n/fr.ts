@@ -1,10 +1,9 @@
 /**
- * Français — langue source du projet.
+ * French — the project's source language.
  *
- * Ce fichier définit l'ensemble des clés : `en.ts` est typé d'après lui, donc
- * une clé ajoutée ici provoque une erreur de compilation tant que l'anglais
- * n'est pas complété. C'est ce qui garantit qu'aucune traduction ne manque
- * silencieusement.
+ * This file defines the full set of keys: `en.ts` is typed from it, so a key
+ * added here causes a compilation error until the English is completed. That
+ * is what guarantees that no translation silently goes missing.
  */
 export const fr = {
   "app.name": "CrossStitchHelper",
@@ -177,11 +176,11 @@ export const fr = {
   "demo.notice":
     "Motif de démonstration. L'import réel de fichiers arrivera avec le moteur d'extraction.",
 
-  // --- Erreurs API (audit des traductions, Lot 8) ---------------------------
-  // Traduction des codes `ApiErrorDetail.code` (backend/app/schemas.py) —
-  // jamais un message déjà composé côté serveur. `error.unknown` est le
-  // repli si le serveur renvoie un code que ce frontend ne connaît pas
-  // encore (décalage de version).
+  // --- API errors (translation audit, Lot 8) --------------------------------
+  // Translations of the `ApiErrorDetail.code` codes (backend/app/schemas.py) —
+  // never a message already composed on the server. `error.unknown` is the
+  // fallback if the server returns a code this frontend does not know yet
+  // (version skew).
   "error.unknown": "Une erreur est survenue.",
   "error.backup_unexpected_format": "Format de sauvegarde inattendu : {got} (attendu {expected}).",
   "error.backup_unsupported_version":
@@ -208,11 +207,11 @@ export const fr = {
   "error.pattern_progress_index_out_of_range":
     "Index hors limites pour la catégorie « {layer} » : {index} >= {bound}.",
 
-  // --- Avertissements de détection automatique (audit des traductions, Lot 8) --
-  // Traduction des codes `DetectionWarning.code` (backend/app/schemas.py),
-  // affichés dans l'assistant d'import (ImportScreen.tsx). Noms de paramètres
-  // (`{declared_columns}`, `{max_mb}`…) en snake_case : ils viennent tels
-  // quels du backend (`params: dict[str, ...]`), jamais renommés en chemin.
+  // --- Automatic detection warnings (translation audit, Lot 8) --------------
+  // Translations of the `DetectionWarning.code` codes (backend/app/schemas.py),
+  // shown in the import wizard (ImportScreen.tsx). Parameter names
+  // (`{declared_columns}`, `{max_mb}`…) are snake_case: they come as is from
+  // the backend (`params: dict[str, ...]`), never renamed along the way.
   "import.warning.unknown": "Un point mérite vérification (détails indisponibles).",
 
   "import.warning.type_a.missing_full_stitches_legend":

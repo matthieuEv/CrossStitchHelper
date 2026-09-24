@@ -1,4 +1,4 @@
-/** Conversion des réponses de l'API vers les types du noyau motif (`pattern/types.ts`). */
+/** Conversion of API responses into the pattern core types (`pattern/types.ts`). */
 
 import type {
   ApiGrid,
@@ -32,10 +32,9 @@ function paletteFromImportEntries(entries: ApiImportPaletteEntry[]): PaletteEntr
 }
 
 /**
- * Assemble un `Pattern` à partir de l'aperçu calculé par l'assistant d'import
- * (Lot 2) — même format compact que `patternFromApi`, pour que l'écran de
- * peinture par zone et le récapitulatif réutilisent tel quel le rendu canvas
- * du suivi (`pattern/render.ts`).
+ * Builds a `Pattern` from the preview computed by the import wizard (Lot 2) —
+ * same compact format as `patternFromApi`, so the area-painting screen and
+ * the summary reuse the tracking canvas renderer as is (`pattern/render.ts`).
  */
 export function patternFromImportPreview(preview: ApiImportPreview, name: string): Pattern {
   const layer = decodeUint16Layer(base64ToBytes(preview.layer_full));
@@ -46,10 +45,10 @@ export function patternFromImportPreview(preview: ApiImportPreview, name: string
     width: preview.width,
     height: preview.height,
     cells: Uint8Array.from(layer),
-    // L'assistant d'import (Lots 2, 4, 5) ne produit que le point entier —
-    // le point arrière/nœuds/1-2/1-4 restent le périmètre du Lot 9, pas
-    // encore construit : couches toujours présentes mais vides ici, jamais
-    // `undefined` (voir `Pattern.cellsHalf`).
+    // The import wizard (Lots 2, 4, 5) only produces full stitches —
+    // backstitch/knots/1-2/1-4 remained Lot 9's scope, not built yet at the
+    // time: layers always present but empty here, never `undefined` (see
+    // `Pattern.cellsHalf`).
     cellsHalf: new Uint8Array(cellCount),
     cellsQuarter: new Uint8Array(cellCount),
     backstitch: [],
@@ -59,12 +58,12 @@ export function patternFromImportPreview(preview: ApiImportPreview, name: string
 }
 
 /**
- * Assemble un `Pattern` à partir des métadonnées et de la grille.
+ * Builds a `Pattern` from the metadata and the grid.
  *
- * `layer_full` est un `Uint16Array` côté serveur (§6.3, pour accueillir de
- * futures palettes de plus de 255 couleurs) ; le rendu canvas travaille en
- * `Uint8Array` — le rétrécissement est sûr tant qu'un motif reste sous 256
- * couleurs, ce qui couvre très largement tout motif de point de croix réel.
+ * `layer_full` is a `Uint16Array` on the server (§6.3, to accommodate future
+ * palettes of more than 255 colours); canvas rendering works in `Uint8Array`
+ * — narrowing is safe as long as a pattern stays under 256 colours, which
+ * covers virtually every real cross-stitch pattern.
  */
 export function patternFromApi(detail: ApiPatternDetail, grid: ApiGrid): Pattern {
   const layer = decodeUint16Layer(base64ToBytes(grid.layer_full));
@@ -78,8 +77,8 @@ export function patternFromApi(detail: ApiPatternDetail, grid: ApiGrid): Pattern
     width: detail.width,
     height: detail.height,
     cells: Uint8Array.from(layer),
-    // Toujours présentes (même vides) — voir `Pattern.cellsHalf` : le rendu
-    // et le suivi n'ont ainsi jamais de cas particulier « couche absente ».
+    // Always present (even empty) — see `Pattern.cellsHalf`: rendering and
+    // tracking thus never have a "missing layer" special case.
     cellsHalf: half !== null ? Uint8Array.from(half) : new Uint8Array(cellCount),
     cellsQuarter: quarter !== null ? Uint8Array.from(quarter) : new Uint8Array(cellCount),
     backstitch: grid.backstitch.map((segment) => ({
@@ -103,9 +102,9 @@ export function progressFromApi(progress: ApiProgress): Progress {
 }
 
 /**
- * Assemble la progression des quatre catégories de points spéciaux (Lot 8) à
- * partir de `GET /grid` (tailles) et `GET /progress` (bitmaps) — séparé de
- * `progressFromApi` (point entier) pour ne pas changer sa forme, voir
+ * Builds the progress of the four special stitch categories (Lot 8) from
+ * `GET /grid` (sizes) and `GET /progress` (bitmaps) — separate from
+ * `progressFromApi` (full stitch) so as not to change its shape, see
  * `SpecialProgress`.
  */
 export function specialProgressFromApi(grid: ApiGrid, progress: ApiProgress): SpecialProgress {

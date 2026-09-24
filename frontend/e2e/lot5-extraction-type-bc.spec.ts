@@ -3,23 +3,22 @@ import { fileURLToPath } from "node:url";
 import { expect, test } from "@playwright/test";
 
 /**
- * Vérifie le critère "terminé quand" du Lot 5 (docs/roadmap.md) : les
- * fixtures DMC vectorielles (types B/C) s'importent avec leurs couleurs
- * correctes, la bonne stratégie de page(s) détectée automatiquement, et un
- * signalement explicite des cases incertaines — contre une vraie instance,
- * avec les vrais fichiers de référence, la détection tournant réellement en
- * tâche de fond côté serveur (voir `backend/app/api/imports.py`,
- * `backend/app/type_bc.py`).
+ * Checks Lot 5's "done when" criterion (docs/roadmap.md): the DMC vector
+ * fixtures (types B/C) import with their correct colours, the right page
+ * strategy detected automatically, and explicit flagging of uncertain cells
+ * — against a real instance, with the real reference files, with detection
+ * really running as a background task on the server (see
+ * `backend/app/api/imports.py`, `backend/app/type_bc.py`).
  *
- * Plus lent que le reste de cette suite (analyse structurelle réelle,
- * quelques secondes à une dizaine de secondes selon la fixture) : c'est
- * attendu, voir `backend/tests/test_type_bc.py` pour la vérification
- * exhaustive de la justesse de l'extraction elle-même — ces tests-ci ne
- * vérifient que le parcours utilisateur bout en bout.
+ * Slower than the rest of this suite (real structural analysis, a few
+ * seconds to about ten seconds depending on the fixture): that is expected,
+ * see `backend/tests/test_type_bc.py` for the exhaustive verification of the
+ * extraction's correctness itself — these tests only check the end-to-end
+ * user journey.
  */
 
-/** Type C, superposition à deux pages réellement nécessaire (page couleur
- * propre + page symboles séparée) — voir `fixtures/README.md`. */
+/** Type C, two-page overlay genuinely needed (clean colour page + separate
+ * symbol page) — see `fixtures/README.md`. */
 const BOTANICAL_CITRUS_PATH = fileURLToPath(
   new URL(
     "../../fixtures/botanical-citrus-dmc/agrumes_-_planche_botanique.pdf",
@@ -27,21 +26,20 @@ const BOTANICAL_CITRUS_PATH = fileURLToPath(
   ),
 );
 
-/** Cas piège du Lot 5 (cahier des charges §4.3) : même gabarit visuel DMC,
- * mais la page couleur porte déjà elle-même une quantité de tracés
- * vectoriels comparable à une page symboles — le connecteur doit s'en
- * apercevoir et ne jamais superposer une deuxième page redondante à
- * l'aveugle. La reconnaissance de forme s'y avère en plus trop peu fiable
- * sur l'ensemble du fichier (illustration richement nuancée), d'où un repli
- * honnête en type B plutôt qu'une palette de plusieurs centaines d'entrées
- * inutilisable — voir `backend/tests/test_type_bc.py`. */
+/** Lot 5's trap case (specification §4.3): same DMC visual template, but the
+ * colour page itself already carries an amount of vector paths comparable
+ * to a symbol page — the connector must notice this and never blindly
+ * overlay a redundant second page. Shape recognition also turns out to be
+ * too unreliable across the whole file (richly shaded illustration), hence
+ * an honest fallback to type B rather than an unusable palette of several
+ * hundred entries — see `backend/tests/test_type_bc.py`. */
 const SUMMER_FLIGHT_PATH = fileURLToPath(
   new URL("../../fixtures/summer-flight-dmc/vol_de_te.pdf", import.meta.url),
 );
 
 const DETECTION_TIMEOUT = 90_000;
 
-test("un PDF type C avec superposition pré-remplit l'assistant avec de vrais symboles et signale les cases incertaines", async ({
+test("a type C PDF with an overlay pre-fills the wizard with real symbols and flags uncertain cells", async ({
   page,
 }) => {
   test.setTimeout(120_000);
@@ -57,9 +55,8 @@ test("un PDF type C avec superposition pré-remplit l'assistant avec de vrais sy
   await expect(page.getByText(/Détection automatique : type C/)).toBeVisible({
     timeout: DETECTION_TIMEOUT,
   });
-  // Signalement explicite des cases incertaines (roadmap Lot 5, "terminé
-  // quand") : jamais une case fausse laissée sans indication dans la
-  // bannière de détection.
+  // Explicit flagging of uncertain cells (roadmap Lot 5, "done when"): never
+  // a wrong cell left without indication in the detection banner.
   await expect(page.getByText(/case\(s\) signalée\(s\) comme incertaine\(s\)/)).toBeVisible();
 
   const [columnsInput, rowsInput] = await page.locator("input.input").all();
@@ -68,9 +65,9 @@ test("un PDF type C avec superposition pré-remplit l'assistant avec de vrais sy
 
   await page.getByRole("button", { name: "Continuer", exact: true }).click();
 
-  // Étape Palette : au moins une entrée doit porter un vrai symbole découpé
-  // du PDF (page symboles superposée), pas seulement une couleur — mêmes
-  // sélecteurs que le Lot 4 pour les pastilles et la légende éditable.
+  // Palette step: at least one entry must carry a real symbol cut out of the
+  // PDF (overlaid symbol page), not just a colour — same selectors as Lot 4
+  // for the swatches and the editable legend.
   const paletteSwatchImages = page.locator('button.badge img[src^="data:image/svg+xml;base64,"]');
   await expect(paletteSwatchImages.first()).toBeVisible();
 
@@ -79,9 +76,9 @@ test("un PDF type C avec superposition pré-remplit l'assistant avec de vrais sy
   );
   await expect(legendRowImages.first()).toBeVisible();
 
-  // Repère visuel des cases incertaines sur le pinceau lui-même (Lot 5,
-  // `pattern/render.ts`) : le texte d'indicatif doit apparaître sous le
-  // canvas, avec un décompte non nul — cohérent avec la bannière ci-dessus.
+  // Visual marker of uncertain cells on the brush itself (Lot 5,
+  // `pattern/render.ts`): the hint text must appear under the canvas, with a
+  // non-zero count — consistent with the banner above.
   await expect(page.getByText(/case\(s\) marquée\(s\) d'un repère/)).toBeVisible();
 
   await page.getByRole("button", { name: "Continuer", exact: true }).click();
@@ -90,7 +87,7 @@ test("un PDF type C avec superposition pré-remplit l'assistant avec de vrais sy
   await nameInput.fill(`e2e type C ${Date.now()}`);
   await page.getByRole("button", { name: "Ajouter et commencer" }).click();
 
-  // Doit atterrir sur un vrai écran de suivi, motif entier assemblé.
+  // Must land on a real tracking screen, whole pattern assembled.
   await expect(page.locator("canvas.track-canvas")).toBeVisible();
   const symbolImages = page.locator('img[src^="data:image/svg+xml;base64,"]');
   await expect(symbolImages.first()).toBeVisible();
@@ -98,7 +95,7 @@ test("un PDF type C avec superposition pré-remplit l'assistant avec de vrais sy
   expect(pageErrors).toEqual([]);
 });
 
-test("le cas piège summer-flight-dmc ne superpose jamais une page redondante et se replie honnêtement en type B", async ({
+test("the summer-flight-dmc trap case never overlays a redundant page and honestly falls back to type B", async ({
   page,
 }) => {
   test.setTimeout(120_000);
@@ -117,10 +114,10 @@ test("le cas piège summer-flight-dmc ne superpose jamais une page redondante et
 
   await page.getByRole("button", { name: "Continuer", exact: true }).click();
 
-  // Type B : couleur seule, jamais un symbole présenté comme fiable alors
-  // qu'il ne l'est pas (`app/type_bc.py` : repli plutôt qu'une palette de
-  // plusieurs centaines d'entrées inutilisable). Une palette réelle doit
-  // malgré tout être là, pas une liste vide comme au Lot 2 manuel.
+  // Type B: colour only, never a symbol presented as reliable when it is not
+  // (`app/type_bc.py`: fallback rather than an unusable palette of several
+  // hundred entries). A real palette must still be there, not an empty list
+  // as in manual Lot 2.
   await expect(page.getByPlaceholder("Code").first()).toBeVisible();
   expect(await page.getByPlaceholder("Code").count()).toBeGreaterThan(0);
   expect(

@@ -7,15 +7,15 @@ import type { Pattern, Progress } from "../pattern/types";
 interface PatternThumbnailProps {
   pattern: Pattern;
   progress: Progress | null;
-  /** Étiquette lue par les lecteurs d'écran à la place de l'image. */
+  /** Label read by screen readers in place of the image. */
   label: string;
 }
 
 /**
- * Aperçu du motif entier.
+ * Preview of the whole pattern.
  *
- * Redessiné quand le thème change (les cases faites sont délavées vers la
- * couleur de fond) et quand la boîte change de taille.
+ * Redrawn when the theme changes (done cells are washed out towards the
+ * background colour) and when the box changes size.
  */
 export function PatternThumbnail({ pattern, progress, label }: PatternThumbnailProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -29,8 +29,8 @@ export function PatternThumbnail({ pattern, progress, label }: PatternThumbnailP
       drawThumbnail(canvas, pattern, progress, readGridTheme(canvas));
     };
 
-    // Au premier rendu la boîte peut encore être à zéro : on laisse le
-    // ResizeObserver déclencher le dessin dès qu'elle est mesurée.
+    // On first render the box can still be zero-sized: let the
+    // ResizeObserver trigger the drawing as soon as it is measured.
     render();
     const observer = new ResizeObserver(render);
     observer.observe(canvas);

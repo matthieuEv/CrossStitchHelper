@@ -2,25 +2,25 @@
 <html lang="fr">
   <head>
     <meta charset="utf-8" />
-    <!-- viewport-fit=cover : l'application occupe l'écran jusqu'aux bords, et
-         les zones sûres sont gérées en CSS via env(safe-area-inset-*). -->
+    <!-- viewport-fit=cover: the application fills the screen to the edges, and
+         safe areas are handled in CSS via env(safe-area-inset-*). -->
     <meta
       name="viewport"
       content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no"
     />
     <meta name="color-scheme" content="light dark" />
     <meta name="theme-color" content="#f5ead8" />
-    <!-- Applique le thème choisi (clair/sombre/système, `src/lib/theme.tsx`)
-         et la langue (`src/i18n/index.tsx`) avant le premier rendu : sans ce
-         script bloquant, un choix explicite différent du système/navigateur
-         afficherait un éclair de mauvais thème, ou un `<html lang>` incorrect
-         pendant l'instant où React démarre. Logique dupliquée depuis
-         `theme.tsx`/`i18n/index.tsx` à dessein — ce script tourne avant que
-         le bundle applicatif ne soit chargé, donc avant que quoi que ce soit
-         d'autre ne soit disponible. Couleurs en dur ici pour la même raison
-         qu'aucune variable CSS n'est encore chargée à ce stade ; les garder
-         synchronisées avec `--color-bg` (`index.css`) est manuel mais
-         volontaire. -->
+    <!-- Applies the chosen theme (light/dark/system, `src/lib/theme.tsx`) and
+         language (`src/i18n/index.tsx`) before the first render: without this
+         blocking script, an explicit choice different from the
+         system/browser would show a flash of the wrong theme, or an incorrect
+         `<html lang>`, for the instant React takes to start. Logic
+         deliberately duplicated from `theme.tsx`/`i18n/index.tsx` — this
+         script runs before the application bundle is loaded, hence before
+         anything else is available. Colours hard-coded here for the same
+         reason, since no CSS variable is loaded yet at this point; keeping
+         them in sync with `--color-bg` (`index.css`) is manual but
+         deliberate. -->
     <script>
       (function () {
         try {
@@ -32,8 +32,8 @@
           var meta = document.querySelector('meta[name="theme-color"]');
           if (meta) meta.setAttribute("content", resolved === "dark" ? "#1f1d19" : "#f5ead8");
         } catch (e) {
-          // localStorage indisponible (navigation privée) : reste sur le clair
-          // par défaut, déjà posé en dur ci-dessus.
+          // localStorage unavailable (private browsing): stay on the default
+          // light theme, already hard-coded above.
         }
         try {
           var storedLanguage = localStorage.getItem("csh.language");
@@ -45,12 +45,12 @@
                 : "en";
           document.documentElement.lang = language;
         } catch (e) {
-          // localStorage indisponible : reste sur "fr", déjà posé en dur ci-dessus.
+          // localStorage unavailable: stay on "fr", already hard-coded above.
         }
       })();
     </script>
-    <!-- Sans cette balise, iOS affiche la barre Safari même une fois l'app
-         ajoutée à l'écran d'accueil. -->
+    <!-- Without this tag, iOS shows the Safari bar even once the app has been
+         added to the home screen. -->
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="CrossStitch" />
