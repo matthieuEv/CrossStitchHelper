@@ -1,4 +1,4 @@
-# Données utilisateur — ne jamais committer (motifs importés, progression, PDF sources)
+# User data — never commit (imported patterns, progress, source PDFs)
 data/
 *.db
 *.sqlite
@@ -29,12 +29,12 @@ playwright/.cache/
 .env.*
 !.env.example
 
-# OS / éditeurs
+# OS / editors
 .DS_Store
 Thumbs.db
 .vscode/
 .idea/
 *.swp
 
-# Claude Code — worktrees créés pour des sous-agents isolés
+# Claude Code — worktrees created for isolated sub-agents
 .claude/worktrees/

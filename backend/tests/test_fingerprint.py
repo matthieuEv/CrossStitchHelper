@@ -1,16 +1,16 @@
-"""Tests de `app/fingerprint.py` (Lot 6) contre les six fixtures de
-référence — voir `fixtures/README.md`.
+"""Tests for `app/fingerprint.py` (Lot 6) against the six reference
+fixtures — see `fixtures/README.md`.
 
-Le seul résultat vérifiable sans une véritable paire "même éditeur, fichier
-différent" fabriquée par des tiers est celui déjà observé sur ce jeu de
-fixtures : `botanical-citrus-dmc` et `cucurbit-dmc` sont deux grilles DMC
-officielles de 4 pages, même gabarit d'export — l'empreinte doit les
-reconnaître comme identiques. `winter-wreath-dmc` et `summer-flight-dmc`
-sont volontairement d'un gabarit DMC différent (5 pages, structure interne
-différente, cahier des charges §4.1) : leur empreinte doit rester distincte
-de la paire ci-dessus et l'une de l'autre. `cafe-brasserie-charting-export`
-(logiciel tiers, pas DMC) et `river-and-mountains-laserarts` (éditeur tiers
-différent) doivent chacun rester isolés."""
+The only result verifiable without a genuine "same publisher, different
+file" pair produced by third parties is the one already observed on this
+fixture set: `botanical-citrus-dmc` and `cucurbit-dmc` are two official
+4-page DMC charts with the same export template — the fingerprint must
+recognise them as identical. `winter-wreath-dmc` and `summer-flight-dmc`
+deliberately use a different DMC template (5 pages, different internal
+structure, specification §4.1): their fingerprint must stay distinct from
+the pair above and from each other. `cafe-brasserie-charting-export`
+(third-party software, not DMC) and `river-and-mountains-laserarts`
+(a different third-party publisher) must each remain isolated."""
 
 from __future__ import annotations
 

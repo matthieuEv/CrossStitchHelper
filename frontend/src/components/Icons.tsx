@@ -1,4 +1,4 @@
-/** Icônes de l'interface, reprises des maquettes. Trait épais, bouts arrondis. */
+/** Interface icons, taken from the mockups. Thick stroke, rounded caps. */
 
 interface IconProps {
   size?: number;
@@ -146,8 +146,8 @@ export function UploadIcon(props: IconProps) {
   );
 }
 
-/** Point 1/2 (Lot 8) : triangle occupant la moitié de la case, diagonale —
- * même convention que le rendu canvas (`pattern/render.ts`). */
+/** 1/2 stitch (Lot 8): a triangle taking half of the cell, diagonal — same
+ * convention as the canvas renderer (`pattern/render.ts`). */
 export function HalfStitchIcon(props: IconProps) {
   return (
     <Svg {...props}>
@@ -157,7 +157,7 @@ export function HalfStitchIcon(props: IconProps) {
   );
 }
 
-/** Point 1/4 (Lot 8) : un triangle plus petit qu'un point 1/2, même coin. */
+/** 1/4 stitch (Lot 8): a triangle smaller than a 1/2 stitch, same corner. */
 export function QuarterStitchIcon(props: IconProps) {
   return (
     <Svg {...props}>
@@ -167,7 +167,7 @@ export function QuarterStitchIcon(props: IconProps) {
   );
 }
 
-/** Point arrière (Lot 8) : trait le long des coins de case. */
+/** Backstitch (Lot 8): a stroke along cell corners. */
 export function BackstitchIcon(props: IconProps) {
   return (
     <Svg {...props}>
@@ -176,7 +176,7 @@ export function BackstitchIcon(props: IconProps) {
   );
 }
 
-/** Nœud (Lot 8) : point rond au centre de case. */
+/** Knot (Lot 8): a round dot at the cell centre. */
 export function FrenchKnotIcon(props: IconProps) {
   return (
     <svg
@@ -195,7 +195,7 @@ export function FrenchKnotIcon(props: IconProps) {
   );
 }
 
-/** Œil barré : masque les cases déjà brodées pour ne montrer que le reste à faire. */
+/** Crossed-out eye: hides already stitched cells to show only what is left to do. */
 export function EyeOffIcon(props: IconProps) {
   return (
     <Svg {...props}>

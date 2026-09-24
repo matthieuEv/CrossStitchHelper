@@ -1,7 +1,7 @@
-"""Routes de sauvegarde/restauration complète (Lot 8, cahier des charges §7.5).
+"""Full backup/restore routes (Lot 8, specification §7.5).
 
-Distinct de `app/api/patterns.py::export_pattern` (`.cshp`, un seul motif) :
-ici, toute l'instance en un document JSON (`app/backup.py`).
+Distinct from `app/api/patterns.py::export_pattern` (`.cshp`, a single
+pattern): here, the whole instance as one JSON document (`app/backup.py`).
 """
 
 from __future__ import annotations
@@ -19,12 +19,12 @@ from app.db import get_session
 from app.http import api_error, content_disposition
 from app.schemas import AutoBackupSettings, BackupDocument, BackupRestoreSummary
 
-router = APIRouter(prefix="/backup", tags=["sauvegarde"])
+router = APIRouter(prefix="/backup", tags=["backup"])
 
 
 @router.get(
     "",
-    summary="Export complet des données (JSON, format ouvert)",
+    summary="Full data export (JSON, open format)",
     response_class=Response,
 )
 def export_backup(session: Annotated[Session, Depends(get_session)]) -> Response:
@@ -40,7 +40,7 @@ def export_backup(session: Annotated[Session, Depends(get_session)]) -> Response
 @router.post(
     "/restore",
     response_model=BackupRestoreSummary,
-    summary="Restauration complète — remplace toutes les données existantes",
+    summary="Full restore — replaces all existing data",
 )
 def restore(
     document: BackupDocument, session: Annotated[Session, Depends(get_session)]
@@ -54,7 +54,7 @@ def restore(
 @router.get(
     "/auto",
     response_model=AutoBackupSettings,
-    summary="Réglage de la sauvegarde automatique quotidienne",
+    summary="Daily automatic backup setting",
 )
 def get_auto_backup(session: Annotated[Session, Depends(get_session)]) -> AutoBackupSettings:
     return AutoBackupSettings(enabled=is_auto_backup_enabled(session))
@@ -63,7 +63,7 @@ def get_auto_backup(session: Annotated[Session, Depends(get_session)]) -> AutoBa
 @router.put(
     "/auto",
     response_model=AutoBackupSettings,
-    summary="Active ou désactive la sauvegarde automatique quotidienne",
+    summary="Enable or disable the daily automatic backup",
 )
 def put_auto_backup(
     payload: AutoBackupSettings, session: Annotated[Session, Depends(get_session)]

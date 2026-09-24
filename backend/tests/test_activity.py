@@ -4,9 +4,9 @@ from datetime import UTC, datetime, timedelta
 
 from app.activity import compute_activity
 
-# Mercredi 2026-01-07 12:00 UTC — jour de semaine ISO connu (2 = mercredi,
-# 0-based comme `ActivityDayOut.weekday`), point de référence fixe pour que
-# les tests ne dépendent jamais de la date d'exécution.
+# Wednesday 2026-01-07 12:00 UTC — known ISO weekday (2 = Wednesday, 0-based
+# like `ActivityDayOut.weekday`), a fixed reference point so the tests never
+# depend on the date they run.
 NOW = datetime(2026, 1, 7, 12, 0, tzinfo=UTC)
 
 
@@ -18,8 +18,8 @@ def test_empty_events_gives_zeroed_week_and_no_sessions() -> None:
 
 
 def test_stitches_bucketed_by_iso_weekday() -> None:
-    # NOW est un mercredi (weekday=2) ; un événement la veille tombe sur
-    # weekday=1 (mardi).
+    # NOW is a Wednesday (weekday=2); an event the day before falls on
+    # weekday=1 (Tuesday).
     events = [
         (NOW, [{"index": 1, "stitched": True}, {"index": 2, "stitched": True}]),
         (NOW - timedelta(days=1), [{"index": 3, "stitched": True}]),
@@ -63,7 +63,7 @@ def test_gap_over_threshold_splits_into_two_sessions() -> None:
     ]
     result = compute_activity(events, now=NOW)
     assert len(result.sessions) == 2
-    # Les séances sont rendues les plus récentes d'abord.
+    # Sessions are returned most recent first.
     assert result.sessions[0].hours_ago < result.sessions[1].hours_ago
 
 
@@ -74,9 +74,9 @@ def test_single_event_session_has_a_one_minute_floor() -> None:
 
 
 def test_sessions_are_capped_and_sorted_most_recent_first() -> None:
-    # Triés par `ts` croissant, comme l'exige `compute_activity` — les plus
-    # anciens (le plus grand nombre d'heures dans le passé) en premier.
-    # Bien plus que MAX_SESSIONS, un événement isolé chacun.
+    # Sorted by ascending `ts`, as `compute_activity` requires — the oldest
+    # (the largest number of hours in the past) first.
+    # Far more than MAX_SESSIONS, one isolated event each.
     events = [
         (NOW - timedelta(hours=hours), [{"index": hours, "stitched": True}])
         for hours in reversed(range(0, 200, 2))

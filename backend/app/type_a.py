@@ -1,26 +1,24 @@
-"""Détection automatique du type A (export logiciel de charting, cahier des
-charges §4.3, §4.4 et §8.1-8.3).
+"""Automatic detection of type A (charting software export, specification
+§4.3, §4.4 and §8.1-8.3).
 
-Un PDF type A embarque une police de symboles personnalisée où **un glyphe =
-un symbole = une couleur**, plus une légende texte qui fait autorité sur le
-code DMC et le nom de couleur (§8.5 : le texte de la légende n'est jamais
-remplacé par un rapprochement colorimétrique quand il est disponible).
+A type A PDF embeds a custom symbol font where **one glyph = one symbol =
+one colour**, plus a text legend that is authoritative on the DMC code and
+the colour name (§8.5: the legend text is never replaced by a colorimetric
+match when it is available).
 
-Rien ici n'est codé en dur pour la fixture `cafe-brasserie-charting-export` :
-la police de symboles est repérée par sa régularité géométrique (beaucoup de
-glyphes d'une même police qui pavent une grille régulière, distincte de
-toutes les autres polices de la page), pas par son nom de sous-ensemble PDF
-(`AAAAAC+CROSSSTICH6` ici, arbitraire d'un export à l'autre). Un exporteur
-type A différent, avec un autre nom de police et une autre mise en page de
-légende, devrait toujours produire un résultat exploitable — éventuellement
-avec une confiance plus basse et des avertissements, jamais un résultat
-silencieusement faux (règle impérative du `pdf-extraction-specialist`).
+Nothing here is hard-coded for the `cafe-brasserie-charting-export`
+fixture: the symbol font is identified by its geometric regularity (many
+glyphs of the same font tiling a regular grid, distinct from every other
+font on the page), not by its PDF subset name (`AAAAAC+CROSSSTICH6` here,
+arbitrary from one export to another). A different type A exporter, with
+another font name and another legend layout, should still produce a usable
+result — possibly with a lower confidence and warnings, never a silently
+wrong result (mandatory rule of the `pdf-extraction-specialist`).
 
-Module pur : aucune dépendance FastAPI/SQLAlchemy. Le point d'entrée
-`detect_type_a` ne lève jamais d'exception pour un PDF qui ne ressemble pas
-à un export type A — il renvoie `None`, laissant la suite du pipeline
-d'import (types B/C/D/E, Lots 5 à 7) ou le repli manuel (Lot 2) prendre le
-relais.
+Pure module: no FastAPI/SQLAlchemy dependency. The `detect_type_a` entry
+point never raises for a PDF that does not look like a type A export — it
+returns `None`, letting the rest of the import pipeline (types B/C/E,
+Lots 5 to 7) or the manual fallback (Lot 2) take over.
 """
 
 from __future__ import annotations
@@ -40,43 +38,42 @@ from app.dmc_catalog import nearest_dmc_among
 from app.dmc_colors import FALLBACK_HEX, dmc_hex
 from app.grid_lines import is_grid_ruling, line_length
 
-# `app.schemas` ne dépend que de Pydantic — l'importer ici ne rompt pas la
-# pureté du module (aucune dépendance FastAPI/SQLAlchemy, voir docstring).
+# `app.schemas` only depends on Pydantic — importing it here does not break
+# the module's purity (no FastAPI/SQLAlchemy dependency, see docstring).
 from app.schemas import BackstitchSegment, DetectionWarning, FrenchKnot
 
-# pdfplumber représente chaque caractère/rectangle positionné comme un
-# dictionnaire hétérogène (`T_obj = Dict[str, Any]` côté bibliothèque) — pas
-# de TypedDict public à réutiliser ici.
+# pdfplumber represents each positioned character/rectangle as a
+# heterogeneous dictionary (`T_obj = Dict[str, Any]` in the library) — no
+# public TypedDict to reuse here.
 Char = dict[str, Any]
 
-# Couleur normalisée d'un petit rectangle de fond (RVB ou niveau de gris
-# étendu en triplet, arrondi) — `None` quand aucun rectangle n'a pu être
-# associé au glyphe. Voir `_rect_color_under_char` pour le détail : ce
-# fichier de référence dessine, sous chaque glyphe de symbole, un petit
-# rectangle rempli de la couleur DMC réelle (à la fois sur la légende et sur
-# les pages de grille) — un même glyphe est parfois réutilisé pour deux
-# couleurs différentes (observé : le glyphe du point plein DMC 640 est aussi
-# celui du demi-point DMC 3756 dans ce fichier), alors que la couleur de
-# fond, elle, reste fiable. La clé de rapprochement grille <-> légende est
-# donc le couple (glyphe, couleur de fond), jamais le glyphe seul.
+# Normalised colour of a small background rectangle (RGB, or grey level
+# expanded to a triplet, rounded) — `None` when no rectangle could be
+# associated with the glyph. See `_rect_color_under_char` for the details:
+# this reference file draws, under each symbol glyph, a small rectangle
+# filled with the real DMC colour (both on the legend and on the grid pages)
+# — the same glyph is sometimes reused for two different colours (observed:
+# the DMC 640 full-stitch glyph is also the DMC 3756 half-stitch glyph in
+# this file), whereas the background colour stays reliable. The grid <->
+# legend matching key is therefore the (glyph, background colour) pair,
+# never the glyph alone.
 Color = tuple[float, ...]
 CellKey = tuple[str, Color | None]
 
-# Nombre minimal de glyphes d'une police pour envisager qu'elle pave une
-# grille régulière de symboles (en dessous, ce n'est probablement que du
-# texte courant ou une légende clairsemée).
+# Minimum number of glyphs of a font to consider that it tiles a regular
+# symbol grid (below that, it is probably just running text or a sparse
+# legend).
 _MIN_GRID_CHARS = 30
-# Nombre minimal de colonnes/lignes distinctes occupées pour parler de
-# « grille » plutôt que d'un simple alignement de quelques caractères.
+# Minimum number of distinct occupied columns/rows to speak of a "grid"
+# rather than a mere alignment of a few characters.
 _MIN_GRID_SPAN = 5
-# Densité minimale de remplissage (glyphes observés / cases du quadrillage
-# couvert) en dessous de laquelle le pavage est jugé trop clairsemé pour
-# être une grille de points de croix plutôt qu'un texte de paragraphe (qui,
-# à faible tolérance, peut sembler « tiler » avec un pas assez régulier lui
-# aussi — mais toujours en remplissant beaucoup moins de son rectangle
-# englobant : ~0.05-0.2 observé sur du texte courant contre ~0.9-1.0 sur une
-# vraie grille de symboles, qui remplit quasiment toutes les combinaisons
-# colonne/ligne de son pavage).
+# Minimum fill density (observed glyphs / cells of the covered grid) below
+# which the tiling is deemed too sparse to be a cross-stitch grid rather than
+# a paragraph of text (which, at low tolerance, can also seem to "tile" with
+# a fairly regular pitch — but always filling much less of its bounding
+# rectangle: ~0.05-0.2 observed on running text versus ~0.9-1.0 on a real
+# symbol grid, which fills almost every column/row combination of its
+# tiling).
 _MIN_GRID_DENSITY = 0.4
 
 _DECLARED_DIMENSIONS_RE = re.compile(r"(\d+)\s*w\s*[Xx]\s*(\d+)\s*h\s*Stitches")
@@ -84,18 +81,18 @@ _FABRIC_COUNT_RE = re.compile(r"Fabric:[^\n,]*?(\d+)")
 _SECTION_HEADER_RE = re.compile(r"^Floss Used for (.+?)\s*:")
 _SECTION_HEADER_PREFIX = "Floss Used for "
 _LEGEND_ROW_RE = re.compile(r"^(\S)\s*\d+\s*DMC\s+([A-Za-z0-9]+)\s+(.+)$")
-# Les sections « Back Stitches » et « French Knots » n'ont pas de glyphe de
-# symbole : leur colonne « Symbol » est un **échantillon vectoriel** (un
-# trait, un point) tracé dans la couleur exacte utilisée sur les pages de
-# grille — mesuré sur `cafe-brasserie-charting-export`, page 10. Leurs
-# lignes de texte commencent donc directement par le nombre de brins.
+# The "Back Stitches" and "French Knots" sections have no symbol glyph: their
+# "Symbol" column is a **vector swatch** (a stroke, a dot) drawn in the exact
+# colour used on the grid pages — measured on
+# `cafe-brasserie-charting-export`, page 10. Their text lines therefore start
+# directly with the number of strands.
 _SAMPLE_LEGEND_ROW_RE = re.compile(r"^\d+\s+DMC\s+([A-Za-z0-9]+)\s+(.+)$")
 
-# Catégories de points, dans l'ordre où l'exporteur les imprime. Les clés
-# sont les intitulés de section normalisés (minuscules, espaces compactés) :
-# un exporteur qui écrirait « Backstitch » plutôt que « Back Stitches » est
-# reconnu de la même façon, et un intitulé inconnu est simplement ignoré
-# (jamais une exception, jamais une section rangée au hasard).
+# Stitch categories, in the order the exporter prints them. The keys are the
+# normalised section headings (lowercase, compacted spaces): an exporter
+# writing "Backstitch" rather than "Back Stitches" is recognised the same
+# way, and an unknown heading is simply ignored (never an exception, never a
+# section filed at random).
 FULL = "full"
 HALF = "half"
 QUARTER = "quarter"
@@ -117,110 +114,108 @@ _SECTION_ALIASES: dict[str, str] = {
     "french knot": FRENCH_KNOT,
 }
 
-# Catégories dont les lignes de légende portent un échantillon vectoriel
-# plutôt qu'un glyphe de police.
+# Categories whose legend rows carry a vector swatch rather than a font
+# glyph.
 _SAMPLE_SECTIONS = frozenset({BACKSTITCH, FRENCH_KNOT})
 
-# Tolérance, en fraction de case, pour considérer qu'une extrémité de tracé
-# tombe sur le réseau demi-case (coin de case ou milieu de case). Mesuré sur
-# la fixture de référence : 5 172 extrémités sur 5 172 tombent à moins de
-# 0.02 case d'un multiple de 0.5 — la tolérance ci-dessous est donc large
-# sans être permissive.
+# Tolerance, as a fraction of a cell, for considering that a stroke endpoint
+# falls on the half-cell lattice (cell corner or cell midpoint). Measured on
+# the reference fixture: 5,172 endpoints out of 5,172 fall within 0.02 cell
+# of a multiple of 0.5 — the tolerance below is therefore generous without
+# being permissive.
 _SNAP_TOLERANCE = 0.08
 
-# Fraction de l'emprise de la grille de la page qu'un trait axe-aligné doit
-# couvrir pour être une réglure plutôt qu'un point arrière. Une réglure
-# traverse la grille de bord à bord ; un point arrière, même long et
-# parfaitement droit le long d'une frontière de case, reste local.
-# Volontairement exigeant : une première version filtrait à 12 cases et
-# supprimait de vrais points arrière rectilignes de la fixture de référence
-# (mesuré : -13 % sur DMC 310, -24 % sur DMC 938 par rapport aux longueurs
-# annoncées par la légende).
+# Fraction of the page's grid footprint an axis-aligned stroke must cover to
+# be a ruling rather than a backstitch. A ruling crosses the grid from edge
+# to edge; a backstitch, even long and perfectly straight along a cell
+# boundary, stays local. Deliberately demanding: a first version filtered at
+# 12 cells and removed real straight backstitches from the reference fixture
+# (measured: -13% on DMC 310, -24% on DMC 938 compared with the lengths
+# declared by the legend).
 _RULING_MIN_SPAN_RATIO = 0.8
 
-# Taille maximale (en cases) de la petite forme pleine d'un nœud. Mesuré :
-# les nœuds de la fixture font 0.885 case, les flèches de repère de page
-# (marges, hors motif) exactement 1.0 case — ce seuil les sépare, en plus du
-# filtre de couleur qui reste le signal principal.
+# Maximum size (in cells) of a knot's small solid shape. Measured: the
+# fixture's knots are 0.885 cell, the page landmark arrows (margins, outside
+# the pattern) exactly 1.0 cell — this threshold separates them, in addition
+# to the colour filter, which remains the main signal.
 _KNOT_MAX_CELLS = 0.95
 
-# Distance Lab au-delà de laquelle un rapprochement de couleur de repli
-# (aucun échantillon vectoriel dans la légende) est jugé trop douteux pour
-# rattacher un tracé à un code DMC déclaré.
+# Lab distance beyond which a fallback colour match (no vector swatch in the
+# legend) is deemed too doubtful to attach a stroke to a declared DMC code.
 _FALLBACK_MAX_LAB_DISTANCE = 30.0
 
-# Au-delà de ce nombre de tracés, une page n'est pas une page de légende :
-# voir `_sample_colors_for_row`.
+# Beyond this number of strokes, a page is not a legend page: see
+# `_sample_colors_for_row`.
 _MAX_LEGEND_PAGE_OBJECTS = 500
 
 
 @dataclass
 class SymbolGlyphLocation:
-    """Position d'une occurrence du glyphe de symbole sur la page PDF
-    source — jamais le glyphe lui-même (police privée, illisible hors de ce
-    fichier), mais assez pour qu'un appelant en dehors de ce module pur
-    (`app/imports_engine.py`, qui a déjà PyMuPDF) en découpe un aperçu
-    raster fidèle depuis la page rendue. C'est ça, et non le glyphe brut ou
-    une clé synthétique, qui permet de retrouver le vrai symbole tel
-    qu'imprimé dans le PDF — quel que soit le fichier, sans dépendre d'une
-    liste de symboles connus à l'avance (des symboles différents d'un
-    export à l'autre)."""
+    """Position of one occurrence of the symbol glyph on the source PDF page
+    — never the glyph itself (private font, unreadable outside this file),
+    but enough for a caller outside this pure module
+    (`app/imports_engine.py`, which already has PyMuPDF) to cut out a
+    faithful raster preview from the rendered page. That, and not the raw
+    glyph or a synthetic key, is what makes it possible to recover the real
+    symbol as printed in the PDF — whatever the file, without depending on a
+    list of symbols known in advance (symbols differ from one export to
+    another)."""
 
     page_number: int
-    """1-based, comme `pdfplumber.page.Page.page_number`."""
+    """1-based, like `pdfplumber.page.Page.page_number`."""
 
     bbox: tuple[float, float, float, float]
-    """`(x0, top, x1, bottom)`, mêmes unités et origine (haut-gauche) que
-    les rectangles `pdfplumber`."""
+    """`(x0, top, x1, bottom)`, same units and origin (top-left) as
+    `pdfplumber` rectangles."""
 
 
 @dataclass
 class TypeAPaletteEntry:
     code: str
-    """Code DMC tel qu'imprimé dans la légende, p. ex. ``"310"`` ou ``"B5200"``."""
+    """DMC code as printed in the legend, e.g. ``"310"`` or ``"B5200"``."""
 
     name: str
-    """Nom de la couleur tel qu'imprimé dans la légende."""
+    """Colour name as printed in the legend."""
 
     symbol_key: str
-    """Clé courte et imprimable pour l'UI — jamais le glyphe brut de la
-    police privée du PDF (illisible et non portable hors de ce fichier)."""
+    """Short, printable key for the UI — never the raw glyph of the PDF's
+    private font (unreadable and not portable outside this file)."""
 
     rgb_hex: str
-    """Couleur d'affichage approximative — depuis `dmc_hex`, ou
-    `FALLBACK_HEX` si le code est absent de la table locale."""
+    """Approximate display colour — from `dmc_hex`, or `FALLBACK_HEX` if the
+    code is missing from the local table."""
 
     symbol_glyph: SymbolGlyphLocation | None = None
-    """Absente pour un symbole non rapproché d'une ligne de légende (repli
-    sur `symbol_key` côté rendu) — voir `SymbolGlyphLocation`."""
+    """Absent for a symbol not matched to a legend row (falls back to
+    `symbol_key` when rendering) — see `SymbolGlyphLocation`."""
 
     categories: tuple[str, ...] = ()
-    """Sections de légende où ce fil apparaît, parmi `FULL`, `HALF`,
-    `QUARTER`, `BACKSTITCH`, `FRENCH_KNOT` (Lot 9). Un même fil est souvent
-    déclaré dans plusieurs sections (p. ex. DMC 742 en points entiers, en
-    points arrière *et* en nœuds sur la fixture de référence) : il reste
-    alors **une seule entrée de palette**, jamais une par section — la
-    palette est une liste de fils, pas une liste de lignes de légende."""
+    """Legend sections where this thread appears, among `FULL`, `HALF`,
+    `QUARTER`, `BACKSTITCH`, `FRENCH_KNOT` (Lot 9). The same thread is often
+    declared in several sections (e.g. DMC 742 as full stitches, backstitch
+    *and* knots on the reference fixture): it then remains **a single
+    palette entry**, never one per section — the palette is a list of
+    threads, not a list of legend rows."""
 
     count_full: int = 0
-    """Cases de `TypeAResult.cells` portant cette entrée (points entiers)."""
+    """Cells of `TypeAResult.cells` carrying this entry (full stitches)."""
 
     count_half: int = 0
-    """Idem pour `TypeAResult.cells_half`."""
+    """Same for `TypeAResult.cells_half`."""
 
     count_quarter: int = 0
-    """Idem pour `TypeAResult.cells_quarter`."""
+    """Same for `TypeAResult.cells_quarter`."""
 
     count_french_knots: int = 0
-    """Nœuds de `TypeAResult.french_knots` portant cette entrée."""
+    """Knots of `TypeAResult.french_knots` carrying this entry."""
 
     backstitch_length_cells: float = 0.0
-    """Longueur cumulée des segments de `TypeAResult.backstitch` de cette
-    entrée, **en cases** (unité de grille) et non en centimètres : la
-    conversion dépend du compte de toile, exposé séparément par
-    `TypeAResult.fabric_count` (longueur en cm = `backstitch_length_cells *
-    2.54 / fabric_count`). Aucune longueur physique n'est inventée ici quand
-    le compte de toile n'est pas déclaré par le PDF."""
+    """Cumulative length of this entry's `TypeAResult.backstitch` segments,
+    **in cells** (grid unit) and not in centimetres: the conversion depends
+    on the fabric count, exposed separately by `TypeAResult.fabric_count`
+    (length in cm = `backstitch_length_cells * 2.54 / fabric_count`). No
+    physical length is made up here when the fabric count is not declared by
+    the PDF."""
 
 
 @dataclass
@@ -228,44 +223,44 @@ class TypeAResult:
     columns: int
     rows: int
     cells: list[int]
-    """Longueur `columns * rows`, ligne par ligne, (0,0) en haut à gauche en
-    premier. 0 = case vide, n = index 1-based dans `palette`."""
+    """Length `columns * rows`, row by row, (0,0) at the top left first.
+    0 = empty cell, n = 1-based index into `palette`."""
     palette: list[TypeAPaletteEntry]
     confidence: float
     warnings: list[DetectionWarning] = field(default_factory=list)
-    """Jamais un texte déjà composé en français : un code de message et ses
-    paramètres, traduits côté client (`import.warning.<code>`, audit des
-    traductions du Lot 8)."""
+    """Never text already composed in French: a message code and its
+    parameters, translated on the client (`import.warning.<code>`, Lot 8
+    translation audit)."""
 
     cells_half: list[int] = field(default_factory=list)
-    """Points 1/2, même forme et même espace d'index de palette que `cells`
-    (Lot 9). Liste **vide** — et non une grille de zéros — quand le motif
-    n'a aucun point 1/2, ce qui correspond à `Grid.layer_half = NULL`."""
+    """1/2 stitches, same shape and same palette index space as `cells`
+    (Lot 9). An **empty** list — not a grid of zeros — when the pattern has
+    no 1/2 stitch, which maps to `Grid.layer_half = NULL`."""
 
     cells_quarter: list[int] = field(default_factory=list)
-    """Points 1/4, même convention que `cells_half`."""
+    """1/4 stitches, same convention as `cells_half`."""
 
     backstitch: list[BackstitchSegment] = field(default_factory=list)
-    """Segments de point arrière en coordonnées de **coins de case** de la
-    grille assemblée (0-based, (0,0) = coin haut-gauche de la case (0,0)),
-    voir `app/schemas.py::BackstitchSegment`. `palette_index` est 1-based,
-    comme les valeurs de `cells`."""
+    """Backstitch segments in **cell corner** coordinates of the assembled
+    grid (0-based, (0,0) = top-left corner of cell (0,0)), see
+    `app/schemas.py::BackstitchSegment`. `palette_index` is 1-based, like
+    the values of `cells`."""
 
     french_knots: list[FrenchKnot] = field(default_factory=list)
-    """Nœuds en coordonnées de **centre de case** ((0.5, 0.5) = centre de la
-    case (0,0)), voir `app/schemas.py::FrenchKnot`. `palette_index` est
-    1-based, comme les valeurs de `cells`."""
+    """Knots in **cell centre** coordinates ((0.5, 0.5) = centre of cell
+    (0,0)), see `app/schemas.py::FrenchKnot`. `palette_index` is 1-based,
+    like the values of `cells`."""
 
     fabric_count: int | None = None
-    """Compte de toile déclaré en clair par le PDF (« Fabric: Aida 16 »),
-    utile pour convertir `backstitch_length_cells` en centimètres et pour
-    pré-remplir `Pattern.fabric_count`. `None` si le PDF ne le déclare pas —
-    jamais une valeur par défaut inventée."""
+    """Fabric count stated plainly by the PDF ("Fabric: Aida 16"), useful to
+    convert `backstitch_length_cells` to centimetres and to pre-fill
+    `Pattern.fabric_count`. `None` if the PDF does not declare it — never a
+    made-up default value."""
 
 
 @dataclass
 class _GridPage:
-    """Une page de grille détectée, avec sa police de symboles locale."""
+    """A detected grid page, with its local symbol font."""
 
     index: int
     all_chars: list[Char]
@@ -280,32 +275,32 @@ class _GridPage:
 class _LegendRow:
     section: str
     symbol_char: str | None
-    """`None` pour une section à échantillon vectoriel (points arrière,
-    nœuds) : ces lignes n'ont pas de glyphe de police."""
+    """`None` for a vector-swatch section (backstitches, knots): these rows
+    have no font glyph."""
     code: str
     name: str
     swatch_color: Color | None
     glyph: SymbolGlyphLocation | None
     sample_colors: tuple[Color, ...] = ()
-    """Couleurs des tracés d'échantillon imprimés en regard de la ligne
-    (voir `_SAMPLE_LEGEND_ROW_RE`) — c'est la clé de rapprochement
-    couleur -> code DMC des points arrière et des nœuds, mesurée dans le
-    fichier lui-même plutôt que devinée par distance colorimétrique."""
+    """Colours of the swatch strokes printed next to the row (see
+    `_SAMPLE_LEGEND_ROW_RE`) — this is the colour -> DMC code matching key
+    for backstitches and knots, measured in the file itself rather than
+    guessed by colorimetric distance."""
 
 
 @dataclass(frozen=True)
 class _CornerLattice:
-    """Réseau des **coins de case** d'une page de grille, en coordonnées
-    absolues de la grille assemblée.
+    """Lattice of the **cell corners** of a grid page, in absolute
+    coordinates of the assembled grid.
 
-    Dérivé des réglures imprimées (qui tombent, elles, exactement sur les
-    frontières de case) plutôt que de l'ajustement linéaire sur les numéros
-    d'axe (`_fit_axes`), qui est ancré sur le coin haut-gauche des *glyphes*
-    et porte donc un décalage systématique de quelques dixièmes de case —
-    mesuré à ~0.27 case sur la fixture de référence, soit assez pour arrondir
-    une extrémité de point arrière dans la mauvaise case. `_fit_axes` reste
-    utilisé, mais seulement pour ancrer le réseau sur la numérotation
-    absolue (décalage entier de pages, aucun sous-multiple en jeu)."""
+    Derived from the printed rulings (which do fall exactly on the cell
+    boundaries) rather than from the linear fit on the axis numbers
+    (`_fit_axes`), which is anchored on the top-left corner of the *glyphs*
+    and therefore carries a systematic offset of a few tenths of a cell —
+    measured at ~0.27 cell on the reference fixture, enough to round a
+    backstitch endpoint into the wrong cell. `_fit_axes` is still used, but
+    only to anchor the lattice on the absolute numbering (whole-page offset,
+    no sub-multiple involved)."""
 
     origin_x: float
     pitch_x: float
@@ -314,8 +309,8 @@ class _CornerLattice:
     pitch_y: float
     offset_row: int
     span_x: float
-    """Largeur, en points PDF, de la zone de grille de la page — sert à
-    reconnaître une réglure à sa longueur (voir `_RULING_MIN_SPAN_RATIO`)."""
+    """Width, in PDF points, of the page's grid area — used to recognise a
+    ruling by its length (see `_RULING_MIN_SPAN_RATIO`)."""
     span_y: float
 
     def col(self, x: float) -> float:
@@ -326,8 +321,8 @@ class _CornerLattice:
 
 
 def detect_type_a(pdf_path: Path) -> TypeAResult | None:
-    """Renvoie `None` (sans jamais lever) si le PDF ne ressemble pas à un
-    export type A — voir le module pour le détail de la détection."""
+    """Return `None` (never raising) if the PDF does not look like a type A
+    export — see the module for the details of the detection."""
     with pdfplumber.open(pdf_path) as pdf:
         pages = pdf.pages
         page_font_groups = [_group_by_font(page.chars) for page in pages]
@@ -420,7 +415,7 @@ def detect_type_a(pdf_path: Path) -> TypeAResult | None:
 
 
 # --------------------------------------------------------------------------
-# Détection de la police de symboles (signal principal : pavage régulier)
+# Symbol font detection (main signal: regular tiling)
 # --------------------------------------------------------------------------
 
 
@@ -432,10 +427,10 @@ def _group_by_font(chars: list[Char]) -> dict[str, list[Char]]:
 
 
 def _estimate_pitch(distinct_sorted: list[float]) -> float | None:
-    """Pas médian entre positions distinctes voisines, en ignorant les
-    micro-écarts (< 1pt) causés par l'accumulation de flottants sur des
-    glyphes censés être à la même position (observé en pratique : deux
-    positions à 0.2-0.3pt d'écart pour une même colonne/ligne réelle)."""
+    """Median pitch between neighbouring distinct positions, ignoring the
+    micro-gaps (< 1pt) caused by floating-point accumulation on glyphs meant
+    to be at the same position (observed in practice: two positions
+    0.2-0.3pt apart for the same real column/row)."""
     if len(distinct_sorted) < 2:
         return None
     diffs = [b - a for a, b in zip(distinct_sorted, distinct_sorted[1:], strict=False)]
@@ -446,9 +441,9 @@ def _estimate_pitch(distinct_sorted: list[float]) -> float | None:
 
 
 def _is_grid_like(chars: list[Char]) -> tuple[float, float] | None:
-    """`(pitch_x, pitch_y)` si `chars` pavent une grille 2D assez régulière,
-    sinon `None`. C'est le signal principal pour repérer la police de
-    symboles — jamais un nom de police en dur (voir docstring du module)."""
+    """`(pitch_x, pitch_y)` if `chars` tile a sufficiently regular 2D grid,
+    otherwise `None`. This is the main signal for spotting the symbol font —
+    never a hard-coded font name (see the module docstring)."""
     if len(chars) < _MIN_GRID_CHARS:
         return None
     xs_distinct = sorted({round(float(c["x0"]), 1) for c in chars})
@@ -457,11 +452,10 @@ def _is_grid_like(chars: list[Char]) -> tuple[float, float] | None:
     pitch_y = _estimate_pitch(tops_distinct)
     if pitch_x is None or pitch_y is None:
         return None
-    # Une grille de points de croix a des cases à peu près carrées ; un bloc
-    # de texte de paragraphe a en général un interligne (pitch vertical)
-    # bien plus grand que l'avance de caractère (pitch horizontal) — un
-    # écart de pas trop marqué entre les deux axes trahit du texte courant,
-    # pas une grille de symboles.
+    # A cross-stitch grid has roughly square cells; a paragraph of text
+    # generally has a line spacing (vertical pitch) much larger than the
+    # character advance (horizontal pitch) — too marked a pitch difference
+    # between the two axes betrays running text, not a symbol grid.
     if not (0.4 <= pitch_x / pitch_y <= 2.5):
         return None
     min_x = min(float(c["x0"]) for c in chars)
@@ -477,8 +471,8 @@ def _is_grid_like(chars: list[Char]) -> tuple[float, float] | None:
 
 
 def _best_grid_font_on_page(font_groups: dict[str, list[Char]]) -> str | None:
-    """Police la plus probable pour être la police de symboles sur *cette*
-    page : celle qui pave une grille régulière avec le plus de glyphes."""
+    """The font most likely to be the symbol font on *this* page: the one
+    that tiles a regular grid with the most glyphs."""
     best_font: str | None = None
     best_count = -1
     for fontname, chars in font_groups.items():
@@ -491,9 +485,9 @@ def _best_grid_font_on_page(font_groups: dict[str, list[Char]]) -> str | None:
 
 
 def _pick_symbol_font(page_font_groups: list[dict[str, list[Char]]]) -> str | None:
-    """Police de symboles globale du PDF : celle qui pave une grille
-    régulière sur le plus grand nombre de pages (un export type A répète
-    la même police de symboles sur toutes ses pages de grille)."""
+    """The PDF's global symbol font: the one that tiles a regular grid on
+    the largest number of pages (a type A export repeats the same symbol
+    font on all its grid pages)."""
     candidates: Counter[str] = Counter()
     for font_groups in page_font_groups:
         best = _best_grid_font_on_page(font_groups)
@@ -534,14 +528,14 @@ def _collect_grid_pages(
 
 
 # --------------------------------------------------------------------------
-# Couleur de fond associée à un glyphe (désambiguïsation glyphe -> couleur)
+# Background colour associated with a glyph (glyph -> colour disambiguation)
 # --------------------------------------------------------------------------
 
 
 def _normalize_color(raw: Any) -> Color:
-    """`non_stroking_color` de pdfplumber peut être un scalaire (niveau de
-    gris), un triplet RVB ou un quadruplet CMJN selon l'espace colorimétrique
-    du PDF — toujours ramené à un tuple arrondi comparable."""
+    """pdfplumber's `non_stroking_color` can be a scalar (grey level), an RGB
+    triplet or a CMYK quadruplet depending on the PDF's colour space —
+    always reduced to a comparable rounded tuple."""
     if isinstance(raw, int | float):
         value = round(float(raw), 4)
         return (value, value, value)
@@ -551,17 +545,17 @@ def _normalize_color(raw: Any) -> Color:
 
 
 def _rect_color_under_char(char: Char, rects: list[Char]) -> Color | None:
-    """Couleur de remplissage du plus petit rectangle qui recouvre le centre
-    du glyphe `char`. Ce fichier de référence dessine un petit carré de la
-    couleur DMC réelle sous chaque glyphe (légende comme grille) — c'est un
-    signal plus fiable que le glyphe seul quand un même glyphe est réutilisé
-    pour deux couleurs différentes (voir docstring de `CellKey`).
+    """Fill colour of the smallest rectangle covering the centre of glyph
+    `char`. This reference file draws a small square of the real DMC colour
+    under each glyph (legend and grid alike) — a more reliable signal than
+    the glyph alone when the same glyph is reused for two different colours
+    (see the `CellKey` docstring).
 
-    Balayage complet de `rects` — utilisé seulement pour la légende (une
-    poignée d'appels). Les pages de grille utilisent `_rect_color_indexed`
-    ci-dessous : un balayage complet par glyphe y serait O(glyphes ×
-    rectangles), soit plusieurs centaines de millions d'itérations sur la
-    fixture de référence (mesuré au profilage — ~80 % du temps total)."""
+    Full scan of `rects` — only used for the legend (a handful of calls).
+    Grid pages use `_rect_color_indexed` below: a full scan per glyph there
+    would be O(glyphs × rectangles), i.e. several hundred million iterations
+    on the reference fixture (measured while profiling — ~80% of the total
+    time)."""
     cx = (float(char["x0"]) + float(char["x1"])) / 2
     ctop = (float(char["top"]) + float(char["bottom"])) / 2
     best: Char | None = None
@@ -585,12 +579,11 @@ def _rect_color_under_char(char: Char, rects: list[Char]) -> Color | None:
 def _build_rect_index(
     rects: list[Char], pitch_x: float, pitch_y: float
 ) -> dict[tuple[int, int], list[Char]]:
-    """Regroupe les rectangles remplis par case de grille (même pas que les
-    glyphes de symboles) : une case ne contient presque toujours qu'un seul
-    petit rectangle de couleur, donc ne chercher que dans le bucket d'un
-    glyphe (et ses voisins immédiats, pour le bruit d'arrondi de bord)
-    remplace un balayage de tous les rectangles de la page par une poignée
-    de candidats."""
+    """Group the filled rectangles per grid cell (same pitch as the symbol
+    glyphs): a cell almost always contains a single small colour rectangle,
+    so searching only a glyph's bucket (and its immediate neighbours, for
+    edge rounding noise) replaces a scan of all the page's rectangles with a
+    handful of candidates."""
     index: dict[tuple[int, int], list[Char]] = {}
     for rect in rects:
         if not rect.get("fill"):
@@ -608,9 +601,9 @@ def _rect_color_indexed(
     pitch_x: float,
     pitch_y: float,
 ) -> Color | None:
-    """Équivalent de `_rect_color_under_char`, mais via `rect_index`
-    (`_build_rect_index`) plutôt qu'un balayage complet — voir cette
-    dernière pour le détail du gain de performance."""
+    """Equivalent of `_rect_color_under_char`, but via `rect_index`
+    (`_build_rect_index`) rather than a full scan — see the latter for the
+    details of the performance gain."""
     cx = (float(char["x0"]) + float(char["x1"])) / 2
     ctop = (float(char["top"]) + float(char["bottom"])) / 2
     base_key = (round(cx / pitch_x), round(ctop / pitch_y))
@@ -633,13 +626,13 @@ def _rect_color_indexed(
 
 
 # --------------------------------------------------------------------------
-# Légende texte ("Floss Used for Full Stitches")
+# Text legend ("Floss Used for Full Stitches")
 # --------------------------------------------------------------------------
 
 
 def _section_of(text: str) -> str | None:
-    """Catégorie de points d'un en-tête « Floss Used for ... : », ou `None`
-    si la ligne n'est pas un en-tête de section."""
+    """Stitch category of a "Floss Used for ... :" header, or `None` if the
+    line is not a section header."""
     match = _SECTION_HEADER_RE.match(text)
     if match is None:
         return None
@@ -650,23 +643,22 @@ def _section_of(text: str) -> str | None:
 def _sample_colors_for_row(
     page: Page, top: float, bottom: float, text_x0: float
 ) -> tuple[Color, ...]:
-    """Couleurs des tracés d'échantillon imprimés dans la colonne « Symbol »
-    d'une ligne de légende sans glyphe : segments (points arrière) et petites
-    formes pleines (nœuds) situés à gauche du texte et à sa hauteur.
+    """Colours of the swatch strokes printed in the "Symbol" column of a
+    legend row without a glyph: segments (backstitches) and small solid
+    shapes (knots) located to the left of the text and at its height.
 
-    Les deux couleurs d'un même échantillon sont conservées : l'exporteur de
-    référence trace chaque point arrière deux fois, une passe sombre puis une
-    passe plus claire par-dessus (ombre + brillance), exactement comme sur
-    les pages de grille — les deux valeurs doivent donc pouvoir rattacher un
-    tracé de grille à ce code."""
+    Both colours of the same swatch are kept: the reference exporter draws
+    each backstitch twice, a dark pass then a lighter pass on top (shadow +
+    highlight), exactly as on the grid pages — both values must therefore be
+    able to attach a grid stroke to this code."""
     colors: list[Color] = []
     middle = (top + bottom) / 2
     height = max(bottom - top, 1.0)
     candidates = [*page.lines, *page.curves]
     if len(candidates) > _MAX_LEGEND_PAGE_OBJECTS:
-        # Une page de légende ne porte qu'une poignée de tracés ; au-delà,
-        # c'est une page de grille (des milliers d'objets) où ce balayage
-        # par ligne coûterait cher pour rien.
+        # A legend page carries only a handful of strokes; beyond that, it is
+        # a grid page (thousands of objects) where this per-row scan would be
+        # expensive for nothing.
         return ()
     for obj in candidates:
         obj_middle = (float(obj["top"]) + float(obj["bottom"])) / 2
@@ -682,14 +674,14 @@ def _sample_colors_for_row(
 
 
 def _parse_legend_rows(pages: list[Page]) -> list[_LegendRow]:
-    """Toutes les lignes de légende du PDF, chacune étiquetée de sa section
-    (« Full Stitches », « Half Stitches », ... — voir `_SECTION_ALIASES`).
+    """All of the PDF's legend rows, each labelled with its section ("Full
+    Stitches", "Half Stitches", ... — see `_SECTION_ALIASES`).
 
-    Jusqu'au Lot 8 cette lecture s'arrêtait à la fin de la section des points
-    entiers ; le Lot 9 a besoin des suivantes (points 1/2, 1/4, arrière,
-    nœuds). Une section d'intitulé inconnu interrompt la section en cours
-    sans rien ranger dedans par défaut : mieux vaut ignorer des lignes que
-    les attribuer à la mauvaise catégorie."""
+    Up to Lot 8 this reading stopped at the end of the full-stitch section;
+    Lot 9 needs the following ones (1/2, 1/4, backstitch, knot). A section
+    with an unknown heading interrupts the current section without filing
+    anything into it by default: better to ignore rows than to attribute
+    them to the wrong category."""
     rows: list[_LegendRow] = []
     for page in pages:
         rects = page.rects
@@ -759,8 +751,8 @@ def _parse_legend_rows(pages: list[Page]) -> list[_LegendRow]:
 
 
 def _symbol_key(index0: int) -> str:
-    """Clé courte façon « colonnes de tableur » (A, B, ..., Z, AA, AB, ...)
-    — stable, lisible, et jamais le glyphe brut de la police privée."""
+    """Short key in "spreadsheet column" style (A, B, ..., Z, AA, AB, ...) —
+    stable, readable, and never the raw glyph of the private font."""
     n = index0
     letters = ""
     while True:
@@ -773,42 +765,42 @@ def _symbol_key(index0: int) -> str:
 
 @dataclass
 class _Legend:
-    """Tout ce que la légende texte apprend sur les fils du motif."""
+    """Everything the text legend tells us about the pattern's threads."""
 
     palette: list[TypeAPaletteEntry]
     key_to_target: dict[CellKey, tuple[int, str]]
-    """(glyphe, couleur de fond) -> (index 1-based de palette, catégorie) —
-    la catégorie décide de la couche où la case est écrite (`cells`,
-    `cells_half` ou `cells_quarter`), jamais le seul glyphe."""
+    """(glyph, background colour) -> (1-based palette index, category) — the
+    category decides which layer the cell is written to (`cells`,
+    `cells_half` or `cells_quarter`), never the glyph alone."""
     sample_color_to_index: dict[Color, int]
-    """Couleur d'un échantillon vectoriel de légende -> index 1-based de
-    palette (points arrière et nœuds)."""
+    """Colour of a legend vector swatch -> 1-based palette index
+    (backstitches and knots)."""
     fractional_glyph_to_target: dict[str, tuple[int, str]]
-    """Glyphe **seul** -> (index de palette, catégorie), pour les sections
-    de points fractionnés. Sert aux glyphes posés dans un coin de case
-    plutôt qu'en son centre : la couleur de fond sous un tel glyphe est
-    celle du point qui occupe *déjà* la case, pas la sienne — mesuré sur la
-    fixture de référence, où les 4 points 1/4 de DMC 3031 sont dessinés
-    par-dessus une case de demi-point DMC 3756. La clé habituelle (glyphe,
-    couleur de fond) y désignerait donc le mauvais fil."""
+    """Glyph **alone** -> (palette index, category), for the fractional
+    stitch sections. Used for glyphs placed in a cell corner rather than at
+    its centre: the background colour under such a glyph is that of the
+    stitch *already* occupying the cell, not its own — measured on the
+    reference fixture, where DMC 3031's 4 quarter stitches are drawn on top
+    of a DMC 3756 half-stitch cell. The usual (glyph, background colour) key
+    would therefore designate the wrong thread there."""
     codes_by_section: dict[str, list[int]]
-    """Index 1-based de palette déclarés dans chaque section — sert à
-    croiser ce qui est *annoncé* avec ce qui est *extrait* (§7.3)."""
+    """1-based palette indices declared in each section — used to
+    cross-check what is *declared* against what is *extracted* (§7.3)."""
     unknown_codes: list[str]
     ambiguous_codes: list[str]
 
 
 def _build_palette(legend_rows: list[_LegendRow]) -> _Legend:
-    """Une entrée de palette **par fil**, dans l'ordre de la légende.
+    """One palette entry **per thread**, in legend order.
 
-    Les sections autres que « Full Stitches » réutilisent l'entrée déjà
-    créée pour le même code DMC quand il y en a une (cas général : un fil
-    brodé en points entiers sert aussi au point arrière) — la palette reste
-    donc la liste de fils annoncée par le PDF (« Colours: 34 » sur la
-    fixture de référence), pas une liste de lignes de légende. Un code
-    répété *dans* la section des points entiers reste, lui, deux entrées
-    distinctes : ce sont deux symboles différents, avec deux comptages
-    différents (DMC 3776 sur la fixture)."""
+    Sections other than "Full Stitches" reuse the entry already created for
+    the same DMC code when there is one (the general case: a thread stitched
+    as full stitches is also used for backstitch) — the palette therefore
+    remains the list of threads declared by the PDF ("Colours: 34" on the
+    reference fixture), not a list of legend rows. A code repeated *within*
+    the full-stitch section, however, remains two distinct entries: they are
+    two different symbols, with two different counts (DMC 3776 on the
+    fixture)."""
     palette: list[TypeAPaletteEntry] = []
     key_to_target: dict[CellKey, tuple[int, str]] = {}
     sample_color_to_index: dict[Color, int] = {}
@@ -850,11 +842,10 @@ def _build_palette(legend_rows: list[_LegendRow]) -> _Legend:
             fractional[row.symbol_char] = (index, row.section)
         key: CellKey = (row.symbol_char, row.swatch_color)
         if key in key_to_target:
-            # Deux lignes de légende partagent le même glyphe ET la même
-            # couleur de fond : on ne peut structurellement pas distinguer
-            # leurs cases dans la grille — on garde la première association
-            # (comportement conservateur) et on le signale clairement plutôt
-            # que d'écraser silencieusement.
+            # Two legend rows share the same glyph AND the same background
+            # colour: their cells structurally cannot be told apart in the
+            # grid — keep the first association (conservative behaviour) and
+            # flag it clearly rather than silently overwriting.
             ambiguous_codes.append(row.code)
             continue
         key_to_target[key] = (index, row.section)
@@ -871,7 +862,7 @@ def _build_palette(legend_rows: list[_LegendRow]) -> _Legend:
 
 
 # --------------------------------------------------------------------------
-# Numéros d'axe (repérage colonne/ligne absolue de chaque page de grille)
+# Axis numbers (absolute column/row location of each grid page)
 # --------------------------------------------------------------------------
 
 
@@ -880,13 +871,12 @@ def _most_common_font(chars: list[Char]) -> str:
 
 
 def _chain_clusters(chars: list[Char], gap_limit: float) -> list[list[Char]]:
-    """Regroupe des caractères consécutifs (dans l'ordre d'origine du flux
-    PDF) en nombres à plusieurs chiffres, en coupant dès qu'un écart de
-    position dépasse `gap_limit`. Fonctionne aussi bien pour un nombre
-    horizontal classique que pour un nombre tourné/empilé verticalement
-    (observé sur les numéros de ligne de la fixture de référence) — l'ordre
-    du flux PDF donne toujours l'ordre de lecture correct, contrairement à
-    un tri géométrique naïf par position."""
+    """Group consecutive characters (in the PDF stream's original order)
+    into multi-digit numbers, splitting as soon as a position gap exceeds
+    `gap_limit`. Works equally for a regular horizontal number and for a
+    rotated/vertically stacked one (observed on the reference fixture's row
+    numbers) — the PDF stream order always gives the correct reading order,
+    unlike a naive geometric sort by position."""
     clusters: list[list[Char]] = []
     current: list[Char] = []
     for c in chars:
@@ -904,18 +894,17 @@ def _chain_clusters(chars: list[Char], gap_limit: float) -> list[list[Char]]:
 
 
 def _axis_points(candidates: list[Char], anchor: str) -> list[tuple[float, int]]:
-    """Points `(position, valeur)` pour un ajustement linéaire position ->
-    numéro d'axe. `anchor` vaut `"x"` pour les numéros de colonne (position
-    = plus petit `x0` du groupe de chiffres) ou `"top"` pour les numéros de
-    ligne (position = plus petit `top`) — cette convention « bord de départ
-    minimal » aligne l'ancre du numéro sur celle des glyphes de la grille
-    elle-même (positionnés par leur coin haut-gauche), quel que soit
-    l'ordre d'empilement visuel des chiffres."""
+    """`(position, value)` points for a linear position -> axis number fit.
+    `anchor` is `"x"` for column numbers (position = smallest `x0` of the
+    digit group) or `"top"` for row numbers (position = smallest `top`) —
+    this "minimal starting edge" convention aligns the number's anchor with
+    that of the grid's glyphs themselves (positioned by their top-left
+    corner), whatever the visual stacking order of the digits."""
     if not candidates:
         return []
-    # Ne garder que la police majoritaire de la zone de marge : filtre le
-    # bruit d'autres textes (numéro de page, etc.) qui tomberait par hasard
-    # dans la même zone géométrique.
+    # Keep only the margin area's majority font: filters out the noise of
+    # other texts (page number, etc.) that would happen to fall in the same
+    # geometric area.
     dominant_font = _most_common_font(candidates)
     filtered = [c for c in candidates if c["fontname"] == dominant_font]
     widths = [float(c["x1"]) - float(c["x0"]) for c in filtered]
@@ -938,10 +927,10 @@ def _axis_points(candidates: list[Char], anchor: str) -> list[tuple[float, int]]
 
 
 def _fit_axes(grid_page: _GridPage, symbol_font: str) -> tuple[float, float, float, float] | None:
-    """`(a_col, b_col, a_row, b_row)` tels que le numéro de colonne absolu
-    (1-based) d'un glyphe de symbole à `x0` vaut `round(a_col + b_col*x0)`,
-    et de même pour la ligne via `top`. `None` si pas assez de numéros
-    d'axe exploitables sur cette page."""
+    """`(a_col, b_col, a_row, b_row)` such that the absolute (1-based) column
+    number of a symbol glyph at `x0` is `round(a_col + b_col*x0)`, and
+    likewise for the row via `top`. `None` if there are not enough usable
+    axis numbers on this page."""
     symbol_chars = grid_page.symbol_chars
     pitch_x, pitch_y = grid_page.pitch_x, grid_page.pitch_y
     min_sym_x = min(float(c["x0"]) for c in symbol_chars)
@@ -987,7 +976,7 @@ def _fit_axes(grid_page: _GridPage, symbol_font: str) -> tuple[float, float, flo
 
 
 # --------------------------------------------------------------------------
-# Placement des glyphes de chaque page dans la grille absolue
+# Placing each page's glyphs in the absolute grid
 # --------------------------------------------------------------------------
 
 
@@ -1002,17 +991,16 @@ def _set_placement(
     key: CellKey,
     key_to_index: dict[CellKey, tuple[int, str]],
 ) -> None:
-    """Écrit `key` à `position`, sauf si une valeur déjà reconnue par la
-    légende y est présente et que `key`, elle, ne l'est pas. Nécessaire car
-    les pages de grille voisines se chevauchent parfois sur quelques
-    colonnes/lignes en bordure, et l'export type A observé y dessine un
-    aperçu grisé (couleur d'aperçu, pas la couleur réelle du fil) plutôt
-    qu'une simple répétition à l'identique — sans cette préférence, l'ordre
-    de traitement des pages pourrait faire gagner l'aperçu grisé sur la
-    valeur correcte de la page voisine (constaté sur la fixture de
-    référence). Un vrai conflit entre deux valeurs toutes deux reconnues,
-    ou toutes deux non reconnues, reste tranché par la dernière page
-    traitée, comme demandé."""
+    """Write `key` at `position`, unless a value already recognised by the
+    legend is present there and `key` is not. Needed because neighbouring
+    grid pages sometimes overlap on a few edge columns/rows, and the observed
+    type A export draws a greyed-out preview there (preview colour, not the
+    thread's real colour) rather than an identical repetition — without this
+    preference, the page processing order could let the greyed-out preview
+    win over the neighbouring page's correct value (observed on the reference
+    fixture). A real conflict between two values that are both recognised,
+    or both unrecognised, is still settled by the last page processed, as
+    intended."""
     existing = placements.get(position)
     conflict = existing is not None and existing != key
     if conflict and existing in key_to_index and key not in key_to_index:
@@ -1023,22 +1011,21 @@ def _set_placement(
 def _fit_all_axes(
     grid_pages: list[_GridPage], symbol_font: str
 ) -> dict[int, tuple[float, float, float, float] | None]:
-    """Ajustement position -> numéro d'axe de chaque page, calculé une seule
-    fois : le placement des glyphes (`_place_grid_pages`) et celui des points
-    spéciaux (`_collect_special_stitches`, Lot 9) doivent partager
-    exactement le même repère absolu, jamais deux ajustements refaits
-    séparément."""
+    """Each page's position -> axis number fit, computed only once: glyph
+    placement (`_place_grid_pages`) and special stitch placement
+    (`_collect_special_stitches`, Lot 9) must share exactly the same absolute
+    frame, never two fits redone separately."""
     return {gp.index: _fit_axes(gp, symbol_font) for gp in grid_pages}
 
 
 def _is_offset_in_cell(char: Char, lattice: _CornerLattice) -> bool:
-    """Vrai si le glyphe n'est pas centré dans sa case mais posé dans un de
-    ses quadrants — la façon dont cet exporteur dessine un point fractionné
-    **par-dessus** une case déjà occupée par un autre point.
+    """True if the glyph is not centred in its cell but placed in one of its
+    quadrants — the way this exporter draws a fractional stitch **on top
+    of** a cell already occupied by another stitch.
 
-    Mesuré sur la fixture de référence : 48 310 glyphes sur 48 314 sont
-    exactement au centre de leur case, les 4 autres à (0.25, 0.27) — ce sont
-    précisément les 4 points 1/4 annoncés par la légende."""
+    Measured on the reference fixture: 48,310 glyphs out of 48,314 are
+    exactly at the centre of their cell, the other 4 at (0.25, 0.27) — they
+    are precisely the 4 quarter stitches declared by the legend."""
     col_fraction = lattice.col((float(char["x0"]) + float(char["x1"])) / 2) % 1.0
     row_fraction = lattice.row((float(char["top"]) + float(char["bottom"])) / 2) % 1.0
     return abs(col_fraction - 0.5) > 0.15 or abs(row_fraction - 0.5) > 0.15
@@ -1052,14 +1039,13 @@ def _place_grid_pages(
 ) -> tuple[
     dict[tuple[int, int], CellKey], dict[tuple[int, int], str], list[DetectionWarning], float
 ]:
-    """Place chaque glyphe de symbole dans des coordonnées absolues
-    0-based `(row0, col0) -> (glyphe, couleur de fond)`.
+    """Place each symbol glyph in absolute 0-based coordinates
+    `(row0, col0) -> (glyph, background colour)`.
 
-    Deuxième valeur de retour (Lot 9) : les glyphes **décalés dans leur
-    case** (voir `_is_offset_in_cell`), tenus à l'écart du placement normal.
-    Les mélanger y ferait perdre un point plein ou un demi-point au profit
-    du point fractionné dessiné par-dessus — exactement la régression que le
-    Lot 9 ne doit jamais introduire."""
+    Second return value (Lot 9): the glyphs **offset within their cell**
+    (see `_is_offset_in_cell`), kept apart from normal placement. Mixing them
+    in would lose a full or half stitch in favour of the fractional stitch
+    drawn on top — exactly the regression Lot 9 must never introduce."""
     placements: dict[tuple[int, int], CellKey] = {}
     offset_placements: dict[tuple[int, int], str] = {}
     warnings: list[DetectionWarning] = []
@@ -1112,19 +1098,19 @@ def _place_grid_pages(
 
 
 # --------------------------------------------------------------------------
-# Points spéciaux : points arrière et nœuds (Lot 9)
+# Special stitches: backstitches and knots (Lot 9)
 # --------------------------------------------------------------------------
 
 
 def _line_points(line: Char) -> tuple[tuple[float, float], tuple[float, float]] | None:
-    """Vraies extrémités `((x, top), (x, top))` d'un segment, lues dans
-    `pts` (coordonnées haut-bas, comme `top`) plutôt que dans la bbox.
+    """A segment's real endpoints `((x, top), (x, top))`, read from `pts`
+    (top-down coordinates, like `top`) rather than from the bbox.
 
-    Indispensable : la bbox d'un segment perd le sens de sa diagonale — une
-    diagonale montante et une diagonale descendante ont exactement la même
-    bbox. Mesuré sur la fixture de référence : 36 des 56 diagonales de point
-    arrière de sa page 1 sont descendantes et seraient toutes tracées à
-    l'envers si on lisait `(x0, top) -> (x1, bottom)`."""
+    Essential: a segment's bbox loses its diagonal's direction — an
+    ascending and a descending diagonal have exactly the same bbox. Measured
+    on the reference fixture: 36 of the 56 backstitch diagonals on its page 1
+    are descending and would all be drawn the wrong way round if
+    `(x0, top) -> (x1, bottom)` were read."""
     pts = line.get("pts")
     if not isinstance(pts, list | tuple) or len(pts) != 2:
         return None
@@ -1133,12 +1119,11 @@ def _line_points(line: Char) -> tuple[tuple[float, float], tuple[float, float]] 
 
 
 def _lattice_axis(positions: list[float]) -> tuple[float, float] | None:
-    """`(origine, pas)` du réseau régulier le mieux ajusté sur `positions`
-    (les abscisses des réglures verticales, ou les ordonnées des
-    horizontales). Régression sur les indices de réseau plutôt que sur le
-    rang : une frontière de case sans réglure imprimée (remplacée par la
-    réglure décimale, ou masquée par la bordure) ne décale pas tout ce qui
-    suit."""
+    """`(origin, pitch)` of the regular lattice that best fits `positions`
+    (the x coordinates of the vertical rulings, or the y coordinates of the
+    horizontal ones). Regression on lattice indices rather than on rank: a
+    cell boundary with no printed ruling (replaced by the decimal ruling, or
+    hidden by the border) does not shift everything after it."""
     uniq = sorted({round(p, 2) for p in positions})
     if len(uniq) < 3:
         return None
@@ -1161,10 +1146,10 @@ def _lattice_axis(positions: list[float]) -> tuple[float, float] | None:
 
 
 def _majority_offset(counts: Counter[int], total: int) -> int | None:
-    """Décalage entier majoritaire, seulement s'il fait consensus (au moins
-    80 % des glyphes) — sinon le réseau de réglures ne décrit pas la même
-    grille que les symboles, et mieux vaut renoncer aux points spéciaux de
-    cette page que les placer à côté."""
+    """Majority integer offset, only if there is consensus (at least 80% of
+    the glyphs) — otherwise the ruling lattice does not describe the same
+    grid as the symbols, and it is better to give up this page's special
+    stitches than to misplace them."""
     if not counts or total <= 0:
         return None
     offset, hits = counts.most_common(1)[0]
@@ -1178,9 +1163,8 @@ def _build_corner_lattice(
     grid_page: _GridPage,
     fit: tuple[float, float, float, float],
 ) -> _CornerLattice | None:
-    """Réseau des coins de case de `page`, en coordonnées absolues — voir
-    `_CornerLattice` pour la raison de ne pas réutiliser directement
-    l'ajustement sur les numéros d'axe."""
+    """Lattice of `page`'s cell corners, in absolute coordinates — see
+    `_CornerLattice` for why the axis number fit is not reused directly."""
     chars = grid_page.symbol_chars
     min_x = min(float(c["x0"]) for c in chars)
     max_x = max(float(c["x1"]) for c in chars)
@@ -1241,8 +1225,8 @@ def _build_all_lattices(
     grid_pages: list[_GridPage],
     fits: dict[int, tuple[float, float, float, float] | None],
 ) -> dict[int, _CornerLattice | None]:
-    """Réseau de coins de chaque page de grille, calculé une seule fois et
-    partagé par le placement des glyphes et celui des points spéciaux."""
+    """Corner lattice of each grid page, computed only once and shared by
+    glyph placement and special stitch placement."""
     lattices: dict[int, _CornerLattice | None] = {}
     for grid_page in grid_pages:
         fit = fits.get(grid_page.index)
@@ -1255,10 +1239,10 @@ def _build_all_lattices(
 
 
 def _snap_half(value: float) -> tuple[float, bool]:
-    """Valeur ramenée au demi-multiple le plus proche (coin de case ou
-    milieu de case) et un drapeau disant si elle y tombait vraiment. Un
-    exporteur qui poserait ses points arrière ailleurs n'est jamais
-    déformé de force : la valeur brute est conservée et signalée."""
+    """Value snapped to the nearest half-multiple (cell corner or cell
+    midpoint) and a flag saying whether it really fell there. An exporter
+    that placed its backstitches elsewhere is never forcibly distorted: the
+    raw value is kept and flagged."""
     snapped = round(value * 2) / 2
     return (snapped, True) if abs(value - snapped) <= _SNAP_TOLERANCE else (round(value, 3), False)
 
@@ -1274,17 +1258,16 @@ class _SpecialStitches:
 def _color_resolver(
     legend: _Legend, section: str
 ) -> tuple[dict[Color, int], dict[str, int], bool]:
-    """`(couleurs exactes, codes déclarés, repli colorimétrique)` pour une
-    section à échantillon.
+    """`(exact colours, declared codes, colorimetric fallback)` for a
+    swatch section.
 
-    Le signal principal est l'**égalité exacte** entre la couleur d'un tracé
-    de grille et celle de l'échantillon imprimé dans la légende : c'est une
-    correspondance mesurée dans le fichier, pas une ressemblance. Elle est
-    indispensable ici — sur la fixture de référence, l'exporteur trace le
-    point arrière DMC 310 « Black » en (35, 40, 29) et le DMC 938 en
-    (64, 54, 34), deux valeurs qu'un simple plus proche voisin Lab
-    attribuerait au mauvais code (vérifié : 938 et 3031 y sont permutés).
-    Le rapprochement perceptuel n'est qu'un repli, signalé comme tel."""
+    The main signal is the **exact equality** between a grid stroke's colour
+    and that of the swatch printed in the legend: a correspondence measured
+    in the file, not a resemblance. It is essential here — on the reference
+    fixture, the exporter draws the DMC 310 "Black" backstitch in
+    (35, 40, 29) and DMC 938 in (64, 54, 34), two values a simple Lab nearest
+    neighbour would assign to the wrong code (verified: 938 and 3031 are
+    swapped). Perceptual matching is only a fallback, flagged as such."""
     indices = set(legend.codes_by_section.get(section, ()))
     colors = {
         color: index for color, index in legend.sample_color_to_index.items() if index in indices
@@ -1304,9 +1287,9 @@ def _index_for_color(
     fallback: bool,
     cache: dict[Color, int | None],
 ) -> int | None:
-    """Index de palette d'un tracé, par couleur exacte puis (seulement si la
-    légende n'a aucun échantillon) par plus proche voisin Lab parmi les
-    codes déclarés de la section."""
+    """Palette index of a stroke, by exact colour then (only if the legend
+    has no swatch) by Lab nearest neighbour among the section's declared
+    codes."""
     index = exact.get(color)
     if index is not None:
         return index
@@ -1331,8 +1314,8 @@ def _object_colors(obj: Char) -> tuple[Color, ...]:
 
 @dataclass(frozen=True)
 class _ColorMatcher:
-    """Rapprochement couleur d'un tracé -> entrée de palette, pour une
-    section à échantillon (voir `_color_resolver`)."""
+    """Stroke colour -> palette entry matching, for a swatch section (see
+    `_color_resolver`)."""
 
     exact: dict[Color, int]
     codes: dict[str, int]
@@ -1357,29 +1340,27 @@ def _collect_special_stitches(
     columns: int,
     rows: int,
 ) -> _SpecialStitches:
-    """Points arrière et nœuds de toutes les pages de grille, ramenés dans
-    le repère absolu de la grille assemblée.
+    """Backstitches and knots from all grid pages, brought into the absolute
+    frame of the assembled grid.
 
-    Trois filtres, dans cet ordre (mesures à l'appui, voir le rapport du
-    Lot 9) :
+    Three filters, in this order (backed by measurements, see the Lot 9
+    report):
 
-    1. **couleur** — seul un tracé dont la couleur est celle d'un échantillon
-       de la légende est retenu. C'est ce filtre qui écarte d'un coup les
-       réglures, les flèches de repère de page, les annotations manuelles
-       laissées dans le PDF (traits bleus système sur deux pages de la
-       fixture) et surtout les **copies d'aperçu grisées** que chaque page
-       dessine dans sa bande de recouvrement avec la page voisine (mesuré :
-       8 teintes délavées supplémentaires, jamais présentes ailleurs que
-       par-dessus un tracé déjà compté) ;
-    2. **forme** — un trait aligné sur les axes, posé sur une frontière de
-       case *et* assez long pour traverser la grille reste une réglure, même
-       si sa couleur correspond (cas d'un motif dont le point arrière serait
-       noir comme le quadrillage) ; un nœud doit être une petite forme
-       pleine plus petite qu'une case ;
-    3. **emprise** — tout ce qui tombe hors des limites de la grille
-       assemblée est écarté (roadmap Lot 9 §3 : un point arrière décoratif
-       de page de garde ne doit jamais être importé comme à broder). Les
-       pages de légende ne sont de toute façon jamais parcourues ici.
+    1. **colour** — only a stroke whose colour is that of a legend swatch is
+       kept. This filter is what discards in one go the rulings, the page
+       landmark arrows, the manual annotations left in the PDF (system-blue
+       strokes on two of the fixture's pages) and above all the **greyed-out
+       preview copies** each page draws in its overlap strip with the
+       neighbouring page (measured: 8 extra washed-out shades, never present
+       anywhere other than on top of an already counted stroke);
+    2. **shape** — an axis-aligned stroke lying on a cell boundary *and*
+       long enough to cross the grid remains a ruling, even if its colour
+       matches (the case of a pattern whose backstitch would be black like
+       the grid); a knot must be a small solid shape smaller than a cell;
+    3. **footprint** — anything falling outside the bounds of the assembled
+       grid is discarded (roadmap Lot 9 §3: a decorative cover-page
+       backstitch must never be imported as something to stitch). Legend
+       pages are never scanned here anyway.
     """
     result = _SpecialStitches()
     cache: dict[Color, int | None] = {}
@@ -1431,9 +1412,9 @@ def _collect_special_stitches(
             if not _within_grid(x1, y1, columns, rows) or not _within_grid(x2, y2, columns, rows):
                 off_grid += 1
                 continue
-            # Ordre canonique des deux extrémités : le même segment dessiné
-            # dans un sens sur une page et dans l'autre sur la page voisine
-            # (bande de recouvrement) ne doit compter qu'une fois.
+            # Canonical order of the two endpoints: the same segment drawn in
+            # one direction on one page and in the other on the neighbouring
+            # page (overlap strip) must only count once.
             (ux, uy), (vx, vy) = sorted([(x1, y1), (x2, y2)])
             segments.setdefault(
                 (ux, uy, vx, vy, index),
@@ -1507,17 +1488,16 @@ def _within_grid(x: float, y: float, columns: int, rows: int) -> bool:
 
 
 def _cross_check_sections(legend: _Legend, result: TypeAResult) -> list[DetectionWarning]:
-    """Croisement entre ce que la légende **annonce** et ce qui a été
-    **extrait** (roadmap Lot 9 §4, cahier des charges §7.3) : un fil déclaré
-    en point 1/2, 1/4, arrière ou nœud dont rien n'a été retrouvé dans la
-    grille est signalé, plutôt que de laisser croire que le motif n'en
-    comporte pas.
+    """Cross-check between what the legend **declares** and what was
+    **extracted** (roadmap Lot 9 §4, specification §7.3): a thread declared
+    as 1/2, 1/4, backstitch or knot of which nothing was found in the grid is
+    flagged, rather than letting it seem that the pattern has none.
 
-    Seule la légende des pages de texte sert ici. La page « Usage Summary »
-    du fichier de référence, elle, reste **exclusivement** la vérité terrain
-    indépendante des tests (`backend/tests/test_type_a.py`) : la consommer
-    aussi dans le moteur reviendrait à valider l'extraction avec sa propre
-    source et ne prouverait plus rien."""
+    Only the legend on the text pages is used here. The reference file's
+    "Usage Summary" page, for its part, remains **exclusively** the tests'
+    independent ground truth (`backend/tests/test_type_a.py`): consuming it
+    in the engine as well would amount to validating the extraction against
+    its own source and would no longer prove anything."""
     warnings: list[DetectionWarning] = []
     found: dict[str, set[int]] = {
         BACKSTITCH: {segment.palette_index for segment in result.backstitch},
@@ -1548,9 +1528,9 @@ def _cross_check_sections(legend: _Legend, result: TypeAResult) -> list[Detectio
 
 
 def _find_declared_dimensions(pages: list[Page]) -> tuple[int, int] | None:
-    """Dimensions annoncées en clair par le PDF lui-même (p. ex. `"255w X
-    180h Stitches"`) — préférées à l'étendue déduite de la grille assemblée
-    quand elles sont disponibles (cahier des charges §7.2 étape 6)."""
+    """Dimensions stated plainly by the PDF itself (e.g. `"255w X 180h
+    Stitches"`) — preferred over the extent inferred from the assembled grid
+    when available (specification §7.2 step 6)."""
     for page in pages:
         match = _DECLARED_DIMENSIONS_RE.search(page.extract_text())
         if match is not None:
@@ -1559,10 +1539,10 @@ def _find_declared_dimensions(pages: list[Page]) -> tuple[int, int] | None:
 
 
 def _find_fabric_count(pages: list[Page]) -> int | None:
-    """Compte de toile déclaré en clair (« Fabric: Aida 16, White »), utile
-    pour convertir en centimètres une longueur de point arrière mesurée en
-    cases. `None` si le PDF ne le déclare pas : aucune valeur par défaut
-    n'est inventée (une longueur physique fausse serait pire qu'absente)."""
+    """Fabric count stated plainly ("Fabric: Aida 16, White"), useful to
+    convert a backstitch length measured in cells into centimetres. `None` if
+    the PDF does not declare it: no default value is made up (a wrong
+    physical length would be worse than none)."""
     for page in pages:
         match = _FABRIC_COUNT_RE.search(page.extract_text())
         if match is None:
@@ -1604,9 +1584,9 @@ def _resolve_dimensions(
 
 
 def _unmapped_symbol_key(symbol_char: str, used: set[str]) -> str:
-    """Clé stable dérivée du point de code du glyphe (jamais le glyphe brut
-    — voir `TypeAPaletteEntry.symbol_key`), avec un suffixe si le même
-    glyphe apparaît déjà sous une autre couleur non reconnue."""
+    """Stable key derived from the glyph's code point (never the raw glyph —
+    see `TypeAPaletteEntry.symbol_key`), with a suffix if the same glyph
+    already appears under another unrecognised colour."""
     base = f"U+{ord(symbol_char):04X}"
     if base not in used:
         used.add(base)
@@ -1621,9 +1601,9 @@ def _unmapped_symbol_key(symbol_char: str, used: set[str]) -> str:
 
 @dataclass
 class _Layers:
-    """Les trois couches de cases d'un motif type A. `half`/`quarter` sont
-    vides quand la légende ne déclare aucun point de cette catégorie —
-    jamais une grille de zéros (voir `TypeAResult.cells_half`)."""
+    """The three cell layers of a type A pattern. `half`/`quarter` are empty
+    when the legend declares no stitch in that category — never a grid of
+    zeros (see `TypeAResult.cells_half`)."""
 
     full: list[int]
     half: list[int] = field(default_factory=list)
@@ -1641,14 +1621,13 @@ def _fill_cells(
     legend: _Legend,
     palette: list[TypeAPaletteEntry],
 ) -> _Layers:
-    """Répartit les glyphes placés dans la couche de leur **catégorie**.
+    """Distribute the placed glyphs into the layer of their **category**.
 
-    Un symbole donné n'appartient qu'à une seule section de légende (points
-    entiers, 1/2 ou 1/4) : c'est cette section, et non une devinette sur la
-    forme du glyphe, qui décide de la couche. Un symbole non rapproché de la
-    légende reste traité comme avant le Lot 9 — entrée « Symbole non
-    reconnu » explicite dans la couche des points entiers, jamais une case
-    vide silencieuse."""
+    A given symbol belongs to a single legend section only (full, 1/2 or
+    1/4): it is that section, and not a guess about the glyph's shape, that
+    decides the layer. A symbol not matched to the legend is still handled as
+    before Lot 9 — an explicit "Unrecognised symbol" entry in the full-stitch
+    layer, never a silently empty cell."""
     key_to_target = legend.key_to_target
     layers = {
         FULL: [0] * (columns * rows),
@@ -1667,10 +1646,10 @@ def _fill_cells(
             continue
         target = legend.fractional_glyph_to_target.get(glyph)
         if target is None:
-            # Glyphe décalé que la légende ne rattache à aucune section
-            # fractionnée : on préfère le signaler et l'ignorer plutôt que
-            # de l'écrire dans la couche des points entiers, où il
-            # fausserait un comptage déjà correct.
+            # Offset glyph the legend attaches to no fractional section:
+            # better to flag and ignore it than to write it into the
+            # full-stitch layer, where it would skew an already correct
+            # count.
             unmatched_offsets += 1
             continue
         index, category = target
@@ -1699,9 +1678,9 @@ def _fill_cells(
             affected_cells += 1
         index, category = target
         if category not in layers:
-            # Section de légende sans couche de cases (points arrière,
-            # nœuds) : un glyphe ne devrait jamais y être rattaché, mais on
-            # préfère l'ignorer que l'écrire dans la mauvaise couche.
+            # Legend section without a cell layer (backstitches, knots): a
+            # glyph should never be attached to it, but better to ignore it
+            # than to write it into the wrong layer.
             continue
         layers[category][row0 * columns + col0] = index
         used[category] += 1
@@ -1730,11 +1709,11 @@ def _fill_cells(
 
 
 def _count_palette_usage(result: TypeAResult) -> None:
-    """Reporte sur chaque entrée de palette ce qui la référence réellement
-    dans la grille assemblée — comptages par catégorie et longueur cumulée
-    de point arrière. Calculé ici, une seule fois, plutôt que laissé à
-    l'appelant : c'est la même donnée que celle qu'un tableau de légende
-    imprimé affiche, et elle ne doit exister qu'à un seul endroit."""
+    """Record on each palette entry what actually references it in the
+    assembled grid — counts per category and cumulative backstitch length.
+    Computed here, only once, rather than left to the caller: it is the same
+    data a printed legend table shows, and it must exist in a single place
+    only."""
     for entry in result.palette:
         entry.count_full = 0
         entry.count_half = 0

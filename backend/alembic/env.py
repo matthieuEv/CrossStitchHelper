@@ -1,8 +1,8 @@
-"""Environnement Alembic.
+"""Alembic environment.
 
-L'URL de base ne vient jamais de ``alembic.ini`` mais toujours de
-``app.config``, pour qu'une migration lancée à la main et le démarrage du
-conteneur visent forcément le même fichier SQLite.
+The database URL never comes from ``alembic.ini`` but always from
+``app.config``, so that a migration run by hand and the container startup
+necessarily target the same SQLite file.
 """
 
 from __future__ import annotations
@@ -11,7 +11,7 @@ from logging.config import fileConfig
 
 from sqlalchemy import engine_from_config, pool
 
-import app.models  # noqa: F401  (enregistre les tables sur Base.metadata)
+import app.models  # noqa: F401  (registers the tables on Base.metadata)
 from alembic import context
 from app.config import get_settings
 from app.db import Base
@@ -32,8 +32,8 @@ def run_migrations_offline() -> None:
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
-        # SQLite ne sait pas modifier une colonne en place : Alembic doit
-        # passer par la recréation de table pour tout ALTER non trivial.
+        # SQLite cannot alter a column in place: Alembic must go through
+        # table recreation for any non-trivial ALTER.
         render_as_batch=True,
     )
     with context.begin_transaction():

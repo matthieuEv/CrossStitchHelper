@@ -3,17 +3,16 @@ import { fileURLToPath } from "node:url";
 import { expect, test, type APIRequestContext } from "@playwright/test";
 
 /**
- * Vérifie le critère "terminé quand" du Lot 9 (docs/roadmap.md) : la
- * détection automatique type A extrait aussi les points spéciaux (1/2, 1/4,
- * point arrière, nœud) — contre une vraie instance, avec le vrai fichier de
- * référence, jusqu'au bout du parcours d'import réel (pas seulement les
- * tests unitaires de `backend/tests/test_type_a.py`, qui vérifient la
- * justesse de l'extraction elle-même mais pas le parcours utilisateur).
+ * Checks Lot 9's "done when" criterion (docs/roadmap.md): type A automatic
+ * detection also extracts special stitches (1/2, 1/4, backstitch, knot) —
+ * against a real instance, with the real reference file, all the way
+ * through the real import journey (not just the unit tests in
+ * `backend/tests/test_type_a.py`, which verify the extraction's correctness
+ * itself but not the user journey).
  *
- * Valeurs de vérité terrain : page 11 « Usage Summary » de la fixture,
- * reprises telles quelles (voir `backend/tests/test_type_a.py::
- * _expected_usage_by_code` pour le nouveau re-parsing indépendant à la
- * source de ces mêmes chiffres).
+ * Ground truth values: the fixture's page 11 "Usage Summary", taken as is
+ * (see `backend/tests/test_type_a.py::_expected_usage_by_code` for the
+ * independent re-parsing of these same figures at the source).
  */
 
 const FIXTURE_PATH = fileURLToPath(
@@ -23,7 +22,7 @@ const FIXTURE_PATH = fileURLToPath(
   ),
 );
 
-/** Voir le commentaire équivalent dans `lot4-automatic-detection.spec.ts`. */
+/** See the equivalent comment in `lot4-automatic-detection.spec.ts`. */
 const DETECTION_TIMEOUT = 90_000;
 
 interface PatternSummary {
@@ -50,12 +49,12 @@ async function fetchPatternByName(
   const list = await request.get("/api/patterns");
   const patterns = (await list.json()) as PatternSummary[];
   const found = patterns.find((pattern) => pattern.name === name);
-  if (found === undefined) throw new Error(`Motif "${name}" introuvable en base`);
+  if (found === undefined) throw new Error(`Pattern "${name}" not found in the database`);
   const detail = await request.get(`/api/patterns/${found.id}`);
   return (await detail.json()) as PatternDetail;
 }
 
-test("l'import type A pré-remplit le compte de toile et les points spéciaux se retrouvent dans le motif créé", async ({
+test("type A import pre-fills the fabric count and the special stitches end up in the created pattern", async ({
   page,
   request,
 }) => {
@@ -73,10 +72,10 @@ test("l'import type A pré-remplit le compte de toile et les points spéciaux se
   await expect(page.getByPlaceholder("Code").first()).toBeVisible();
   await page.getByRole("button", { name: "Continuer", exact: true }).click();
 
-  // Étape Récap : le compte de toile (Aida 16, lu dans le texte du PDF) est
-  // déjà rempli — jamais imposé, une saisie manuelle l'emporterait toujours
-  // (voir `manualFabricEditRef` dans `ImportScreen.tsx`), mais ici on
-  // vérifie justement qu'on n'a rien tapé.
+  // Summary step: the fabric count (Aida 16, read from the PDF text) is
+  // already filled in — never imposed, manual input would always win (see
+  // `manualFabricEditRef` in `ImportScreen.tsx`), but here we precisely check
+  // that nothing was typed.
   const fabricInput = page.getByLabel("Toile (fils au pouce)");
   await expect(fabricInput).toHaveValue("16");
 
@@ -89,16 +88,16 @@ test("l'import type A pré-remplit le compte de toile et les points spéciaux se
   const detail = await fetchPatternByName(request, patternName);
   const palette = Object.fromEntries(detail.palette.map((entry) => [entry.code, entry]));
 
-  // DMC 3031 : les 4 points 1/4 signalés page 11 (voir Key Technical
-  // Concepts — glyphes non centrés, distincts du point entier 3031).
+  // DMC 3031: the 4 quarter stitches declared on page 11 (off-centre glyphs,
+  // distinct from the 3031 full stitch).
   expect(palette["3031"]?.count_quarter).toBe(4);
 
-  // DMC 742 : les 3 nœuds, tous sur la page 1 de la fixture.
+  // DMC 742: the 3 knots, all on the fixture's page 1.
   expect(palette["742"]?.count_french).toBe(3);
 
-  // DMC 310 : longueur de point arrière convertie en cm à partir du compte
-  // de toile qu'on vient de valider (16) — jamais `null` puisque le champ
-  // était rempli à la validation.
+  // DMC 310: backstitch length converted to cm from the fabric count just
+  // validated (16) — never `null` since the field was filled in at
+  // validation.
   expect(palette["310"]?.backstitch_length_cm).not.toBeNull();
   expect(palette["310"]!.backstitch_length_cm!).toBeGreaterThan(100);
 });

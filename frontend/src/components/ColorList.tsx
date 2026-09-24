@@ -6,15 +6,15 @@ interface ColorListProps {
   counts: readonly ColorCount[];
   highlight: number;
   onToggle: (index: number) => void;
-  /** Masque les couleurs entièrement brodées : il n'y a plus rien à y faire. */
+  /** Hides fully stitched colours: there is nothing left to do on them. */
   hideFinished?: boolean;
 }
 
 /**
- * Liste des fils du motif, avec le nombre de points restants.
+ * List of the pattern's threads, with the number of remaining stitches.
  *
- * Partagée par le panneau permanent (écran large) et le tiroir (écran étroit) :
- * la même information, présentée au même endroit dans la hiérarchie visuelle.
+ * Shared by the permanent panel (wide screen) and the drawer (narrow screen):
+ * the same information, presented at the same place in the visual hierarchy.
  */
 export function ColorList({ counts, highlight, onToggle, hideFinished = false }: ColorListProps) {
   const t = useT();
@@ -37,9 +37,9 @@ export function ColorList({ counts, highlight, onToggle, hideFinished = false }:
           />
           <span style={{ flex: "none", width: 22, textAlign: "center", opacity: 0.75 }}>
             {count.symbolSvg !== undefined ? (
-              // Symbole réel découpé du PDF (Lot 4) — voir `pattern/render.ts`
-              // pour le même principe côté canvas (repli sur `count.symbol`
-              // tant qu'aucun symbole réel n'est disponible).
+              // Real symbol cut out of the PDF (Lot 4) — see `pattern/render.ts`
+              // for the same principle on the canvas side (falls back to
+              // `count.symbol` while no real symbol is available).
               <img
                 src={`data:image/svg+xml;base64,${btoa(count.symbolSvg)}`}
                 alt={count.symbol}
@@ -49,13 +49,12 @@ export function ColorList({ counts, highlight, onToggle, hideFinished = false }:
               count.symbol
             )}
           </span>
-          {/* `overflow: hidden` ici aussi, pas seulement sur chaque ligne : sans
-              ça, un nom de fil long (les vraies légendes DMC du Lot 4 sont bien
-              plus longues que les noms de démonstration) peut pousser ce bloc à
-              une largeur négative une fois les colonnes voisines (pastille,
-              symbole, compteur) comptées — le texte débordait alors sans points
-              de suspension jusqu'à être coupé net par le conteneur défilant du
-              panneau, plusieurs niveaux plus haut. */}
+          {/* `overflow: hidden` here too, not just on each row: without it, a
+              long thread name (the real DMC legends of Lot 4 are much longer
+              than the demo names) can push this block to a negative width once
+              the neighbouring columns (swatch, symbol, counter) are counted —
+              the text then overflowed without an ellipsis until it was cut off
+              sharply by the panel's scrolling container, several levels up. */}
           <span style={{ flex: 1, minWidth: 0, overflow: "hidden" }}>
             <span
               style={{

@@ -1,6 +1,6 @@
 /**
- * Décodage compact de la grille et de la progression, miroir de
- * `backend/app/codec.py` — mêmes formats, cahier des charges §6.1 et §6.3.
+ * Compact decoding of the grid and progress, mirror of
+ * `backend/app/codec.py` — same formats, specification §6.1 and §6.3.
  */
 
 export function base64ToBytes(data: string): Uint8Array {
@@ -12,8 +12,8 @@ export function base64ToBytes(data: string): Uint8Array {
 
 export function bytesToBase64(bytes: Uint8Array): string {
   let binary = "";
-  // Découpé par blocs : `String.fromCharCode(...bytes)` dépasse la limite
-  // d'arguments d'un appel de fonction sur un motif de 45 900 cases.
+  // Split into chunks: `String.fromCharCode(...bytes)` exceeds the function
+  // call argument limit on a 45,900-cell pattern.
   const chunkSize = 8192;
   for (let i = 0; i < bytes.length; i += chunkSize) {
     binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
@@ -21,15 +21,15 @@ export function bytesToBase64(bytes: Uint8Array): string {
   return btoa(binary);
 }
 
-/** Décode une couche `Uint16Array` little-endian (§6.3) en tableau JS classique. */
+/** Decode a little-endian `Uint16Array` layer (§6.3) into a plain JS array. */
 export function decodeUint16Layer(data: Uint8Array): Uint16Array {
-  // Copie l'alignement pour éviter un `RangeError` si `data.byteOffset` n'est
-  // pas multiple de 2 (arrive avec un sous-tableau issu de `subarray`).
+  // Copy to fix alignment and avoid a `RangeError` if `data.byteOffset` is
+  // not a multiple of 2 (happens with a `subarray` slice).
   const buffer = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength);
   return new Uint16Array(buffer);
 }
 
-/** Déballe un bitmap compact (1 bit/case) en un octet 0/1 par case. */
+/** Unpack a compact bitmap (1 bit/cell) into one 0/1 byte per cell. */
 export function unpackBitmap(bitmap: Uint8Array, cellCount: number): Uint8Array {
   const out = new Uint8Array(cellCount);
   for (let index = 0; index < cellCount; index++) {
@@ -41,7 +41,7 @@ export function unpackBitmap(bitmap: Uint8Array, cellCount: number): Uint8Array 
   return out;
 }
 
-/** Remballe un octet 0/1 par case en bitmap compact (1 bit/case). */
+/** Pack one 0/1 byte per cell back into a compact bitmap (1 bit/cell). */
 export function packBitmap(cells: Uint8Array): Uint8Array {
   const out = new Uint8Array(Math.ceil(cells.length / 8));
   for (let index = 0; index < cells.length; index++) {

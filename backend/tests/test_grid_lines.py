@@ -1,18 +1,17 @@
-"""Tests de `app/grid_lines.py` — la distinction réglure / trait de motif,
-partagée par les moteurs type A (points arrière, Lot 9) et type B/C
-(tracés de symbole, Lot 5).
+"""Tests for `app/grid_lines.py` — the grid ruling / pattern stroke
+distinction, shared by the type A engine (backstitches, Lot 9) and the
+type B/C engine (symbol paths, Lot 5).
 
-Le piège que ces tests verrouillent : un point arrière conventionnel part
-d'un **coin de case**, exactement comme une réglure. L'alignement sur une
-frontière ne suffit donc jamais à les séparer — il faut aussi la longueur et
-l'orientation.
+The trap these tests lock down: a conventional backstitch starts from a
+**cell corner**, exactly like a ruling. Alignment on a boundary is therefore
+never enough to tell them apart — length and orientation are needed too.
 """
 
 from __future__ import annotations
 
 from app.grid_lines import boundary_offset, is_axis_aligned, is_grid_ruling, line_length
 
-# Une grille d'origine (10, 20) au pas de 8 points.
+# A grid with origin (10, 20) and an 8-point pitch.
 GEOMETRY = {"origin_x": 10.0, "origin_top": 20.0, "pitch_x": 8.0, "pitch_y": 8.0}
 
 
@@ -21,14 +20,14 @@ def test_full_height_ruling_on_a_boundary_is_a_ruling() -> None:
 
 
 def test_short_backstitch_on_the_same_boundary_is_not_a_ruling() -> None:
-    """Même abscisse, même alignement parfait sur la frontière de case : seule
-    la longueur les sépare."""
+    """Same x coordinate, same perfect alignment on the cell boundary: only
+    length tells them apart."""
     assert not is_grid_ruling(18.0, 20.0, 18.0, 44.0, **GEOMETRY, min_length=100.0)
 
 
 def test_diagonal_backstitch_is_never_a_ruling() -> None:
-    """Une réglure est toujours strictement horizontale ou verticale — une
-    diagonale, même longue et partant d'un coin de case, ne l'est jamais."""
+    """A ruling is always strictly horizontal or vertical — a diagonal, even
+    a long one starting from a cell corner, never is."""
     assert not is_grid_ruling(18.0, 20.0, 418.0, 420.0, **GEOMETRY, min_length=100.0)
 
 
@@ -37,9 +36,9 @@ def test_stroke_inside_a_cell_is_not_a_ruling() -> None:
 
 
 def test_without_min_length_behaviour_is_the_lot_5_one() -> None:
-    """Sans critère de longueur (appel type B/C), tout trait axe-aligné posé
-    sur une frontière reste une réglure, aussi court soit-il — c'est le
-    comportement d'origine, que la généralisation ne doit pas changer."""
+    """Without a length criterion (type B/C call), any axis-aligned stroke
+    lying on a boundary remains a ruling, however short — this is the
+    original behaviour, which the generalisation must not change."""
     assert is_grid_ruling(18.0, 20.0, 18.0, 24.0, **GEOMETRY)
 
 

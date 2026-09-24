@@ -1,24 +1,23 @@
-"""Sauvegarde/restauration complète des données (Lot 8, cahier des charges §7.5).
+"""Full data backup/restore (Lot 8, specification §7.5).
 
-Distinct de l'export `.cshp` (`app/export_cshp.py`, Lot 2) qui ne couvre
-qu'un seul motif : celui-ci couvre toute l'instance — tous les motifs, leur
-palette, leur grille, leur progression, le journal `progress_events` (sans
-lequel l'historique d'activité, §11, disparaîtrait d'une restauration), et
-les recettes réutilisables (Lot 6). Format JSON (pas une archive ZIP comme
-`.cshp`) : c'est ce qu'annonce déjà le bouton « Exporter (.json) » des
-réglages (§7.5, figé au portage des maquettes), et un utilisateur qui n'a
-accès qu'à son téléphone doit pouvoir l'ouvrir/l'inspecter sans outil
-supplémentaire. Les champs binaires suivent la même convention base64 que le
-reste de l'API (`app/codec.py`), jamais les octets bruts d'un ZIP.
+Distinct from the `.cshp` export (`app/export_cshp.py`, Lot 2), which only
+covers a single pattern: this one covers the whole instance — all patterns,
+their palette, their grid, their progress, the `progress_events` log
+(without which the activity history, §11, would vanish on restore), and the
+reusable recipes (Lot 6). JSON format (not a ZIP archive like `.cshp`): that
+is what the settings' "Export (.json)" button already announces (§7.5,
+frozen when the mockups were ported), and a user who only has their phone
+must be able to open/inspect it with no extra tool. Binary fields follow the
+same base64 convention as the rest of the API (`app/codec.py`), never the
+raw bytes of a ZIP.
 
-Volontairement hors périmètre : ``ImportJob`` (état transitoire d'un
-assistant d'import en cours, jamais une donnée durable — voir
-`app/models.py`) et ``AppMeta`` (bookkeeping interne, pas une donnée
-utilisateur).
+Deliberately out of scope: ``ImportJob`` (transient state of an import
+wizard in progress, never durable data — see `app/models.py`) and
+``AppMeta`` (internal bookkeeping, not user data).
 
-Une restauration est un **remplacement complet**, jamais une fusion : c'est
-la sémantique attendue d'une « restauration » (par opposition à un
-« import »), et cela évite toute ambiguïté sur les identifiants en conflit.
+A restore is a **full replacement**, never a merge: that is the expected
+semantics of a "restore" (as opposed to an "import"), and it avoids any
+ambiguity about conflicting identifiers.
 """
 
 from __future__ import annotations
@@ -47,12 +46,12 @@ FORMAT_VERSION = 1
 
 
 class BackupFormatError(ValueError):
-    """Le document fourni n'est pas une sauvegarde CrossStitchHelper reconnue,
-    ou une version de format que cette instance ne sait pas lire.
+    """The document provided is not a recognised CrossStitchHelper backup, or
+    is a format version this instance cannot read.
 
-    Porte `code`/`params` plutôt qu'un message déjà formaté — traduit côté
-    client (audit des traductions, Lot 8), voir `app/schemas.py::ApiErrorDetail`
-    et `app/api/backup.py`."""
+    Carries `code`/`params` rather than an already formatted message —
+    translated on the client (translation audit, Lot 8), see
+    `app/schemas.py::ApiErrorDetail` and `app/api/backup.py`."""
 
     def __init__(self, code: str, **params: str | int) -> None:
         self.code = code
@@ -196,10 +195,9 @@ def restore_backup(session: Session, document: BackupDocument) -> BackupRestoreS
             expected=FORMAT_VERSION,
         )
 
-    # Suppression des motifs : entraîne par cascade SQLite (`PRAGMA
-    # foreign_keys=ON`, `app/db.py`) celle de leur palette, grille,
-    # progression et journal d'événements associés — jamais un cas
-    # particulier à écrire ici.
+    # Deleting the patterns cascades in SQLite (`PRAGMA foreign_keys=ON`,
+    # `app/db.py`) to their palette, grid, progress and associated event log
+    # — never a special case to write here.
     session.execute(delete(Pattern))
     session.execute(delete(Recipe))
 

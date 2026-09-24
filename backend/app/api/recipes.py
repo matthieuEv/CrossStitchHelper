@@ -1,11 +1,10 @@
-"""Bibliothèque de recettes réutilisables — Lot 6 (cahier des charges §8.7,
-§9). Une recette associe l'empreinte d'un fichier (`app/fingerprint.py`) à
-un sous-ensemble strictement géométrique/structurel de la configuration
-d'import validée (`app/schemas.py::RecipeConfig`) — jamais son contenu
-créatif. Le rapprochement automatique à l'upload d'un nouveau fichier de
-même empreinte se fait dans `app/api/imports.py::_run_auto_detection`, pas
-ici : ce module ne fait que gérer le cycle de vie de la bibliothèque
-(créer, lister, supprimer)."""
+"""Reusable recipe library — Lot 6 (specification §8.7, §9). A recipe
+associates a file's fingerprint (`app/fingerprint.py`) with a strictly
+geometric/structural subset of the validated import configuration
+(`app/schemas.py::RecipeConfig`) — never its creative content. Automatic
+matching when a new file with the same fingerprint is uploaded happens in
+`app/api/imports.py::_run_auto_detection`, not here: this module only
+manages the library's lifecycle (create, list, delete)."""
 
 from __future__ import annotations
 
@@ -39,9 +38,9 @@ def _recipe_out(recipe: Recipe) -> RecipeOut:
 
 
 def find_matching_recipe(session: Session, fingerprint: str) -> Recipe | None:
-    """La recette la plus utilisée pour cette empreinte, à défaut la plus
-    récente — utilisé par `app/api/imports.py` pour pré-remplir un nouveau
-    job sans jamais imposer un choix quand plusieurs recettes coexistent."""
+    """The most used recipe for this fingerprint, otherwise the most recent
+    — used by `app/api/imports.py` to pre-fill a new job without ever
+    imposing a choice when several recipes coexist."""
     return session.execute(
         select(Recipe)
         .where(Recipe.fingerprint == fingerprint)
@@ -50,7 +49,7 @@ def find_matching_recipe(session: Session, fingerprint: str) -> Recipe | None:
     ).scalar_one_or_none()
 
 
-@router.get("", response_model=list[RecipeOut], summary="Bibliothèque de recettes")
+@router.get("", response_model=list[RecipeOut], summary="Recipe library")
 def list_recipes(session: Annotated[Session, Depends(get_session)]) -> list[RecipeOut]:
     recipes = session.execute(select(Recipe).order_by(Recipe.created_at.desc())).scalars().all()
     return [_recipe_out(recipe) for recipe in recipes]
@@ -59,7 +58,7 @@ def list_recipes(session: Annotated[Session, Depends(get_session)]) -> list[Reci
 @router.post(
     "",
     response_model=RecipeOut,
-    summary="Enregistre la configuration d'un import comme recette",
+    summary="Save an import's configuration as a recipe",
 )
 def create_recipe(
     payload: RecipeCreate, session: Annotated[Session, Depends(get_session)]
@@ -94,7 +93,7 @@ def create_recipe(
     return _recipe_out(recipe)
 
 
-@router.delete("/{recipe_id}", status_code=204, summary="Supprime une recette")
+@router.delete("/{recipe_id}", status_code=204, summary="Delete a recipe")
 def delete_recipe(recipe_id: str, session: Annotated[Session, Depends(get_session)]) -> None:
     recipe = session.get(Recipe, recipe_id)
     if recipe is None:

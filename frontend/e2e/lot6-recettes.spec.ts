@@ -3,17 +3,17 @@ import { fileURLToPath } from "node:url";
 import { expect, test, type APIRequestContext } from "@playwright/test";
 
 /**
- * Vérifie le critère "terminé quand" du Lot 6 (docs/roadmap.md) : réimporter
- * un second PDF du même éditeur reprend automatiquement le cadrage validé
- * la première fois — contre une vraie instance, avec de vrais fichiers de
- * référence, la détection et le rapprochement de recette tournant
- * réellement en tâche de fond côté serveur (`backend/app/api/imports.py`,
+ * Checks Lot 6's "done when" criterion (docs/roadmap.md): re-importing a
+ * second PDF from the same publisher automatically reuses the cropping
+ * validated the first time — against a real instance, with real reference
+ * files, with detection and recipe matching really running as a background
+ * task on the server (`backend/app/api/imports.py`,
  * `backend/app/api/recipes.py`, `backend/app/fingerprint.py`).
  *
- * `botanical-citrus-dmc` et `cucurbit-dmc` sont deux grilles DMC officielles
- * réelles, même gabarit d'export mais motifs différents (voir
- * `fixtures/README.md`, `backend/tests/test_fingerprint.py`) : exactement
- * le cas d'usage du lot, sans fixture synthétique fabriquée pour l'occasion.
+ * `botanical-citrus-dmc` and `cucurbit-dmc` are two real official DMC charts,
+ * same export template but different patterns (see `fixtures/README.md`,
+ * `backend/tests/test_fingerprint.py`): exactly the lot's use case, with no
+ * synthetic fixture fabricated for the occasion.
  */
 
 const BOTANICAL_CITRUS_PATH = fileURLToPath(
@@ -29,11 +29,11 @@ const CUCURBIT_PATH = fileURLToPath(
 const DETECTION_TIMEOUT = 90_000;
 const RECIPE_LABEL_PREFIX = "Officiel DMC e2e";
 
-/** Retire toute recette laissée par une exécution précédente de ce même
- * test — sans quoi une recette déjà enregistrée pour l'empreinte DMC
- * officielle ferait échouer l'assertion "pas de bannière sur un premier
- * fichier" (voir `e2e/README.md` : un test doit rester correct qu'il soit
- * lancé une fois ou cent fois de suite sur la même base). */
+/** Removes any recipe left by a previous run of this same test — otherwise a
+ * recipe already saved for the official DMC fingerprint would fail the "no
+ * banner on a first file" assertion (see `e2e/README.md`: a test must stay
+ * correct whether it runs once or a hundred times in a row on the same
+ * database). */
 async function removeLeftoverRecipes(request: APIRequestContext): Promise<void> {
   const response = await request.get("/api/recipes");
   const recipes: Array<{ id: string; label: string }> = await response.json();
@@ -44,7 +44,7 @@ async function removeLeftoverRecipes(request: APIRequestContext): Promise<void> 
   }
 }
 
-test("une recette enregistrée en fin d'import se réapplique sur un second fichier du même éditeur", async ({
+test("a recipe saved at the end of an import is re-applied to a second file from the same publisher", async ({
   page,
   request,
 }) => {
@@ -57,7 +57,7 @@ test("une recette enregistrée en fin d'import se réapplique sur un second fich
 
   const recipeLabel = `${RECIPE_LABEL_PREFIX} ${Date.now()}`;
 
-  // --- Premier import : botanical-citrus, enregistré comme recette -------
+  // --- First import: botanical-citrus, saved as a recipe -----------------
   await page.goto("/");
   await page.getByRole("button", { name: "Importer", exact: true }).click();
   await page.locator('input[type="file"][accept*="pdf"]').setInputFiles(BOTANICAL_CITRUS_PATH);
@@ -65,12 +65,12 @@ test("une recette enregistrée en fin d'import se réapplique sur un second fich
   await expect(page.getByText(/Détection automatique : type C/)).toBeVisible({
     timeout: DETECTION_TIMEOUT,
   });
-  // Aucune recette ne correspond encore à cette empreinte — jamais de
-  // bannière de recette sur un tout premier fichier.
+  // No recipe matches this fingerprint yet — never a recipe banner on the
+  // very first file.
   await expect(page.getByText(/Cadrage pré-rempli depuis la recette/)).toHaveCount(0);
 
   await page.getByRole("button", { name: "Continuer", exact: true }).click(); // -> Palette
-  await page.getByRole("button", { name: "Continuer", exact: true }).click(); // -> Récap
+  await page.getByRole("button", { name: "Continuer", exact: true }).click(); // -> Summary
 
   await page
     .getByLabel("Enregistrer le cadrage comme recette réutilisable")
@@ -85,12 +85,12 @@ test("une recette enregistrée en fin d'import se réapplique sur un second fich
 
   await expect(page.locator("canvas.track-canvas")).toBeVisible();
 
-  // La recette doit maintenant exister dans la bibliothèque locale (Réglages).
+  // The recipe must now exist in the local library (Settings).
   await page.getByRole("button", { name: "Réglages", exact: true }).click();
   await expect(page.getByText(recipeLabel)).toBeVisible();
   await expect(page.getByText("0 utilisation(s)")).toBeVisible();
 
-  // --- Second import : cucurbit, même gabarit DMC officiel ---------------
+  // --- Second import: cucurbit, same official DMC template ---------------
   await page.getByRole("button", { name: "Importer", exact: true }).click();
   await page.locator('input[type="file"][accept*="pdf"]').setInputFiles(CUCURBIT_PATH);
 
@@ -101,13 +101,13 @@ test("une recette enregistrée en fin d'import se réapplique sur un second fich
     page.getByText(new RegExp(`Cadrage pré-rempli depuis la recette « ${recipeLabel} »`)),
   ).toBeVisible();
 
-  // Les dimensions/palette restent celles, propres, de ce second fichier —
-  // jamais copiées depuis la recette (cahier des charges §8.7).
+  // Dimensions/palette remain this second file's own — never copied from the
+  // recipe (specification §8.7).
   const [columnsInput, rowsInput] = await page.locator("input.input").all();
   await expect(columnsInput!).not.toHaveValue("");
   await expect(rowsInput!).not.toHaveValue("");
 
-  // La recette réutilisée compte désormais une utilisation.
+  // The reused recipe now counts one use.
   await page.getByRole("button", { name: "Réglages", exact: true }).click();
   await expect(page.getByText("1 utilisation(s)")).toBeVisible();
 

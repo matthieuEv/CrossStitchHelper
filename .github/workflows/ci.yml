@@ -20,9 +20,9 @@ jobs:
           python-version: "3.12"
           cache: pip
       - run: pip install -e ".[dev]"
-      - name: Formatage et règles
+      - name: Lint
         run: ruff check .
-      - name: Typage
+      - name: Type check
         run: mypy
       - name: Tests
         run: pytest -q
@@ -41,21 +41,21 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci
-      - name: Typage
+      - name: Type check
         run: npm run typecheck
-      - name: Construction
+      - name: Build
         run: npm run build
 
   image:
-    name: Image Docker + e2e
+    name: Docker image + e2e
     runs-on: ubuntu-latest
-    # L'image n'a de sens que si les deux moitiés passent.
+    # The image only makes sense if both halves pass.
     needs: [backend, frontend]
     steps:
       - uses: actions/checkout@v7
-      - name: Construire l'image
+      - name: Build the image
         run: docker build -t crossstitchhelper:ci .
-      - name: Démarrer l'instance et attendre qu'elle réponde
+      - name: Start the instance and wait for it to respond
         run: |
           docker run -d --name csh -p 8000:8000 crossstitchhelper:ci
           for attempt in $(seq 1 30); do
@@ -65,35 +65,35 @@ jobs:
             sleep 2
           done
           cat /tmp/health.json
-          # Un statut « ok » prouve que la base a été créée et migrée au
-          # démarrage, pas seulement que le processus est vivant.
+          # An "ok" status proves the database was created and migrated at
+          # startup, not just that the process is alive.
           grep -q '"status":"ok"' /tmp/health.json
-          # Le frontend construit doit être servi par le même processus.
+          # The built frontend must be served by the same process.
           curl -fsS http://127.0.0.1:8000/ | grep -qi "<div id=\"root\">"
-      - name: Semer le motif de démonstration
-        # Les tests e2e (Lot 1) ont besoin d'au moins un motif en base pour
-        # vérifier la persistance de la progression.
+      - name: Seed the demo pattern
+        # The e2e tests (Lot 1) need at least one pattern in the database to
+        # verify progress persistence.
         run: docker exec csh python scripts/seed_demo_pattern.py
       - uses: actions/setup-node@v7
         with:
           node-version: "22"
           cache: npm
           cache-dependency-path: frontend/package-lock.json
-      - name: Installer les dépendances e2e
+      - name: Install e2e dependencies
         working-directory: frontend
         run: |
           npm ci
           npx playwright install --with-deps chromium
-      - name: Tests e2e (contre l'image Docker réelle)
+      - name: e2e tests (against the real Docker image)
         working-directory: frontend
         run: npm run test:e2e
-      - name: Rapport e2e
+      - name: e2e report
         if: failure()
         uses: actions/upload-artifact@v7
         with:
           name: playwright-report
           path: frontend/playwright-report/
           retention-days: 7
-      - name: Nettoyer le conteneur
+      - name: Clean up the container
         if: always()
         run: docker rm -f csh

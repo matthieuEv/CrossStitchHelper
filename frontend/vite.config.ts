@@ -6,8 +6,8 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
-      // L'application se met à jour toute seule : sur un appareil installé sur
-      // l'écran d'accueil, personne ne pense à « recharger la page ».
+      // The application updates itself: on a device where it is installed on
+      // the home screen, nobody thinks of "reloading the page".
       registerType: "autoUpdate",
       includeAssets: ["icons/apple-touch-icon.png"],
       manifest: {
@@ -34,10 +34,10 @@ export default defineConfig({
         ],
       },
       workbox: {
-        // Les polices sont auto-hébergées : elles font partie du précache, ce
-        // qui garantit un rendu identique hors ligne.
+        // Fonts are self-hosted: they are part of the precache, which
+        // guarantees identical rendering offline.
         globPatterns: ["**/*.{js,css,html,woff2,png,svg}"],
-        // Les routes applicatives sont servies par le fallback SPA du backend.
+        // Application routes are served by the backend's SPA fallback.
         navigateFallback: "index.html",
         navigateFallbackDenylist: [/^\/api\//],
         cleanupOutdatedCaches: true,
@@ -48,7 +48,7 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      // En développement, le frontend est servi par Vite et l'API par uvicorn.
+      // In development, the frontend is served by Vite and the API by uvicorn.
       "/api": {
         target: "http://127.0.0.1:8000",
         changeOrigin: false,

@@ -1,9 +1,9 @@
 /**
- * Thème clair / sombre / système.
+ * Light / dark / system theme.
  *
- * Le choix est appliqué sur `<html data-theme>` : `index.css` fait le reste,
- * et le rendu canvas relit ses couleurs depuis les variables CSS, donc un
- * changement de thème n'a aucune valeur à dupliquer en JavaScript.
+ * The choice is applied on `<html data-theme>`: `index.css` does the rest,
+ * and canvas rendering reads its colours back from the CSS variables, so a
+ * theme change has no value to duplicate in JavaScript.
  */
 
 import {
@@ -27,7 +27,7 @@ function readStoredChoice(): ThemeChoice {
     const stored = localStorage.getItem(STORAGE_KEY);
     if (stored === "light" || stored === "dark" || stored === "system") return stored;
   } catch {
-    // Stockage indisponible : on suit le système, ce qui est le bon défaut.
+    // Storage unavailable: follow the system, which is the right default.
   }
   return "system";
 }
@@ -58,11 +58,10 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     document.documentElement.dataset["theme"] = resolved;
-    // Garde la couleur de barre d'état/chrome du navigateur synchronisée
-    // avec le thème réellement appliqué — le script bloquant de
-    // `index.html` ne couvre que le tout premier rendu, pas un changement
-    // fait ensuite (bascule manuelle, ou préférence système qui change
-    // pendant que l'app est ouverte).
+    // Keep the status bar/browser chrome colour in sync with the theme
+    // actually applied — the blocking script in `index.html` only covers the
+    // very first render, not a later change (manual toggle, or the system
+    // preference changing while the app is open).
     const meta = document.querySelector('meta[name="theme-color"]');
     if (meta !== null) meta.setAttribute("content", resolved === "dark" ? "#1f1d19" : "#f5ead8");
   }, [resolved]);
@@ -72,7 +71,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     try {
       localStorage.setItem(STORAGE_KEY, next);
     } catch {
-      // Préférence non mémorisée : sans gravité.
+      // Preference not remembered: harmless.
     }
   }, []);
 
@@ -86,6 +85,6 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
 export function useTheme(): ThemeContextValue {
   const value = useContext(ThemeContext);
-  if (value === null) throw new Error("useTheme doit être utilisé dans <ThemeProvider>");
+  if (value === null) throw new Error("useTheme must be used within <ThemeProvider>");
   return value;
 }

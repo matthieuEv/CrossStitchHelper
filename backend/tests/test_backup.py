@@ -1,8 +1,8 @@
-"""Tests de la sauvegarde/restauration complète (Lot 8, cahier des charges §7.5).
+"""Tests for the full backup/restore (Lot 8, specification §7.5).
 
-Distinct de `test_patterns.py::test_export_produces_a_self_contained_cshp_archive`
-(un seul motif) : ici, l'instance entière — motifs, progression, journal
-d'activité, recettes — en un document JSON (`app/backup.py`)."""
+Distinct from `test_patterns.py::test_export_produces_a_self_contained_cshp_archive`
+(a single pattern): here, the whole instance — patterns, progress, activity
+log, recipes — as one JSON document (`app/backup.py`)."""
 
 from __future__ import annotations
 
@@ -64,7 +64,7 @@ def test_export_backup_includes_seeded_pattern_with_all_layers(seeded_client: Te
     assert len(base64_to_bytes(grid["layer_full"])) == WIDTH * HEIGHT * 2
     assert grid["layer_half"] is not None
     assert grid["layer_quarter"] is not None
-    assert len(grid["backstitch_json"]) > 2  # pas juste "[]"
+    assert len(grid["backstitch_json"]) > 2  # not just "[]"
     assert len(grid["french_knots_json"]) > 2
 
     progress = pattern["progress"]
@@ -101,7 +101,7 @@ def test_restore_replaces_rather_than_merges(seeded_client: TestClient) -> None:
     _add_recipe("recette-avant-sauvegarde")
     snapshot = seeded_client.get("/api/backup").json()
 
-    # Mutation après la sauvegarde : un second motif, une progression modifiée.
+    # Mutation after the backup: a second recipe, modified progress.
     interior_index = 90 * WIDTH + 130
     seeded_client.post(
         f"/api/patterns/{DEMO_PATTERN_ID}/progress",
@@ -123,7 +123,7 @@ def test_restore_replaces_rather_than_merges(seeded_client: TestClient) -> None:
     assert [p["id"] for p in patterns_after] == [DEMO_PATTERN_ID]
 
     progress_after = seeded_client.get(f"/api/patterns/{DEMO_PATTERN_ID}/progress").json()
-    assert progress_after["version"] == 1  # remis à l'état de la sauvegarde, pas 2
+    assert progress_after["version"] == 1  # back to the backup's state, not 2
     assert get_bit(base64_to_bytes(progress_after["bitmap"]), interior_index) is False
 
     recipes_after = seeded_client.get("/api/recipes").json()

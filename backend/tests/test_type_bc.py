@@ -1,30 +1,28 @@
-"""Tests du moteur d'extraction types B/C (Lot 5) contre les quatre fixtures
-DMC réelles — voir `fixtures/README.md` et le skill
-`.claude/skills/verify-extraction-fixtures/`.
+"""Tests for the type B/C extraction engine (Lot 5) against the four real
+DMC fixtures — see `fixtures/README.md` and the
+`.claude/skills/verify-extraction-fixtures/` skill.
 
-Le nombre de couleurs distinctes réellement utilisées (`fixtures/README.md`)
-est vérifié exactement pour trois des quatre fixtures : 14 pour
-`winter-wreath-dmc`, 17 pour `botanical-citrus-dmc`, 18 pour `cucurbit-dmc`
-(les 18 couleurs de la légende de cucurbit y sont bien toutes réellement
-utilisées dans la grille — mesuré directement sur les cases coloriées, pas
-recopié de la légende ; contrairement à ce qu'on pourrait déduire d'un
-survol rapide de la légende, cf. `docs/cahier-des-charges.md` §4.3 : ne
-jamais supposer, toujours mesurer).
+The number of distinct colours actually used (`fixtures/README.md`) is
+checked exactly for three of the four fixtures: 14 for `winter-wreath-dmc`,
+17 for `botanical-citrus-dmc`, 18 for `cucurbit-dmc` (all 18 colours of
+cucurbit's legend are indeed actually used in the grid — measured directly
+on the coloured cells, not copied from the legend; contrary to what a quick
+look at the legend might suggest, cf. `docs/specification.md` §4.3: never
+assume, always measure).
 
-`summer-flight-dmc` est le cas piège du Lot 5 (§4.3) : sa page couleur
-contient déjà, elle-même, une quantité de tracés vectoriels comparable à une
-page symboles à part entière. Il sert ici à vérifier que le connecteur ne
-suppose jamais aveuglément une superposition à deux pages, **et** — au-delà
-de la mesure de densité par page — que la reconnaissance de forme se replie
-honnêtement sur la couleur seule (type B) quand elle n'est pas assez fiable
-sur l'ensemble du fichier plutôt que de produire une palette de plusieurs
-centaines d'entrées inutilisable. Ce fichier utilise en réalité une
-illustration richement nuancée (plusieurs tons par élément de motif, pas un
-simple aplat par fil) : le nombre de couleurs distinctes mesuré est donc
-volontairement vérifié à la hausse par rapport aux 12 codes de la légende
-« points comptés », pas recopié de cette légende — mêmes règles que
-`test_type_a.py` : aucune valeur attendue definie à la main quand le fichier
-source permet de la mesurer soi-même."""
+`summer-flight-dmc` is Lot 5's trap case (§4.3): its colour page itself
+already contains an amount of vector paths comparable to a full-fledged
+symbol page. It serves here to check that the connector never blindly
+assumes a two-page overlay, **and** — beyond measuring density per page —
+that shape recognition honestly falls back to colour only (type B) when it
+is not reliable enough across the whole file, rather than producing an
+unusable palette of several hundred entries. This file actually uses a
+richly shaded illustration (several tones per pattern element, not a single
+flat fill per thread): the number of distinct colours measured is therefore
+deliberately checked as a lower bound relative to the 12 codes of the
+"counted stitches" legend, not copied from that legend — same rules as
+`test_type_a.py`: no expected value defined by hand when the source file
+allows it to be measured directly."""
 
 from __future__ import annotations
 
@@ -45,9 +43,9 @@ SUMMER_FLIGHT = FIXTURES_ROOT / "summer-flight-dmc" / "vol_de_te.pdf"
 
 DMC_FIXTURES = [WINTER_WREATH, BOTANICAL_CITRUS, CUCURBIT, SUMMER_FLIGHT]
 
-# Les deux fixtures d'un autre type (cahier des charges §4.4) : `detect_type_bc`
-# doit s'effacer proprement dessus, comme `detect_type_a` s'efface sur les
-# fixtures B/C/E (voir `test_type_a.py`).
+# The two fixtures of another type (specification §4.4): `detect_type_bc`
+# must cleanly step aside on them, as `detect_type_a` steps aside on the
+# B/C/E fixtures (see `test_type_a.py`).
 OTHER_TYPE_FIXTURES = [
     FIXTURES_ROOT / "cafe-brasserie-charting-export" / "CaffeBrasseriecoloursymbols.pdf",
     FIXTURES_ROOT / "river-and-mountains-laserarts" / "RiverAndMountains-CS.pdf",
@@ -55,9 +53,9 @@ OTHER_TYPE_FIXTURES = [
 
 
 def _distinct_colors(result: TypeBCResult) -> int:
-    """Nombre de couleurs distinctes réellement présentes dans la palette —
-    plusieurs entrées de palette peuvent partager la même couleur en type C
-    (une couleur associée à plusieurs symboles distincts), donc distinct de
+    """Number of distinct colours actually present in the palette — several
+    palette entries can share the same colour in type C (one colour
+    associated with several distinct symbols), hence distinct from
     `len(result.palette)`."""
     return len({entry.rgb_hex for entry in result.palette})
 
@@ -127,48 +125,48 @@ def test_summer_flight_is_well_formed(summer_flight: TypeBCResult) -> None:
 
 
 def test_winter_wreath_distinct_colours_match_legend(winter_wreath: TypeBCResult) -> None:
-    """`fixtures/README.md` : légende page 4, 14 codes DMC (3345, 3346, 471,
-    472, 11, 18, 3821, 726, 3853, 3854, blanc, 351, 814, E321)."""
+    """`fixtures/README.md`: legend on page 4, 14 DMC codes (3345, 3346, 471,
+    472, 11, 18, 3821, 726, 3853, 3854, white, 351, 814, E321)."""
     assert _distinct_colors(winter_wreath) == 14
 
 
 def test_botanical_citrus_distinct_colours_match_legend(botanical_citrus: TypeBCResult) -> None:
-    """`fixtures/README.md` : légende page 4, 17 couleurs DMC."""
+    """`fixtures/README.md`: legend on page 4, 17 DMC colours."""
     assert _distinct_colors(botanical_citrus) == 17
 
 
 def test_cucurbit_distinct_colours_match_legend(cucurbit: TypeBCResult) -> None:
-    """`fixtures/README.md` signale 18 couleurs en légende dont 6
-    échantillons hors motif — mais mesuré directement sur les cases
-    réellement coloriées de la grille (jamais sur la légende), les 18
-    couleurs de cucurbit sont bien toutes utilisées dans la grille : aucune
-    des 18 n'est un doublon de couleur d'une autre. Le filtrage "hors motif"
-    décrit dans la fixture s'applique donc à la légende telle qu'imprimée
-    (qui inclut des échantillons non repris dans le dessin), pas à un excès
-    de couleurs mesurées ici — cohérent avec la consigne de vérifier soi-même
-    plutôt que de recopier un chiffre indicatif."""
+    """`fixtures/README.md` reports 18 colours in the legend including 6
+    swatches not in the pattern — but measured directly on the grid's
+    actually coloured cells (never on the legend), all 18 of cucurbit's
+    colours are indeed used in the grid: none of the 18 is a colour
+    duplicate of another. The "not in the pattern" filtering described in
+    the fixture therefore applies to the legend as printed (which includes
+    swatches not used in the drawing), not to an excess of colours measured
+    here — consistent with the instruction to verify directly rather than
+    copy an indicative figure."""
     assert _distinct_colors(cucurbit) == 18
 
 
 def test_summer_flight_uses_more_shades_than_its_flat_legend_suggests(
     summer_flight: TypeBCResult,
 ) -> None:
-    """La légende « points comptés » de `summer-flight-dmc` liste 12 codes
-    DMC, mais la page couleur dessine en réalité une illustration nuancée
-    (plusieurs tons distincts par zone de motif plutôt qu'un aplat unique
-    par fil) — mesuré directement, pas recopié de la légende. Le connecteur
-    doit donc y trouver sensiblement plus de couleurs distinctes que 12."""
+    """The "counted stitches" legend of `summer-flight-dmc` lists 12 DMC
+    codes, but the colour page actually draws a shaded illustration (several
+    distinct tones per pattern area rather than a single flat fill per
+    thread) — measured directly, not copied from the legend. The connector
+    must therefore find noticeably more than 12 distinct colours there."""
     assert _distinct_colors(summer_flight) > 12
 
 
 def test_winter_wreath_symbols_reused_from_its_own_colour_page(
     winter_wreath: TypeBCResult,
 ) -> None:
-    """Cas mesuré (§4.3) : la page couleur de `winter-wreath-dmc` porte déjà
-    elle-même les symboles — aucune page séparée n'est nécessaire, et le
-    connecteur doit le mesurer plutôt que supposer la structure "page 1
-    couleur seule / page 2 symboles" que suggérerait un survol rapide du
-    cahier des charges §4.1."""
+    """Measured case (§4.3): the colour page of `winter-wreath-dmc` itself
+    already carries the symbols — no separate page is needed, and the
+    connector must measure that rather than assume the "page 1 colour only /
+    page 2 symbols" structure a quick look at specification §4.1 would
+    suggest."""
     assert winter_wreath.grid_type == "C"
     glyphs = [e.symbol_glyph for e in winter_wreath.palette if e.symbol_glyph is not None]
     assert glyphs
@@ -181,10 +179,10 @@ def test_winter_wreath_symbols_reused_from_its_own_colour_page(
 def test_botanical_and_cucurbit_overlay_a_separate_symbol_page(
     fixture_name: str, request: pytest.FixtureRequest
 ) -> None:
-    """Cas mesuré (§4.3, `fixtures/README.md`) : la page couleur de ces deux
-    fixtures est propre (peu de tracés), la page 2 porte les symboles —
-    superposition à deux pages réellement nécessaire ici, contrairement à
-    `winter-wreath-dmc` et `summer-flight-dmc`."""
+    """Measured case (§4.3, `fixtures/README.md`): the colour page of these
+    two fixtures is clean (few paths), page 2 carries the symbols — a
+    two-page overlay is genuinely needed here, unlike `winter-wreath-dmc`
+    and `summer-flight-dmc`."""
     result: TypeBCResult = request.getfixturevalue(fixture_name)
     assert result.grid_type == "C"
     glyphs = [e.symbol_glyph for e in result.palette if e.symbol_glyph is not None]
@@ -195,17 +193,17 @@ def test_botanical_and_cucurbit_overlay_a_separate_symbol_page(
 def test_summer_flight_never_blindly_overlays_a_redundant_page(
     summer_flight: TypeBCResult,
 ) -> None:
-    """Le coeur du cas piège (§4.3) : ce fichier ne doit jamais faire
-    échouer le connecteur en lui faisant croire à une vraie page de symboles
-    superposable. Ici, la reconnaissance de forme s'avère trop peu fiable
-    sur l'ensemble du fichier (illustration nuancée, pas un symbole net par
-    case) — repli honnête en type B, jamais une palette de plusieurs
-    centaines d'entrées présentée comme fiable."""
+    """The heart of the trap case (§4.3): this file must never make the
+    connector fail by making it believe in a real overlayable symbol page.
+    Here, shape recognition turns out to be too unreliable across the whole
+    file (shaded illustration, not one crisp symbol per cell) — an honest
+    fallback to type B, never a palette of several hundred entries presented
+    as reliable."""
     assert summer_flight.grid_type == "B"
     assert len(summer_flight.palette) < 50
-    # Le repli doit être annoncé explicitement, par un code de message (jamais
-    # un texte français figé côté serveur — audit des traductions, Lot 8) :
-    # l'un des trois codes qui signalent un repli sur la couleur seule.
+    # The fallback must be announced explicitly, through a message code
+    # (never French text frozen on the server — translation audit, Lot 8):
+    # one of the three codes that signal a fallback to colour only.
     fallback_codes = {
         "type_bc.symbol_recognition_unreliable",
         "type_bc.symbol_page_unusable",
@@ -217,14 +215,14 @@ def test_summer_flight_never_blindly_overlays_a_redundant_page(
 def test_uncertain_cells_are_explicitly_flagged_not_silently_wrong(
     botanical_citrus: TypeBCResult,
 ) -> None:
-    """Règle impérative (`pdf-extraction-specialist`) : toute case incertaine
-    doit être signalée, jamais laissée fausse en silence. Vérifie que le
-    mécanisme de signalement est réellement câblé de bout en bout (pas
-    seulement présent dans le contrat de données)."""
+    """Mandatory rule (`pdf-extraction-specialist`): every uncertain cell
+    must be flagged, never silently left wrong. Checks that the flagging
+    mechanism is really wired end to end (not just present in the data
+    contract)."""
     assert botanical_citrus.uncertain_cells
-    # Signalé par un code + paramètres, jamais un texte français figé côté
-    # serveur (audit des traductions, Lot 8) — et le comptage annoncé doit
-    # correspondre exactement aux cases réellement marquées incertaines.
+    # Flagged by a code + parameters, never French text frozen on the server
+    # (translation audit, Lot 8) — and the announced count must match exactly
+    # the cells actually marked uncertain.
     uncertain_warnings = [
         w for w in botanical_citrus.warnings if w.code == "type_bc.uncertain_cells"
     ]
@@ -240,84 +238,79 @@ def test_uncertain_cells_are_explicitly_flagged_not_silently_wrong(
 def test_uncertain_cell_rate_stays_reasonable_not_almost_the_whole_grid(
     fixture_name: str, max_uncertain_fraction: float, request: pytest.FixtureRequest
 ) -> None:
-    """Non-régression des trois correctifs successifs « cases incertaines »
-    du Lot 5. Avant le premier, `botanical-citrus-dmc` et `cucurbit-dmc`
-    signalaient respectivement 58 % et 34 % des cases coloriées comme
-    incertaines (`1630/2802` et `642/1911`), au point de couvrir la
-    quasi-totalité de certaines zones du motif dans le pinceau de
-    l'assistant — bien plus qu'une vraie proportion de couleurs/symboles
-    ambigus. Cause mesurée et corrigée : `_color_to_rgb` convertissait le
-    CMJN vers le RVB par la formule naïve recommandée en repli par le spec
-    PDF (`R=(1-C)(1-K)`...), qui sursature nettement les teintes obtenues
-    par mélange cyan+jaune (verts en particulier) et gonflait
-    artificiellement la distance Lab au rapprochement DMC pour plusieurs
-    couleurs à forte population de cases — confirmé en comparant cette
-    formule à la couleur réellement rendue par PyMuPDF pour les mêmes
-    valeurs CMJN. `_cmyk_to_rgb_via_mupdf` la remplace. Une piste explorée à
-    l'époque (desserrer le seuil de différence de bits du bitmap 6x6 alors
-    utilisé par `_build_symbol_signatures` pour absorber le bruit de
-    repositionnement entre signatures d'un même symbole redessiné) a été
-    **abandonnée** : à un seuil de 4 bits, elle fusionnait à tort un symbole
-    « + » avec un symbole « flèche vers le haut » sur `botanical-citrus-dmc`
-    (confirmé visuellement en rendant les deux bitmaps via
-    `render_symbol_svg`).
+    """Non-regression of Lot 5's three successive "uncertain cells" fixes.
+    Before the first one, `botanical-citrus-dmc` and `cucurbit-dmc` flagged
+    58% and 34% of the coloured cells as uncertain respectively
+    (`1630/2802` and `642/1911`), to the point of covering almost the whole
+    of some pattern areas in the wizard's brush — far more than a real
+    proportion of ambiguous colours/symbols. Cause measured and fixed:
+    `_color_to_rgb` converted CMYK to RGB with the naive formula recommended
+    as a fallback by the PDF spec (`R=(1-C)(1-K)`...), which clearly
+    oversaturates shades obtained by mixing cyan+yellow (greens in
+    particular) and artificially inflated the Lab distance in DMC matching
+    for several colours with a large cell population — confirmed by
+    comparing this formula with the colour actually rendered by PyMuPDF for
+    the same CMYK values. `_cmyk_to_rgb_via_mupdf` replaces it. An avenue
+    explored at the time (loosening the bit-difference threshold of the 6x6
+    bitmap then used by `_build_symbol_signatures` to absorb repositioning
+    noise between signatures of the same redrawn symbol) was **abandoned**:
+    at a 4-bit threshold, it wrongly merged a "+" symbol with an "up arrow"
+    symbol on `botanical-citrus-dmc` (confirmed visually by rendering both
+    bitmaps via `render_symbol_svg`).
 
-    Un second diagnostic, plus poussé, a montré *pourquoi* aucun seuil sur
-    ce bitmap 6x6 ne pouvait marcher : sur `cucurbit-dmc`, des cases portant
-    des symboles réellement différents (confirmé visuellement) pouvaient
-    tomber sur le *même* bitmap 6x6, faute de résolution suffisante avec
-    seulement 4 à 6 points de tracé vectoriel par case — un problème
-    d'aliasing dès le regroupement exact initial, pas seulement de tolérance
-    de fusion. `_build_symbol_signatures` construit désormais l'empreinte de
-    chaque case à partir du rendu raster réel de la page de symboles
-    (~256 pixels par case, cf. `_raster_fingerprint`/`_render_symbol_page_gray`)
-    plutôt que de ces quelques points vectoriels, et
-    `_merge_near_duplicate_signatures` compare ces empreintes avec une
-    tolérance de décalage de quelques pixels et un garde-fou sur l'aire
-    d'encre. Mesuré après ce second correctif : 0.8 % (`23/2802`) sur
-    `botanical-citrus-dmc` et 3.7 % (`71/1911`) sur `cucurbit-dmc` — chute
-    nette par rapport aux 20.7 %/21.0 % mesurés après le seul correctif
-    CMJN->RVB. Mais ce second correctif faisait régresser `winter-wreath-dmc`
-    de ~22 % à 35 % (`1221/3460`), non mesuré à l'époque faute de test dédié
-    sur ce fichier précis.
+    A second, deeper diagnosis showed *why* no threshold on that 6x6 bitmap
+    could work: on `cucurbit-dmc`, cells carrying genuinely different symbols
+    (confirmed visually) could land on the *same* 6x6 bitmap, for lack of
+    sufficient resolution with only 4 to 6 vector path points per cell — an
+    aliasing problem from the initial exact grouping onwards, not just a
+    merge tolerance issue. `_build_symbol_signatures` now builds each cell's
+    fingerprint from the real raster rendering of the symbol page (~256
+    pixels per cell, cf. `_raster_fingerprint`/`_render_symbol_page_gray`)
+    rather than from those few vector points, and
+    `_merge_near_duplicate_signatures` compares these fingerprints with a
+    shift tolerance of a few pixels and a guard on ink area. Measured after
+    this second fix: 0.8% (`23/2802`) on `botanical-citrus-dmc` and 3.7%
+    (`71/1911`) on `cucurbit-dmc` — a sharp drop compared with the
+    20.7%/21.0% measured after the CMYK->RGB fix alone. But this second fix
+    made `winter-wreath-dmc` regress from ~22% to 35% (`1221/3460`), not
+    measured at the time for lack of a dedicated test on that particular
+    file.
 
-    Troisième diagnostic (celui qui a ajouté `winter_wreath` à cette
-    paramétrisation) : `winter-wreath-dmc` est le seul des 4 fichiers DMC de
-    référence où la page couleur porte déjà elle-même ses symboles (page
-    couleur+symboles combinée, cases adjacentes collées, pas de page blanche
-    séparée superposée). Rendu visuel (`render_symbol_svg`) de plusieurs
-    cases d'une même couleur canonique réparties sur toute la grille : deux
-    cases portant le même symbole tombaient dans deux regroupements
-    différents à cause d'un fragment de **ligne de quadrillage « décade »**
-    (tracée tous les 10 cases, bien plus épaisse que le quadrillage mineur —
-    mesuré directement sur les `lines` vectorielles de la page : jusqu'à
-    ~6 px de large une fois rendue, contre 4 px de marge retirée par
-    `_RASTER_CORE_MARGIN_PX` à l'époque) qui subsistait dans le recadrage
-    des cases adjacentes à une ligne décade, et seulement elles — voir la
-    docstring de `_RASTER_CORE_MARGIN_PX` dans `app/type_bc.py` pour le
-    détail complet des mesures. Élargie de 4 à 5 px, cette marge fait tomber
-    `winter-wreath-dmc` à 17.7 % (`611/3460`) — sous son taux d'avant même le
-    passage au rendu raster — sans changer `botanical-citrus-dmc` ni
-    `cucurbit-dmc` d'un seul cas (toujours 0.8 %/3.7 %, mesuré). Le reliquat
-    de `winter-wreath-dmc` (611 cases) vient très majoritairement (592/611,
-    mesuré) de deux teintes sans correspondance DMC proche dans le
-    catalogue communautaire partiel (§8.5) — une incertitude réelle,
-    indépendante de la reconnaissance de forme, que ce correctif ne peut ni
-    ne doit faire disparaître, d'où une borne (0.25) nettement plus large
-    que celle de `botanical-citrus-dmc`/`cucurbit-dmc`.
+    Third diagnosis (the one that added `winter_wreath` to this
+    parametrisation): `winter-wreath-dmc` is the only one of the 4 reference
+    DMC files where the colour page itself already carries its symbols
+    (combined colour+symbol page, adjacent cells touching, no separate white
+    page overlaid). Visual rendering (`render_symbol_svg`) of several cells
+    of the same canonical colour spread across the whole grid: two cells
+    carrying the same symbol fell into two different groups because of a
+    fragment of a **"decade" grid line** (drawn every 10 cells, much thicker
+    than the minor grid — measured directly on the page's vector `lines`: up
+    to ~6 px wide once rendered, versus the 4 px margin removed by
+    `_RASTER_CORE_MARGIN_PX` at the time) that remained in the crop of cells
+    adjacent to a decade line, and only those — see the
+    `_RASTER_CORE_MARGIN_PX` docstring in `app/type_bc.py` for the full
+    details of the measurements. Widened from 4 to 5 px, this margin brings
+    `winter-wreath-dmc` down to 17.7% (`611/3460`) — below its rate from
+    before even the switch to raster rendering — without changing
+    `botanical-citrus-dmc` or `cucurbit-dmc` by a single case (still
+    0.8%/3.7%, measured). The remainder of `winter-wreath-dmc` (611 cells)
+    comes overwhelmingly (592/611, measured) from two shades with no close
+    DMC match in the partial community catalogue (§8.5) — real uncertainty,
+    independent of shape recognition, which this fix cannot and must not
+    make disappear, hence a bound (0.25) much wider than that of
+    `botanical-citrus-dmc`/`cucurbit-dmc`.
 
-    Les bornes ci-dessous gardent une marge confortable au-dessus de ces
-    valeurs mesurées (jamais resserrées au point de casser au moindre écart
-    mineur) tout en interdisant une régression vers un taux proche de celui
-    d'avant chaque correctif. Ne vérifie jamais que `uncertain_cells` est
-    vide : une partie de l'incertitude mesurée ici est réelle (quelques
-    teintes hors de portée du catalogue DMC communautaire partiel, §8.5) et
-    doit rester signalée."""
+    The bounds below keep a comfortable margin above these measured values
+    (never tightened to the point of breaking at the slightest minor
+    deviation) while forbidding a regression towards a rate close to the one
+    before each fix. Never checks that `uncertain_cells` is empty: part of
+    the uncertainty measured here is real (a few shades out of reach of the
+    partial community DMC catalogue, §8.5) and must remain flagged."""
     result: TypeBCResult = request.getfixturevalue(fixture_name)
     total = sum(1 for value in result.cells if value != 0)
     fraction = len(result.uncertain_cells) / total
     assert fraction < max_uncertain_fraction
-    assert result.uncertain_cells  # une incertitude réelle et mesurée doit rester signalée
+    assert result.uncertain_cells  # real, measured uncertainty must remain flagged
 
 
 def _cell_index(result: TypeBCResult, row0: int, col0: int) -> int:
@@ -327,34 +320,33 @@ def _cell_index(result: TypeBCResult, row0: int, col0: int) -> int:
 def test_cucurbit_redrawn_round_symbol_merges_despite_repositioning_noise(
     cucurbit: TypeBCResult,
 ) -> None:
-    """Verrou de non-régression du second correctif « cases incertaines »
-    (comparaison raster tolérante au décalage plutôt que bitmap 6x6, voir
-    `_merge_near_duplicate_signatures` dans `app/type_bc.py`). Les 4 cases
-    ci-dessous portent, mesuré et vérifié visuellement (`render_symbol_svg`),
-    le même rond « O » redessiné à un léger bruit de sous-position près, sur
-    la couleur canonique quasi-blanche — elles doivent obtenir la même
-    entrée de palette (même combinaison couleur+symbole), pas 4 entrées
-    distinctes signalées comme incertaines faute de correspondance
-    dominante."""
+    """Non-regression lock for the second "uncertain cells" fix
+    (shift-tolerant raster comparison rather than a 6x6 bitmap, see
+    `_merge_near_duplicate_signatures` in `app/type_bc.py`). The 4 cells
+    below carry, measured and visually verified (`render_symbol_svg`), the
+    same "O" circle redrawn with slight sub-position noise, on the
+    near-white canonical colour — they must get the same palette entry (same
+    colour+symbol combination), not 4 distinct entries flagged as uncertain
+    for lack of a dominant match."""
     positions = [(24, 29), (22, 31), (23, 29), (21, 31)]
     indices = [_cell_index(cucurbit, row0, col0) for row0, col0 in positions]
     values = {cucurbit.cells[idx] for idx in indices}
-    assert all(v != 0 for v in values), "ces 4 cases doivent être coloriées"
+    assert all(v != 0 for v in values), "these 4 cells must be coloured"
     assert len(values) == 1, (
-        "les 4 cases du même rond redessiné doivent partager la même entrée de "
-        f"palette, obtenu : {[cucurbit.cells[idx] for idx in indices]}"
+        "the 4 cells of the same redrawn circle must share the same palette "
+        f"entry, got: {[cucurbit.cells[idx] for idx in indices]}"
     )
 
 
 def test_botanical_citrus_plus_and_arrow_symbols_never_merge(
     botanical_citrus: TypeBCResult,
 ) -> None:
-    """Verrou symétrique du test précédent : un symbole « + » et un symbole
-    « flèche vers le haut », confirmés visuellement distincts
-    (`render_symbol_svg`) et à la même distance de bits (4) que le rond
-    redessiné de `cucurbit-dmc` sur l'ancien bitmap 6x6 — la comparaison
-    raster tolérante au décalage ne doit jamais les fusionner, quel que soit
-    le réglage futur des seuils de `_merge_near_duplicate_signatures`."""
+    """Symmetric lock of the previous test: a "+" symbol and an "up arrow"
+    symbol, confirmed visually distinct (`render_symbol_svg`) and at the
+    same bit distance (4) as `cucurbit-dmc`'s redrawn circle on the old 6x6
+    bitmap — the shift-tolerant raster comparison must never merge them,
+    whatever the future tuning of `_merge_near_duplicate_signatures`'s
+    thresholds."""
     plus_idx = _cell_index(botanical_citrus, 93, 52)
     arrow_idx = _cell_index(botanical_citrus, 89, 54)
     plus_value = botanical_citrus.cells[plus_idx]
@@ -362,31 +354,30 @@ def test_botanical_citrus_plus_and_arrow_symbols_never_merge(
     assert plus_value != 0
     assert arrow_value != 0
     assert plus_value != arrow_value, (
-        "« + » et « flèche vers le haut » ne doivent jamais partager la même "
-        "entrée de palette"
+        '"+" and "up arrow" must never share the same '
+        "palette entry"
     )
 
 
 def test_winter_wreath_diagonal_bar_merges_across_decade_gridline(
     winter_wreath: TypeBCResult,
 ) -> None:
-    """Verrou de non-régression du troisième correctif « cases incertaines »
-    (marge de recadrage raster élargie de 4 à 5 px, voir la docstring de
-    `_RASTER_CORE_MARGIN_PX` dans `app/type_bc.py`). Les 4 cases ci-dessous
-    portent, mesuré et vérifié visuellement (`render_symbol_svg`), la même
-    barre diagonale sur la même couleur canonique (vert olive) — deux d'entre
-    elles sont adjacentes à une ligne de quadrillage « décade » (colonne 10,
-    bien plus épaisse que le quadrillage mineur) dont un fragment
-    contaminait leur recadrage avant ce correctif, les faisant basculer dans
-    un second regroupement distinct malgré un symbole identique. Les 4
-    doivent obtenir la même entrée de palette."""
+    """Non-regression lock for the third "uncertain cells" fix (raster crop
+    margin widened from 4 to 5 px, see the `_RASTER_CORE_MARGIN_PX` docstring
+    in `app/type_bc.py`). The 4 cells below carry, measured and visually
+    verified (`render_symbol_svg`), the same diagonal bar on the same
+    canonical colour (olive green) — two of them are adjacent to a "decade"
+    grid line (column 10, much thicker than the minor grid) a fragment of
+    which contaminated their crop before this fix, tipping them into a
+    second distinct group despite an identical symbol. All 4 must get the
+    same palette entry."""
     positions = [(33, 4), (58, 4), (44, 9), (31, 10)]
     indices = [_cell_index(winter_wreath, row0, col0) for row0, col0 in positions]
     values = {winter_wreath.cells[idx] for idx in indices}
-    assert all(v != 0 for v in values), "ces 4 cases doivent être coloriées"
+    assert all(v != 0 for v in values), "these 4 cells must be coloured"
     assert len(values) == 1, (
-        "les 4 cases de la même barre diagonale redessinée doivent partager la même "
-        f"entrée de palette, obtenu : {[winter_wreath.cells[idx] for idx in indices]}"
+        "the 4 cells of the same redrawn diagonal bar must share the same "
+        f"palette entry, got: {[winter_wreath.cells[idx] for idx in indices]}"
     )
     assert not (set(indices) & set(winter_wreath.uncertain_cells))
 
@@ -394,22 +385,20 @@ def test_winter_wreath_diagonal_bar_merges_across_decade_gridline(
 def test_confidence_reflects_the_type_b_fallback_penalty(
     summer_flight: TypeBCResult,
 ) -> None:
-    """`detect_type_bc` déduit toujours 0.2 de la confiance quand la
-    reconnaissance de forme se replie honnêtement en type B (voir le bloc
-    `confidence -= 0.2` de `detect_type_bc`) — la confiance ne peut donc
-    jamais dépasser 0.8 dans ce cas, quel que soit par ailleurs le taux de
-    cases incertaines (qui ne peut que la faire encore baisser, jamais
-    remonter). Comparer directement `summer_flight.confidence` à celle d'une
-    autre fixture (`winter_wreath` notamment) n'est plus fiable depuis le
-    correctif CMJN->RVB du Lot 5 (cases incertaines) : les deux fixtures
-    partagent la même palette DMC communautaire de 228 teintes, dont la
-    couverture varie indépendamment du gabarit de fichier d'une fixture à
-    l'autre (mesuré : `winter-wreath-dmc` recule légèrement en confiance
-    après ce correctif malgré une reconnaissance de forme parfaitement
-    fiable, simplement parce que deux de ses teintes n'ont pas de
-    correspondance DMC proche dans ce catalogue nécessairement partiel) —
-    seul le mécanisme de repli lui-même, pas une comparaison brute entre
-    fixtures, est une garantie robuste ici."""
+    """`detect_type_bc` always subtracts 0.2 from the confidence when shape
+    recognition honestly falls back to type B (see the `confidence -= 0.2`
+    block of `detect_type_bc`) — confidence can therefore never exceed 0.8
+    in that case, whatever the rate of uncertain cells (which can only lower
+    it further, never raise it). Comparing `summer_flight.confidence`
+    directly with another fixture's (`winter_wreath` in particular) is no
+    longer reliable since Lot 5's CMYK->RGB fix (uncertain cells): both
+    fixtures share the same 228-shade community DMC palette, whose coverage
+    varies independently of the file template from one fixture to another
+    (measured: `winter-wreath-dmc` drops slightly in confidence after that
+    fix despite perfectly reliable shape recognition, simply because two of
+    its shades have no close DMC match in this necessarily partial
+    catalogue) — only the fallback mechanism itself, not a raw comparison
+    between fixtures, is a robust guarantee here."""
     assert summer_flight.confidence <= 0.8
 
 
@@ -438,13 +427,13 @@ def test_never_raises_on_empty_pdf(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize("path", OTHER_TYPE_FIXTURES, ids=lambda p: p.parent.name)
 def test_returns_none_for_other_fixture_types(path: Path) -> None:
-    """Type A (police de symboles embarquée) et type E (catalogue d'images
-    bitmap réutilisées, `river-and-mountains-laserarts`) : pas de faux
-    positif B/C. `river-and-mountains-laserarts` est un cas piège
-    supplémentaire pour ce connecteur précis : ses pages de grille portent
-    elles aussi un habillage de rectangles de fond par case (gabarit
-    d'éditeur), ce qui le rendrait éligible comme page couleur B/C si la
-    présence d'images bitmap n'était pas vérifiée en premier lieu."""
+    """Type A (embedded symbol font) and type E (catalogue of reused bitmap
+    images, `river-and-mountains-laserarts`): no B/C false positive.
+    `river-and-mountains-laserarts` is an extra trap case for this
+    particular connector: its grid pages also carry a dressing of background
+    rectangles per cell (publisher template), which would make it eligible as
+    a B/C colour page if the presence of bitmap images were not checked
+    first."""
     if not path.is_file():
         pytest.skip(f"fixture manquante : {path}")
     assert detect_type_bc(path) is None
@@ -452,9 +441,9 @@ def test_returns_none_for_other_fixture_types(path: Path) -> None:
 
 @pytest.mark.parametrize("path", DMC_FIXTURES, ids=lambda p: p.parent.name)
 def test_runs_within_reasonable_time(path: Path) -> None:
-    """Repère de performance généreux (cahier des charges §10 : « moins de
-    30 secondes » pour un PDF de 10 pages) — voir le rapport de tâche pour
-    les temps mesurés précis par fixture."""
+    """Generous performance benchmark (specification §10: "under 30 seconds"
+    for a 10-page PDF) — see the task report for the precise times measured
+    per fixture."""
     start = time.perf_counter()
     detect_type_bc(path)
     assert time.perf_counter() - start < 30.0

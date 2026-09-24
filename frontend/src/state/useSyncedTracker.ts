@@ -1,12 +1,11 @@
 /**
- * Ajoute la synchronisation serveur par deltas versionnés (cahier des
- * charges §9) par-dessus `useTracker`.
+ * Adds server synchronisation by versioned deltas (specification §9) on top
+ * of `useTracker`.
  *
- * Chaque case cochée est mise en file dans IndexedDB (survit à un
- * rechargement de page ou une coupure réseau), puis envoyée au serveur après
- * un court silence. Les changements faits entre-temps par un autre appareil
- * reviennent dans `missing_ops` et sont rejoués localement via
- * `tracker.applyRemote`.
+ * Each checked cell is queued in IndexedDB (survives a page reload or a
+ * network outage), then sent to the server after a short idle period.
+ * Changes made meanwhile by another device come back in `missing_ops` and
+ * are replayed locally via `tracker.applyRemote`.
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -21,7 +20,7 @@ const FLUSH_DEBOUNCE_MS = 1200;
 export type SyncState = "synced" | "pending" | "syncing" | "offline";
 
 export interface SyncedTracker extends Tracker {
-  /** État de la synchronisation avec le serveur — informatif, pas bloquant. */
+  /** Synchronisation state with the server — informative, not blocking. */
   syncState: SyncState;
 }
 
@@ -46,10 +45,10 @@ export function useSyncedTracker(
 
   const onChange = useCallback(
     (changes: CellChange[]) => {
-      // Best-effort : la transaction IndexedDB se termine largement avant
-      // l'expiration du délai ci-dessous, pas besoin d'attendre ici — cela
-      // forcerait `toggleCell`/`toggleAtPoint` à devenir asynchrones jusqu'au
-      // geste tactile.
+      // Best effort: the IndexedDB transaction finishes well before the delay
+      // below expires, no need to wait here — that would force
+      // `toggleCell`/`toggleAtPoint` to become asynchronous all the way up to
+      // the touch gesture.
       void enqueueOps(
         patternId,
         changes.map((change) => ({
@@ -80,9 +79,9 @@ export function useSyncedTracker(
       const response = await syncProgress(
         patternId,
         versionRef.current,
-        // Une opération mise en file avant le Lot 8 n'a pas de `layer` : elle
-        // ne peut être qu'un point entier (seule catégorie qui existait
-        // alors), même défaut que côté serveur (`ProgressOp.layer`).
+        // An operation queued before Lot 8 has no `layer`: it can only be a
+        // full stitch (the only category that existed then), same default as
+        // on the server (`ProgressOp.layer`).
         pending.map((op) => ({ layer: op.layer ?? "full", index: op.index, stitched: op.stitched })),
       );
       const ids = pending
@@ -111,9 +110,9 @@ export function useSyncedTracker(
       }
       setSyncState("synced");
     } catch {
-      // Hors ligne ou serveur injoignable : les opérations restent en file,
-      // on retentera au prochain changement ou au retour du réseau — jamais
-      // d'erreur remontée à l'utilisateur, le suivi doit rester utilisable.
+      // Offline or server unreachable: operations stay queued, we will retry
+      // on the next change or when the network returns — never an error
+      // surfaced to the user, tracking must stay usable.
       setSyncState("offline");
     } finally {
       flushingRef.current = false;
@@ -124,9 +123,9 @@ export function useSyncedTracker(
   useEffect(() => {
     const handleOnline = (): void => scheduleFlush(0);
     window.addEventListener("online", handleOnline);
-    // Rattrape au montage les opérations laissées en file par une session
-    // précédente (rechargement pendant une coupure réseau, onglet fermé
-    // avant la fin du délai de synchronisation).
+    // On mount, catch up on operations left queued by a previous session
+    // (reload during a network outage, tab closed before the sync delay
+    // ended).
     scheduleFlush(0);
     return () => {
       window.removeEventListener("online", handleOnline);

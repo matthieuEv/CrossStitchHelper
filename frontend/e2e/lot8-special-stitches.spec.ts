@@ -1,25 +1,25 @@
 import { expect, test, type APIRequestContext, type Locator, type Page } from "@playwright/test";
 
 /**
- * Vérifie le critère "terminé quand" du Lot 8 (docs/roadmap.md) : le rendu
- * affiche les quatre catégories de points spéciaux (1/2, 1/4, point arrière,
- * nœud) du motif de démonstration, et cocher un point de chaque catégorie
- * persiste après rechargement — contre un vrai backend, pas des mocks.
+ * Checks Lot 8's "done when" criterion (docs/roadmap.md): rendering shows the
+ * four special stitch categories (1/2, 1/4, backstitch, knot) of the demo
+ * pattern, and checking one stitch of each category persists after a reload
+ * — against a real backend, not mocks.
  *
- * Géométrie du petit motif décoratif de `backend/app/seed.py`
- * (`_build_special_stitches`), centré sur la case (127, 90) — coordonnées
- * reprises telles quelles plutôt que devinées, pour ne pas dépendre d'une
- * heuristique de détection à l'écran :
- * - point arrière : quatre segments en losange, coins (127,75) (142,90)
- *   (127,105) (112,90) ; les segments 0 et 1 sont déjà cochés au seed, le
- *   segment 2 (bas→gauche) ne l'est pas.
- * - nœuds : centres (127.5,70.5) (121.5,87.5) (132.5,88.5) (123.5,96.5)
- *   (133.5,97.5) (127.5,110.5) ; les index 0, 2, 4 sont déjà cochés, l'index
- *   1 ne l'est pas.
- * - point 1/2 (couleur 798) et 1/4 (couleur 816) : cases dispersées autour du
- *   centre — la case (117,104) porte un point 1/2 non coché, la case
- *   (109,95) un point 1/4 non coché (les plus proches du centre sont cochées
- *   au seed, voir le commentaire de `_build_special_stitches`).
+ * Geometry of the small decorative motif from `backend/app/seed.py`
+ * (`_build_special_stitches`), centred on cell (127, 90) — coordinates taken
+ * as is rather than guessed, so as not to depend on an on-screen detection
+ * heuristic:
+ * - backstitch: four segments in a diamond, corners (127,75) (142,90)
+ *   (127,105) (112,90); segments 0 and 1 are already checked by the seed,
+ *   segment 2 (bottom→left) is not.
+ * - knots: centres (127.5,70.5) (121.5,87.5) (132.5,88.5) (123.5,96.5)
+ *   (133.5,97.5) (127.5,110.5); indices 0, 2, 4 are already checked, index 1
+ *   is not.
+ * - 1/2 stitch (colour 798) and 1/4 stitch (colour 816): cells scattered
+ *   around the centre — cell (117,104) carries an unchecked 1/2 stitch, cell
+ *   (109,95) an unchecked 1/4 stitch (those closest to the centre are
+ *   checked by the seed, see the `_build_special_stitches` comment).
  */
 
 interface PatternSummary {
@@ -28,29 +28,29 @@ interface PatternSummary {
   cell_count: number;
 }
 
-/** `backend/app/seed.py` — identifiant stable, jamais régénéré. */
+/** `backend/app/seed.py` — stable id, never regenerated. */
 const DEMO_PATTERN_ID = "demo-perf-255x180";
 
-/** Centre du petit motif décoratif (`backend/app/seed.py::_CX, _CY`). */
+/** Centre of the small decorative motif (`backend/app/seed.py::_CX, _CY`). */
 const CENTER = { x: 127, y: 90 };
 
 async function fetchDemoPattern(request: APIRequestContext): Promise<PatternSummary> {
   const response = await request.get("/api/patterns");
   const patterns = (await response.json()) as PatternSummary[];
   const demo = patterns.find((pattern) => pattern.id === DEMO_PATTERN_ID);
-  if (demo === undefined) throw new Error("Motif de démonstration introuvable en base");
+  if (demo === undefined) throw new Error("Demo pattern not found in the database");
   return demo;
 }
 
 type StitchLayer = "full" | "half" | "quarter" | "backstitch" | "knot";
 
-/** Force un état absolu pour un élément d'une catégorie donnée — idempotent
- * côté serveur (§9), donc une base connue fiable quel que soit l'état laissé
- * par une exécution précédente du test (même principe que
- * lot1-persistence.spec.ts : « vider avant de remplir »). `base_version` n'a
- * pas besoin d'être exact : les opérations s'appliquent inconditionnellement
- * (voir `backend/app/api/patterns.py::sync_progress`), seul `missing_ops`
- * (ignoré ici) en dépend. */
+/** Forces an absolute state for an element of a given category — idempotent
+ * on the server (§9), hence a reliable known baseline whatever state a
+ * previous run of the test left (same principle as lot1-persistence.spec.ts:
+ * "clear before filling"). `base_version` does not need to be exact:
+ * operations apply unconditionally (see
+ * `backend/app/api/patterns.py::sync_progress`), only `missing_ops` (ignored
+ * here) depends on it. */
 async function setStitched(
   request: APIRequestContext,
   patternId: string,
@@ -62,7 +62,7 @@ async function setStitched(
     data: { base_version: 0, ops: [{ layer, index, stitched }] },
   });
   if (!response.ok()) {
-    throw new Error(`Échec de la mise à jour de progression (${layer}#${index}) : ${response.status()}`);
+    throw new Error(`Progress update failed (${layer}#${index}): ${response.status()}`);
   }
 }
 
@@ -98,12 +98,11 @@ interface Box {
 }
 
 /**
- * Déplace la vue (outil « Déplacer ») d'un delta exact en pixels — le geste
- * de glissé applique `dx = (déplacement en pixels) / cell` à chaque
- * événement `pointermove` (voir `TrackScreen.tsx::onPointerMove`), donc la
- * somme télescope exactement vers le déplacement net quel que soit le
- * nombre d'étapes intermédiaires. Découpé en plusieurs gestes courts pour ne
- * jamais sortir la souris de la fenêtre de test.
+ * Pans the view ("Move" tool) by an exact pixel delta — the drag gesture
+ * applies `dx = (pixel movement) / cell` on each `pointermove` event (see
+ * `TrackScreen.tsx::onPointerMove`), so the sum telescopes exactly to the net
+ * movement whatever the number of intermediate steps. Split into several
+ * short gestures so the mouse never leaves the test window.
  */
 async function panByPixels(page: Page, box: Box, totalDx: number, totalDy: number): Promise<void> {
   const maxStep = 250;
@@ -124,9 +123,9 @@ async function panByPixels(page: Page, box: Box, totalDx: number, totalDy: numbe
 }
 
 /**
- * Pan exact pour amener le point de grille `(gx, gy)` au centre du canvas,
- * en repartant d'une vue connue (`view`) — voir le commentaire de
- * `panByPixels`. Renvoie la nouvelle vue, à réutiliser pour l'appel suivant.
+ * Exact pan to bring grid point `(gx, gy)` to the centre of the canvas,
+ * starting from a known view (`view`) — see the `panByPixels` comment.
+ * Returns the new view, to reuse for the next call.
  */
 async function centerOn(page: Page, box: Box, view: View, gx: number, gy: number): Promise<View> {
   await page.getByRole("button", { name: "Déplacer" }).click();
@@ -138,9 +137,9 @@ async function centerOn(page: Page, box: Box, view: View, gx: number, gy: number
   return { x0: desiredX0, y0: desiredY0, cell: view.cell };
 }
 
-/** Tap au centre du canvas — un unique point d'appui, sans déplacement, pour
- * rester sous `DRAG_THRESHOLD` et être traité comme un cochage, pas un
- * glissé (voir `TrackScreen.tsx`). */
+/** Tap at the centre of the canvas — a single press, with no movement, to
+ * stay under `DRAG_THRESHOLD` and be treated as a check, not a drag (see
+ * `TrackScreen.tsx`). */
 async function tapCenter(page: Page, box: Box): Promise<void> {
   const x = box.x + box.width / 2;
   const y = box.y + box.height / 2;
@@ -157,17 +156,17 @@ async function openTrackScreen(page: Page, patternName: string): Promise<Locator
   return canvas;
 }
 
-test("le rendu affiche les points spéciaux du motif de démonstration", async ({ page, request }) => {
+test("rendering shows the demo pattern's special stitches", async ({ page, request }) => {
   const pattern = await fetchDemoPattern(request);
   const canvas = await openTrackScreen(page, pattern.name);
 
   const box = await canvas.boundingBox();
-  if (box === null) throw new Error("Le canvas de suivi n'a pas de boîte englobante");
+  if (box === null) throw new Error("The tracking canvas has no bounding box");
 
-  // Vue initiale connue (`useTracker.ts`, motif 255×180) : x0=30, y0=24,
-  // cell=16 — sans avoir touché ni au zoom ni au déplacement. Cell=16 est
-  // déjà au-dessus de `SYMBOL_MIN_CELL` (15) : point arrière et nœuds sont
-  // donc bien rendus (voir `pattern/render.ts`).
+  // Known initial view (`useTracker.ts`, 255×180 pattern): x0=30, y0=24,
+  // cell=16 — without touching zoom or pan. Cell=16 is already above
+  // `SYMBOL_MIN_CELL` (15): backstitch and knots are therefore rendered (see
+  // `pattern/render.ts`).
   const initialView: View = { x0: 30, y0: 24, cell: 16 };
   const view = await centerOn(page, box, initialView, CENTER.x, CENTER.y);
 
@@ -187,17 +186,17 @@ test("le rendu affiche les points spéciaux du motif de démonstration", async (
         const el = element as HTMLCanvasElement;
         const ratio = Math.min(window.devicePixelRatio || 1, 2);
         const ctx = el.getContext("2d");
-        if (ctx === null) throw new Error("pas de contexte 2d");
+        if (ctx === null) throw new Error("no 2d context");
         const data = ctx.getImageData(Math.round(x * ratio), Math.round(y * ratio), 1, 1).data;
         return [data[0] ?? 0, data[1] ?? 0, data[2] ?? 0] as [number, number, number];
       },
       [gx, gy] as [number, number],
     );
 
-  // Coordonnées **relatives au canvas** (jamais à la page) : `getImageData`
-  // adresse toujours le tampon de pixels du canvas lui-même, pas la fenêtre —
-  // contrairement aux coordonnées de souris utilisées ailleurs dans ce
-  // fichier (`panByPixels`/`tapCenter`), qui doivent inclure `box.x`/`box.y`.
+  // Coordinates **relative to the canvas** (never the page): `getImageData`
+  // always addresses the canvas's own pixel buffer, not the window — unlike
+  // the mouse coordinates used elsewhere in this file
+  // (`panByPixels`/`tapCenter`), which must include `box.x`/`box.y`.
   const toLocalPixel = (gx: number, gy: number): [number, number] => [
     (gx - view.x0) * view.cell,
     (gy - view.y0) * view.cell,
@@ -206,7 +205,7 @@ test("le rendu affiche les points spéciaux du motif de démonstration", async (
   const distance = (rgb: [number, number, number]): number =>
     Math.hypot(rgb[0] - (fabricRgb[0] ?? 0), rgb[1] - (fabricRgb[1] ?? 0), rgb[2] - (fabricRgb[2] ?? 0));
 
-  // Point 1/4 (case (109,95), coin haut-gauche du triangle — voir
+  // 1/4 stitch (cell (109,95), top-left corner of the triangle — see
   // `fillQuarterTriangle`).
   {
     const [px, py] = toLocalPixel(109 + 0.15, 95 + 0.15);
@@ -214,21 +213,21 @@ test("le rendu affiche les points spéciaux du motif de démonstration", async (
     expect(distance(rgb)).toBeGreaterThan(30);
   }
 
-  // Point 1/2 (case (117,104), triangle diagonal haut-gauche).
+  // 1/2 stitch (cell (117,104), top-left diagonal triangle).
   {
     const [px, py] = toLocalPixel(117 + 0.25, 104 + 0.25);
     const rgb = await sample(px, py);
     expect(distance(rgb)).toBeGreaterThan(30);
   }
 
-  // Point arrière (segment bas→gauche, son milieu).
+  // Backstitch (bottom→left segment, its midpoint).
   {
     const [px, py] = toLocalPixel((127 + 112) / 2, (105 + 90) / 2);
     const rgb = await sample(px, py);
     expect(distance(rgb)).toBeGreaterThan(30);
   }
 
-  // Nœud (centre du nœud d'index 1, non coché).
+  // Knot (centre of the index 1 knot, unchecked).
   {
     const [px, py] = toLocalPixel(121.5, 87.5);
     const rgb = await sample(px, py);
@@ -236,18 +235,18 @@ test("le rendu affiche les points spéciaux du motif de démonstration", async (
   }
 });
 
-test("cocher un point 1/2, 1/4, arrière et nœud persiste après rechargement", async ({
+test("checking a 1/2, 1/4, backstitch and knot stitch persists after a reload", async ({
   page,
   request,
 }) => {
   const pattern = await fetchDemoPattern(request);
 
-  // Base connue, quelle que soit l'exécution précédente : les quatre
-  // éléments visés démarrent non cochés.
-  const QUARTER_INDEX = 95 * 255 + 109; // case (109, 95)
-  const HALF_INDEX = 104 * 255 + 117; // case (117, 104)
+  // Known baseline, whatever the previous run: the four targeted elements
+  // start unchecked.
+  const QUARTER_INDEX = 95 * 255 + 109; // cell (109, 95)
+  const HALF_INDEX = 104 * 255 + 117; // cell (117, 104)
   const BACKSTITCH_INDEX = 2; // segment bas→gauche
-  const KNOT_INDEX = 1; // nœud (121.5, 87.5)
+  const KNOT_INDEX = 1; // knot (121.5, 87.5)
 
   await setStitched(request, pattern.id, "quarter", QUARTER_INDEX, false);
   await setStitched(request, pattern.id, "half", HALF_INDEX, false);
@@ -262,13 +261,12 @@ test("cocher un point 1/2, 1/4, arrière et nœud persiste après rechargement",
 
   const canvas = await openTrackScreen(page, pattern.name);
   const box = await canvas.boundingBox();
-  if (box === null) throw new Error("Le canvas de suivi n'a pas de boîte englobante");
+  if (box === null) throw new Error("The tracking canvas has no bounding box");
 
-  // Zoom au maximum (boutons, pas la molette : `zoomIn` arrondit à un entier
-  // exact, contrairement au pincement/trackpad — nécessaire pour que le
-  // calcul de centrage ci-dessous reste exact). Trois clics suffisent pour
-  // atteindre MAX_CELL (16 → 23 → 33 → 34) ; le zoom ne modifie jamais
-  // `x0`/`y0` (voir `useTracker.ts::zoomIn`).
+  // Zoom to the maximum (buttons, not the wheel: `zoomIn` rounds to an exact
+  // integer, unlike pinch/trackpad — needed so the centring computation below
+  // stays exact). Three clicks are enough to reach MAX_CELL (16 → 23 → 33 →
+  // 34); zooming never changes `x0`/`y0` (see `useTracker.ts::zoomIn`).
   const zoomInButton = page.getByRole("button", { name: "Zoomer", exact: true });
   for (let i = 0; i < 3; i++) await zoomInButton.click();
   let view: View = { x0: 30, y0: 24, cell: 34 };
@@ -285,7 +283,7 @@ test("cocher un point 1/2, 1/4, arrière et nœud persiste après rechargement",
   await page.getByRole("button", { name: "Point 1/2" }).click();
   await tapCenter(page, box);
 
-  // Point arrière (milieu du segment bas→gauche : (127,105)-(112,90)).
+  // Backstitch (midpoint of the bottom→left segment: (127,105)-(112,90)).
   view = await centerOn(page, box, view, (127 + 112) / 2, (105 + 90) / 2);
   await page.getByRole("button", { name: "Cocher", exact: true }).click();
   const backstitchButton = page.getByRole("button", { name: "Point arrière" });
@@ -293,7 +291,7 @@ test("cocher un point 1/2, 1/4, arrière et nœud persiste après rechargement",
   await backstitchButton.click();
   await tapCenter(page, box);
 
-  // Nœud (centre (121.5, 87.5)).
+  // Knot (centre (121.5, 87.5)).
   view = await centerOn(page, box, view, 121.5, 87.5);
   await page.getByRole("button", { name: "Cocher", exact: true }).click();
   const knotButton = page.getByRole("button", { name: "Nœud" });
@@ -301,9 +299,9 @@ test("cocher un point 1/2, 1/4, arrière et nœud persiste après rechargement",
   await knotButton.click();
   await tapCenter(page, box);
 
-  // La synchronisation est asynchrone (file IndexedDB + envoi débounced,
-  // voir lot1-persistence.spec.ts) : laisser le temps à `useSyncedTracker`
-  // de confirmer avant d'interroger le serveur ou de recharger.
+  // Synchronisation is asynchronous (IndexedDB queue + debounced send, see
+  // lot1-persistence.spec.ts): give `useSyncedTracker` time to confirm before
+  // querying the server or reloading.
   await expect
     .poll(async () => {
       const progress = await fetchProgress(request, pattern.id);

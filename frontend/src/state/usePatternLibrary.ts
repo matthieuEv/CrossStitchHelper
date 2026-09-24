@@ -1,18 +1,17 @@
 /**
- * Charge la bibliothèque de motifs depuis le serveur, avec repli hors-ligne.
+ * Loads the pattern library from the server, with an offline fallback.
  *
- * Trois sources possibles, dans cet ordre de préférence :
- * 1. **Serveur** — le cas normal, en ligne.
- * 2. **Cache** (IndexedDB) — serveur injoignable, mais des motifs ont déjà
- *    été visités sur cet appareil : on les réaffiche tels quels.
- * 3. **Démonstration** — ni serveur ni cache (premier lancement hors-ligne,
- *    ou instance backend absente en développement) : `App.tsx` retombe sur
- *    le motif construit côté client (`demo/lavender.ts`).
+ * Three possible sources, in this order of preference:
+ * 1. **Server** — the normal, online case.
+ * 2. **Cache** (IndexedDB) — server unreachable, but patterns have already
+ *    been visited on this device: they are shown again as they were.
+ * 3. **Demo** — neither server nor cache (first offline launch, or no backend
+ *    instance in development): `App.tsx` falls back to the pattern built on
+ *    the client (`demo/lavender.ts`).
  *
- * Dans les cas 1 et 2, toute opération encore en file (pas encore confirmée
- * par le serveur) est rejouée par-dessus la progression chargée, pour ne
- * jamais faire « reculer » l'affichage après un rechargement pendant une
- * coupure réseau.
+ * In cases 1 and 2, any operation still queued (not yet confirmed by the
+ * server) is replayed on top of the loaded progress, so the display never
+ * "goes backwards" after a reload during a network outage.
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -44,11 +43,10 @@ interface LayeredBase {
 }
 
 /**
- * Rejoue les opérations encore en file (pas encore confirmées par le
- * serveur) par-dessus une progression de base, pour ne jamais faire
- * « reculer » l'affichage après un rechargement pendant une coupure réseau —
- * les cinq catégories de points (Lot 8) à la fois, une opération en file
- * porte toujours sa propre `layer`.
+ * Replays the operations still queued (not yet confirmed by the server) on
+ * top of a base progress, so the display never "goes backwards" after a
+ * reload during a network outage — all five stitch categories (Lot 8) at
+ * once, a queued operation always carries its own `layer`.
  */
 async function applyPending(patternId: string, base: LayeredBase): Promise<LayeredBase> {
   const pending = await getPendingOps(patternId);
@@ -63,8 +61,8 @@ async function applyPending(patternId: string, base: LayeredBase): Promise<Layer
     },
   };
   const targetFor = (op: PendingOp): Uint8Array => {
-    // Une opération mise en file avant le Lot 8 n'a pas de `layer` : elle ne
-    // peut être qu'un point entier, même défaut que côté serveur.
+    // An operation queued before Lot 8 has no `layer`: it can only be a full
+    // stitch, same default as on the server.
     switch (op.layer ?? "full") {
       case "half":
         return next.special.half;
@@ -144,9 +142,9 @@ export interface PatternLibrary {
   entries: LibraryPattern[] | null;
   source: LibrarySource;
   /**
-   * Recharge depuis le serveur (repli cache/démonstration inchangé).
-   * Utilisé après un import validé (Lot 2) : le motif tout juste créé doit
-   * apparaître sans attendre le prochain montage de l'écran.
+   * Reloads from the server (cache/demo fallback unchanged). Used after a
+   * validated import (Lot 2): the newly created pattern must appear without
+   * waiting for the screen's next mount.
    */
   refresh: () => Promise<void>;
 }
@@ -155,8 +153,8 @@ export function usePatternLibrary(): PatternLibrary {
   const [state, setState] = useState<{ entries: LibraryPattern[] | null; source: LibrarySource }>(
     { entries: null, source: "loading" },
   );
-  // Évite de publier le résultat d'une requête devenue obsolète si `refresh`
-  // est appelé pendant qu'un chargement précédent est encore en vol.
+  // Avoids publishing the result of a request that has become stale if
+  // `refresh` is called while a previous load is still in flight.
   const requestIdRef = useRef(0);
 
   const load = useCallback(async () => {
@@ -172,8 +170,8 @@ export function usePatternLibrary(): PatternLibrary {
       const entries = await Promise.all(summaries.map(loadEntryFromServer));
       if (!isStale()) setState({ entries, source: "server" });
     } catch {
-      // Serveur injoignable : on retombe sur le cache local, puis sur la
-      // démonstration si rien n'a jamais été mis en cache sur cet appareil.
+      // Server unreachable: fall back to the local cache, then to the demo if
+      // nothing has ever been cached on this device.
       try {
         const entries = await loadEntriesFromCache();
         if (isStale()) return;

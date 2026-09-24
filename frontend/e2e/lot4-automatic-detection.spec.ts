@@ -3,20 +3,20 @@ import { fileURLToPath } from "node:url";
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 
 /**
- * Vérifie le critère "terminé quand" du Lot 4 (docs/roadmap.md) : le PDF de
- * référence type A s'importe en validant simplement les propositions —
- * contre une vraie instance, avec le vrai fichier de référence (pas un
- * extrait synthétique), la détection tournant réellement en tâche de fond
- * côté serveur (voir `backend/app/api/imports.py`).
+ * Checks Lot 4's "done when" criterion (docs/roadmap.md): the reference
+ * type A PDF imports by simply accepting the proposals — against a real
+ * instance, with the real reference file (not a synthetic excerpt), with
+ * detection really running as a background task on the server (see
+ * `backend/app/api/imports.py`).
  *
- * Plus lent que le reste de cette suite (analyse structurelle réelle,
- * ~10 s) : c'est attendu, voir `backend/tests/test_type_a.py` pour la
- * vérification exhaustive de la justesse de l'extraction elle-même — ce
- * test-ci ne vérifie que le parcours utilisateur bout en bout.
+ * Slower than the rest of this suite (real structural analysis, ~10 s): that
+ * is expected, see `backend/tests/test_type_a.py` for the exhaustive
+ * verification of the extraction's correctness itself — this test only
+ * checks the end-to-end user journey.
  */
 
-/** `backend/app/seed.py` — identifiant stable, jamais régénéré, palette
- * saisie à la main (pas de `symbol_svg`) : le repli textuel doit s'appliquer. */
+/** `backend/app/seed.py` — stable id, never regenerated, palette entered by
+ * hand (no `symbol_svg`): the text fallback must apply. */
 const DEMO_PATTERN_ID = "demo-perf-255x180";
 
 interface PatternSummary {
@@ -28,14 +28,14 @@ async function fetchDemoPattern(request: APIRequestContext): Promise<PatternSumm
   const response = await request.get("/api/patterns");
   const patterns = (await response.json()) as PatternSummary[];
   const demo = patterns.find((pattern) => pattern.id === DEMO_PATTERN_ID);
-  if (demo === undefined) throw new Error("Motif de démonstration introuvable en base");
+  if (demo === undefined) throw new Error("Demo pattern not found in the database");
   return demo;
 }
 
 async function remainingCount(page: Page): Promise<number> {
   const text = await page.getByText(/restants$/).first().textContent();
   const match = text?.match(/([\d\s ]+)\s*restants/);
-  if (match?.[1] === undefined) throw new Error(`Compteur "restants" introuvable dans : ${text}`);
+  if (match?.[1] === undefined) throw new Error(`"Remaining" counter not found in: ${text}`);
   return Number(match[1].replace(/[\s ]/g, ""));
 }
 
@@ -46,17 +46,16 @@ const FIXTURE_PATH = fileURLToPath(
   ),
 );
 
-// PDF minimal valide (deux pages — le test de cadrage indépendant par page a
-// besoin d'une deuxième page à naviguer —, un peu de texte courant, aucun
-// rectangle vectoriel ni police de symboles), encodé en dur — plus rapide et
-// plus robuste qu'une vraie fixture pour vérifier le repli manuel : `fixtures/
-// river-and-mountains-laserarts` (type E) le fait aussi, mais ses 18 pages
-// ralentissent nettement l'analyse des deux connecteurs sous Docker CI (voir
-// commit de correction), au point d'avoir fait déborder ces tests-ci *et* de
-// laisser le conteneur assez chargé pour faire déborder par contrecoup le
-// test type A suivant dans la même suite. Les fixtures DMC (`winter-wreath-
-// dmc` et consorts), elles, sont désormais reconnues comme type B/C depuis
-// le Lot 5 et ne conviennent plus non plus à ce rôle.
+// Minimal valid PDF (two pages — the per-page independent cropping test needs
+// a second page to navigate —, a little running text, no vector rectangle or
+// symbol font), hard-coded — faster and more robust than a real fixture for
+// checking the manual fallback: `fixtures/river-and-mountains-laserarts`
+// (type E) would do it too, but its 18 pages noticeably slow down both
+// connectors' analysis under Docker CI (see the fix commit), to the point of
+// making these tests time out *and* leaving the container busy enough to make
+// the next type A test in the same suite time out as a knock-on effect. The
+// DMC fixtures (`winter-wreath-dmc` and the like) are now recognised as
+// type B/C since Lot 5 and no longer suit this role either.
 const TINY_UNDETECTABLE_PDF_BASE64 =
   "JVBERi0xLjcKJcK1wrYKJSBXcml0dGVuIGJ5IE11UERGIDEuMjguMgoKMSAwIG9iago8PC9UeXBlL0NhdGFsb2cvUGFnZXMgMiAwIFIvSW5mbzw8L1Byb2R1Y2VyKE11UERGIDEuMjguMik+Pj4+CmVuZG9iagoKMiAwIG9iago8PC9UeXBlL1BhZ2VzL0NvdW50IDIvS2lkc1s0IDAgUiA4IDAgUl0+PgplbmRvYmoKCjMgMCBvYmoKPDwvRm9udDw8L2hlbHYgNSAwIFI+Pj4+CmVuZG9iagoKNCAwIG9iago8PC9UeXBlL1BhZ2UvTWVkaWFCb3hbMCAwIDMwMCAyMDBdL1JvdGF0ZSAwL1Jlc291cmNlcyAzIDAgUi9QYXJlbnQgMiAwIFIvQ29udGVudHNbNiAwIFJdPj4KZW5kb2JqCgo1IDAgb2JqCjw8L1R5cGUvRm9udC9TdWJ0eXBlL1R5cGUxL0Jhc2VGb250L0hlbHZldGljYS9FbmNvZGluZy9XaW5BbnNpRW5jb2Rpbmc+PgplbmRvYmoKCjYgMCBvYmoKPDwvTGVuZ3RoIDEwNS9GaWx0ZXIvRmxhdGVEZWNvZGU+PgpzdHJlYW0KeNoVSjsKQkEQ6+cUcwNnZvdlniAWD2zshOnESnex0MLG8xsJSchHPrKVuBrhulDMtN6ye47XV921pl4PfWBmD4OTLYOpZYsHtWNPNqz/BSs8g897WPKNxMJ+YtDH8VZnOZVc5AcK1hpwCmVuZHN0cmVhbQplbmRvYmoKCjcgMCBvYmoKPDwvRm9udDw8L2hlbHYgNSAwIFI+Pj4+CmVuZG9iagoKOCAwIG9iago8PC9UeXBlL1BhZ2UvTWVkaWFCb3hbMCAwIDMwMCAyMDBdL1JvdGF0ZSAwL1Jlc291cmNlcyA3IDAgUi9QYXJlbnQgMiAwIFIvQ29udGVudHNbOSAwIFJdPj4KZW5kb2JqCgo5IDAgb2JqCjw8L0xlbmd0aCAxMDYvRmlsdGVyL0ZsYXRlRGVjb2RlPj4Kc3RyZWFtCnjaFYoxCkJBEEP7OcXcwJnZ/ZkviMUHGzthOrHSXSy0sPH8RkIeCYl8ZCtxNcp1Icy03rJ7jtdX3bWmXg99YGYPg9Mtg61liwfZsacb1v+CFZ7B5z0s+UZiYeqZmDGOtzrLqeQiPwdxGkMKZW5kc3RyZWFtCmVuZG9iagoKeHJlZgowIDEwCjAwMDAwMDAwMDAgNjU1MzUgZiAKMDAwMDAwMDA0MiAwMDAwMCBuIAowMDAwMDAwMTIwIDAwMDAwIG4gCjAwMDAwMDAxNzggMDAwMDAgbiAKMDAwMDAwMDIxOSAwMDAwMCBuIAowMDAwMDAwMzI2IDAwMDAwIG4gCjAwMDAwMDA0MTUgMDAwMDAgbiAKMDAwMDAwMDU4OSAwMDAwMCBuIAowMDAwMDAwNjMwIDAwMDAwIG4gCjAwMDAwMDA3MzcgMDAwMDAgbiAKCnRyYWlsZXIKPDwvU2l6ZSAxMC9Sb290IDEgMCBSL0lEWzxDMjk5NDZDM0EyNTIzNDUwMzkwOEMzOTY2OUMyOEZDMj48OEY2NjgwMzY5NTc3RDkzNzM2OTM4MkE2OTYxN0FBODg+XT4+CnN0YXJ0eHJlZgo5MTIKJSVFT0YK";
 
@@ -69,15 +68,15 @@ function tinyUndetectablePdf(): { name: string; mimeType: string; buffer: Buffer
 }
 
 /**
- * ~10s en local (voir `backend/tests/test_type_a.py`), mais nettement plus
- * sous Docker sur les runners CI (CPU partagé, moins de coeurs) — mesuré en
- * pratique : un délai de 30s faisait systématiquement échouer les deux
- * tests qui attendent la fin de l'analyse dans le job "Image Docker + e2e"
- * (jamais en local). Généreux plutôt que de deviner un chiffre exact.
+ * ~10s locally (see `backend/tests/test_type_a.py`), but noticeably more under
+ * Docker on CI runners (shared CPU, fewer cores) — measured in practice: a
+ * 30s timeout systematically failed the two tests that wait for the analysis
+ * to finish in the "Docker image + e2e" job (never locally). Generous rather
+ * than guessing an exact figure.
  */
 const DETECTION_TIMEOUT = 90_000;
 
-test("un PDF type A reconnu pré-remplit l'assistant, qu'il suffit de valider", async ({
+test("a recognised type A PDF pre-fills the wizard, which only needs validating", async ({
   page,
 }) => {
   test.setTimeout(120_000);
@@ -87,8 +86,9 @@ test("un PDF type A reconnu pré-remplit l'assistant, qu'il suffit de valider", 
 
   await page.locator('input[type="file"][accept*="pdf"]').setInputFiles(FIXTURE_PATH);
 
-  // Étape Cadrage : le message d'analyse en cours apparaît, puis la bannière
-  // de détection avec les dimensions déjà pré-remplies — sans aucune saisie.
+  // Cropping step: the analysis-in-progress message appears, then the
+  // detection banner with the dimensions already pre-filled — without any
+  // input.
   await expect(page.getByText("Colonnes")).toBeVisible();
   await expect(page.getByText(/Détection automatique : type A/)).toBeVisible({
     timeout: DETECTION_TIMEOUT,
@@ -100,40 +100,40 @@ test("un PDF type A reconnu pré-remplit l'assistant, qu'il suffit de valider", 
 
   await page.getByRole("button", { name: "Continuer", exact: true }).click();
 
-  // Étape Palette : déjà peuplée par la détection, rien à ajouter — juste
-  // vérifier qu'une vraie palette (au moins les 34 couleurs DMC de la
-  // légende) est bien là, pas une liste vide que l'utilisateur devrait
-  // remplir à la main comme au Lot 2.
+  // Palette step: already populated by detection, nothing to add — just
+  // check that a real palette (at least the legend's 34 DMC colours) is
+  // there, not an empty list the user would have to fill by hand as in
+  // Lot 2.
   await expect(page.getByPlaceholder("Code").first()).toBeVisible();
   expect(await page.getByPlaceholder("Code").count()).toBeGreaterThanOrEqual(34);
   await expect(page.getByText(/\d+ \/ 45\s?900 cases peintes/)).toBeVisible();
 
   await page.getByRole("button", { name: "Continuer", exact: true }).click();
 
-  // Étape Récap : nom, puis validation — l'utilisateur n'a fait que
-  // confirmer une proposition, jamais construit la grille lui-même.
+  // Summary step: name, then validation — the user only confirmed a
+  // proposal, never built the grid themselves.
   const nameInput = page.getByLabel("Nom du motif");
   await nameInput.fill(`e2e type A ${Date.now()}`);
 
   await page.getByRole("button", { name: "Ajouter et commencer" }).click();
 
-  // Doit atterrir sur un vrai écran de suivi, motif entier assemblé — bien
-  // plus que ce qu'une peinture manuelle produirait dans un test rapide.
+  // Must land on a real tracking screen, whole pattern assembled — far more
+  // than what manual painting would produce in a quick test.
   await expect(page.locator("canvas.track-canvas")).toBeVisible();
   expect(await remainingCount(page)).toBeGreaterThan(30_000);
 });
 
-test("taper des dimensions à la main pendant l'analyse ne plante ni le client ni le serveur", async ({
+test("typing dimensions by hand during analysis crashes neither the client nor the server", async ({
   page,
 }) => {
-  // Bug réel trouvé en test manuel : le message affiché pendant l'analyse
-  // invite explicitement à cadrer ou saisir les dimensions à la main en
-  // attendant (`import.detection.running`) — si l'utilisateur le fait
-  // vraiment, avant que l'analyse en tâche de fond (~10s sur cette fixture)
-  // n'ait fini, deux choses plantaient : le client (`Uint8Array.set` avec
-  // une grille détectée devenue trop longue pour les nouvelles dimensions
-  // tapées) et le serveur (500 sur `PATCH /config`, même cause côté
-  // `apply_fills`). Voir les commits de correction pour le détail.
+  // Real bug found in manual testing: the message shown during analysis
+  // explicitly invites cropping or entering the dimensions by hand while
+  // waiting (`import.detection.running`) — if the user really does so, before
+  // the background analysis (~10s on this fixture) has finished, two things
+  // crashed: the client (`Uint8Array.set` with a detected grid that had
+  // become too long for the newly typed dimensions) and the server (500 on
+  // `PATCH /config`, same cause in `apply_fills`). See the fix commits for
+  // the details.
   test.setTimeout(90_000);
 
   const pageErrors: Error[] = [];
@@ -143,9 +143,9 @@ test("taper des dimensions à la main pendant l'analyse ne plante ni le client n
   await page.getByRole("button", { name: "Importer", exact: true }).click();
   await page.locator('input[type="file"][accept*="pdf"]').setInputFiles(FIXTURE_PATH);
 
-  // Ne pas attendre la détection : taper tout de suite, comme un
-  // utilisateur pressé qui suit l'invite du message affiché pendant
-  // l'analyse plutôt que de patienter les ~10s qu'elle prend réellement.
+  // Don't wait for detection: type right away, like a hurried user following
+  // the prompt of the message shown during analysis rather than waiting the
+  // ~10s it really takes.
   await expect(page.getByText("Colonnes")).toBeVisible();
   const [columnsInput, rowsInput] = await page.locator("input.input").all();
   await columnsInput!.fill("92");
@@ -155,20 +155,19 @@ test("taper des dimensions à la main pendant l'analyse ne plante ni le client n
   await page.getByRole("button", { name: "Continuer", exact: true }).click();
   expect((await configPatch).status()).toBe(200);
 
-  // Toujours utilisable : l'étape Palette s'affiche (vide, puisque
-  // l'utilisateur a pris la main avant que la détection ne propose quoi que
-  // ce soit — comportement Lot 2 normal), pas un écran blanc planté.
+  // Still usable: the Palette step shows up (empty, since the user took over
+  // before detection proposed anything — normal Lot 2 behaviour), not a
+  // crashed blank screen.
   await expect(page.getByRole("button", { name: /Ajouter une couleur/ })).toBeVisible();
   expect(pageErrors).toEqual([]);
 });
 
-test("changer des dimensions déjà détectées ne plante pas non plus", async ({ page }) => {
-  // Même bug que le test précédent, mais reproduit de façon déterministe
-  // (sans dépendre de battre une course de ~10s) : on laisse la détection
-  // se terminer et pré-remplir 255×180 avec une vraie `detected_cells`,
-  // *puis* on corrige les dimensions — exactement le geste qui faisait
-  // planter le client (`Uint8Array.set`, grille détectée devenue trop
-  // longue pour 92×74) et le serveur (500 sur `PATCH /config`).
+test("changing already detected dimensions does not crash either", async ({ page }) => {
+  // Same bug as the previous test, but reproduced deterministically (without
+  // depending on winning a ~10s race): let detection finish and pre-fill
+  // 255×180 with a real `detected_cells`, *then* correct the dimensions —
+  // exactly the gesture that crashed the client (`Uint8Array.set`, detected
+  // grid too long for 92×74) and the server (500 on `PATCH /config`).
   test.setTimeout(120_000);
 
   const pageErrors: Error[] = [];
@@ -182,10 +181,10 @@ test("changer des dimensions déjà détectées ne plante pas non plus", async (
   const [columnsInput, rowsInput] = await page.locator("input.input").all();
   await expect(columnsInput!).toHaveValue("255", { timeout: DETECTION_TIMEOUT });
   await expect(rowsInput!).toHaveValue("180");
-  expect(pageErrors).toEqual([]); // pas encore planté à ce stade
+  expect(pageErrors).toEqual([]); // not crashed yet at this point
 
   await columnsInput!.fill("92");
-  expect(pageErrors).toEqual([]); // toujours pas, même avec rows=180 encore incohérent
+  expect(pageErrors).toEqual([]); // still not, even with rows=180 still inconsistent
   await rowsInput!.fill("74");
   expect(pageErrors).toEqual([]);
 
@@ -197,32 +196,31 @@ test("changer des dimensions déjà détectées ne plante pas non plus", async (
   expect(pageErrors).toEqual([]);
 });
 
-test("le cadrage manuel reste bloqué pendant l'analyse automatique", async ({ page }) => {
-  // Demande explicite de l'utilisateur : l'overlay de chargement doit rester
-  // flouté et bloquant pendant l'analyse — le repli manuel n'a de sens que
-  // si l'automatique a vraiment échoué, pas comme une option concurrente
-  // pendant l'attente (contrairement à un choix précédent, revenu en
-  // arrière ici : voir l'historique de `crop-stage-loading` dans index.css).
+test("manual cropping stays blocked during automatic analysis", async ({ page }) => {
+  // Explicit user request: the loading overlay must stay blurred and
+  // blocking during analysis — the manual fallback only makes sense if the
+  // automatic one really failed, not as a competing option while waiting
+  // (unlike a previous choice, reverted here: see the history of
+  // `crop-stage-loading` in index.css).
   test.setTimeout(60_000);
 
   await page.goto("/");
   await page.getByRole("button", { name: "Importer", exact: true }).click();
   await page.locator('input[type="file"][accept*="pdf"]').setInputFiles(FIXTURE_PATH);
 
-  // Ne pas attendre la détection : le test vise précisément la fenêtre
-  // pendant laquelle l'overlay de chargement est affiché.
+  // Don't wait for detection: the test targets precisely the window during
+  // which the loading overlay is shown.
   await expect(page.locator(".crop-stage-loading")).toBeVisible();
   await expect(page.locator(".crop-handle").first()).not.toBeVisible();
 });
 
-test("le cadrage manuel apparaît si la détection automatique ne trouve rien", async ({
+test("manual cropping appears if automatic detection finds nothing", async ({
   page,
 }) => {
-  // Repli explicitement demandé : un fichier qui ne correspond à aucun type
-  // reconnu (ni `detect_type_a`, ni `detect_type_bc` depuis le Lot 5 — voir
-  // fixtures/README.md) doit retomber sur le cadrage manuel du Lot 2 une
-  // fois l'analyse terminée — jamais pendant qu'elle tourne encore (test
-  // précédent).
+  // Explicitly requested fallback: a file matching no recognised type
+  // (neither `detect_type_a` nor `detect_type_bc` since Lot 5 — see
+  // fixtures/README.md) must fall back to Lot 2's manual cropping once the
+  // analysis is finished — never while it is still running (previous test).
   test.setTimeout(60_000);
 
   await page.goto("/");
@@ -233,13 +231,13 @@ test("le cadrage manuel apparaît si la détection automatique ne trouve rien", 
   await expect(page.locator(".crop-stage-loading")).not.toBeVisible({
     timeout: DETECTION_TIMEOUT,
   });
-  // Jamais de bannière de détection : aucun des deux connecteurs ne s'est imposé.
+  // Never a detection banner: neither connector claimed the file.
   await expect(page.getByText(/Détection automatique/)).not.toBeVisible();
 
   const topHandle = page.locator(".crop-handle").first();
   await expect(topHandle).toBeVisible();
   const before = await topHandle.boundingBox();
-  if (before === null) throw new Error("La poignée de cadrage n'a pas de boîte englobante");
+  if (before === null) throw new Error("The crop handle has no bounding box");
 
   await page.mouse.move(before.x + before.width / 2, before.y + before.height / 2);
   await page.mouse.down();
@@ -249,15 +247,14 @@ test("le cadrage manuel apparaît si la détection automatique ne trouve rien", 
   await page.mouse.up();
 
   const after = await topHandle.boundingBox();
-  if (after === null) throw new Error("La poignée de cadrage n'a pas de boîte englobante");
+  if (after === null) throw new Error("The crop handle has no bounding box");
   expect(after.y).toBeGreaterThan(before.y + 30);
 });
 
-test("le cadrage manuel est indépendant d'une page à l'autre", async ({ page }) => {
-  // Demande explicite de l'utilisateur : un seul cadrage imposé à toutes
-  // les pages n'a pas de sens (une page peut être une légende, une autre la
-  // grille) — chaque page garde donc son propre rectangle, voir
-  // `backend/app/schemas.py::ImportConfig.crop_by_page`.
+test("manual cropping is independent from one page to another", async ({ page }) => {
+  // Explicit user request: a single crop imposed on every page makes no sense
+  // (one page may be a legend, another the grid) — each page therefore keeps
+  // its own rectangle, see `backend/app/schemas.py::ImportConfig.crop_by_page`.
   test.setTimeout(60_000);
 
   await page.goto("/");
@@ -272,9 +269,9 @@ test("le cadrage manuel est indépendant d'une page à l'autre", async ({ page }
   const handle = page.locator(".crop-handle").first();
   await expect(handle).toBeVisible();
   const pageOneDefault = await handle.boundingBox();
-  if (pageOneDefault === null) throw new Error("La poignée de cadrage n'a pas de boîte englobante");
+  if (pageOneDefault === null) throw new Error("The crop handle has no bounding box");
 
-  // Cadre la page 1 (glisse la poignée du haut vers le bas).
+  // Crop page 1 (drag the top handle downwards).
   await page.mouse.move(pageOneDefault.x + pageOneDefault.width / 2, pageOneDefault.y + pageOneDefault.height / 2);
   await page.mouse.down();
   await page.mouse.move(
@@ -284,33 +281,33 @@ test("le cadrage manuel est indépendant d'une page à l'autre", async ({ page }
   );
   await page.mouse.up();
   const pageOneCropped = await handle.boundingBox();
-  if (pageOneCropped === null) throw new Error("La poignée de cadrage n'a pas de boîte englobante");
+  if (pageOneCropped === null) throw new Error("The crop handle has no bounding box");
   expect(pageOneCropped.y).toBeGreaterThan(pageOneDefault.y + 30);
 
-  // La page 2 repart du cadrage par défaut, pas de celui de la page 1.
+  // Page 2 starts from the default crop, not page 1's.
   await page.getByRole("button", { name: "Page suivante" }).click();
   const pageTwoDefault = await page.locator(".crop-handle").first().boundingBox();
-  if (pageTwoDefault === null) throw new Error("La poignée de cadrage n'a pas de boîte englobante");
+  if (pageTwoDefault === null) throw new Error("The crop handle has no bounding box");
   expect(pageTwoDefault.y).toBeLessThan(pageOneCropped.y - 20);
 
-  // Revenir à la page 1 retrouve le cadrage qu'on y avait laissé.
+  // Going back to page 1 finds the crop left there.
   await page.getByRole("button", { name: "Page précédente" }).click();
   const pageOneAgain = await page.locator(".crop-handle").first().boundingBox();
-  if (pageOneAgain === null) throw new Error("La poignée de cadrage n'a pas de boîte englobante");
+  if (pageOneAgain === null) throw new Error("The crop handle has no bounding box");
   expect(Math.abs(pageOneAgain.y - pageOneCropped.y)).toBeLessThan(5);
 });
 
-test("les symboles affichés sont les vrais glyphes du PDF, pas des lettres synthétiques", async ({
+test("the displayed symbols are the PDF's real glyphs, not synthetic letters", async ({
   page,
 }) => {
-  // Bug réel signalé par l'utilisateur : le moteur d'extraction générait une
-  // clé interne imprimable (A, B, ..., AB, ...) faute de pouvoir réutiliser
-  // le glyphe brut de la police privée du PDF (`app.type_a.symbol_key`) —
-  // mais cette clé n'a jamais été pensée comme le symbole à afficher, jamais
-  // une liste de symboles connus à l'avance (les symboles varient d'un PDF à
-  // l'autre) : `app.imports_engine.render_symbol_svg` découpe désormais le
-  // symbole réel depuis la page rendue, voir `tests/test_type_a.py` côté
-  // backend pour la vérification exhaustive de sa justesse.
+  // Real bug reported by the user: the extraction engine generated a
+  // printable internal key (A, B, ..., AB, ...) for lack of being able to
+  // reuse the raw glyph of the PDF's private font (`app.type_a.symbol_key`) —
+  // but that key was never meant as the symbol to display, never a list of
+  // symbols known in advance (symbols vary from one PDF to another):
+  // `app.imports_engine.render_symbol_svg` now cuts the real symbol out of
+  // the rendered page, see `tests/test_type_a.py` on the backend for the
+  // exhaustive verification of its correctness.
   test.setTimeout(120_000);
 
   const pageErrors: Error[] = [];
@@ -326,21 +323,21 @@ test("les symboles affichés sont les vrais glyphes du PDF, pas des lettres synt
   await page.getByRole("button", { name: "Continuer", exact: true }).click();
   await expect(page.getByPlaceholder("Code").first()).toBeVisible();
 
-  // L'étape Palette doit elle aussi afficher les vrais symboles, pas
-  // seulement l'écran de Suivi final — bug réel trouvé en test manuel : une
-  // palette construite localement dans `ImportScreen.tsx` pour le pinceau
-  // (`ImportGridPainter`, distincte de `lib/mappers.ts`, déjà correcte)
-  // perdait `symbol_svg` en route vers `useImportPainter`. Vérifié ici sur
-  // les pastilles de sélection de couleur (de vraies balises `<img>`, pas le
-  // canvas du pinceau lui-même : son image s'y décode de façon asynchrone,
-  // trop vite et de façon trop peu fiable pour une course dans un test).
+  // The Palette step must also show the real symbols, not just the final
+  // Tracking screen — real bug found in manual testing: a palette built
+  // locally in `ImportScreen.tsx` for the brush (`ImportGridPainter`,
+  // distinct from `lib/mappers.ts`, which was already correct) lost
+  // `symbol_svg` on its way to `useImportPainter`. Checked here on the colour
+  // selection swatches (real `<img>` tags, not the brush canvas itself: its
+  // image decodes there asynchronously, too fast and too unreliably for a
+  // race in a test).
   const paletteSwatchImages = page.locator('button.badge img[src^="data:image/svg+xml;base64,"]');
   await expect(paletteSwatchImages.first()).toBeVisible();
   expect(await paletteSwatchImages.count()).toBeGreaterThanOrEqual(34);
 
-  // Repère à côté de la clé éditable (`symbol_key`) de la légende du bas —
-  // un deuxième site distinct qui perdait aussi `symbol_svg` avant d'être
-  // corrigé, trouvé par le même bug réel que les pastilles ci-dessus.
+  // Marker next to the editable key (`symbol_key`) of the bottom legend — a
+  // second distinct site that also lost `symbol_svg` before being fixed,
+  // found through the same real bug as the swatches above.
   const legendRowImages = page.locator(
     'div:has(> input[type="color"]) img[src^="data:image/svg+xml;base64,"]',
   );
@@ -355,9 +352,9 @@ test("les symboles affichés sont les vrais glyphes du PDF, pas des lettres synt
 
   await expect(page.locator("canvas.track-canvas")).toBeVisible();
 
-  // La légende (`ColorList.tsx`) affiche le symbole réel en image, pas la
-  // lettre synthétique en texte — au moins les 34 couleurs DMC de la
-  // légende du PDF.
+  // The legend (`ColorList.tsx`) shows the real symbol as an image, not the
+  // synthetic letter as text — at least the 34 DMC colours of the PDF's
+  // legend.
   const symbolImages = page.locator('img[src^="data:image/svg+xml;base64,"]');
   await expect(symbolImages.first()).toBeVisible();
   expect(await symbolImages.count()).toBeGreaterThanOrEqual(34);
@@ -365,14 +362,14 @@ test("les symboles affichés sont les vrais glyphes du PDF, pas des lettres synt
   expect(pageErrors).toEqual([]);
 });
 
-test("une palette saisie à la main garde son repli textuel, sans symbole réel à afficher", async ({
+test("a palette entered by hand keeps its text fallback, with no real symbol to show", async ({
   page,
   request,
 }) => {
-  // Contrepartie du test précédent : le motif de démonstration (Lot 1, pas
-  // un import PDF) n'a jamais eu de PDF source à découper — la légende doit
-  // continuer d'afficher le texte de `symbol_key`, jamais casser en essayant
-  // d'afficher une image absente.
+  // Counterpart of the previous test: the demo pattern (Lot 1, not a PDF
+  // import) never had a source PDF to cut from — the legend must keep
+  // showing the `symbol_key` text, never break trying to show a missing
+  // image.
   const pattern = await fetchDemoPattern(request);
   await page.goto("/");
   await page.getByText(pattern.name).click();

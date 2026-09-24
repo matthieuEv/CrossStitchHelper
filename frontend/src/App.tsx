@@ -17,23 +17,22 @@ import { usePatternActivity } from "./state/usePatternActivity";
 import { usePatternLibrary } from "./state/usePatternLibrary";
 import { useSyncedTracker, type SyncedTracker } from "./state/useSyncedTracker";
 
-// Repli hors-ligne (serveur injoignable) : même valeur par défaut que
-// `backend/app/config.py::Settings.app_version`, la source de vérité une
-// fois le serveur joignable.
+// Offline fallback (server unreachable): same default value as
+// `backend/app/config.py::Settings.app_version`, the source of truth once the
+// server is reachable.
 const FALLBACK_VERSION = "v0.0.0-dev";
 
 /**
- * Détient l'état de suivi d'un motif et le prête aux écrans qui en ont besoin.
+ * Holds a pattern's tracking state and lends it to the screens that need it.
  *
- * Monté avec une `key` égale à l'identifiant du motif : changer de motif
- * réinitialise proprement la progression, la pile d'annulation et la vue, sans
- * qu'aucun écran ait à s'en préoccuper.
+ * Mounted with a `key` equal to the pattern id: switching patterns cleanly
+ * resets progress, the undo stack and the view, without any screen having to
+ * care about it.
  *
- * `useSyncedTracker` (plutôt que `useTracker` directement) ajoute la
- * synchronisation serveur par deltas versionnés (Lot 1) : pour un motif de
- * démonstration purement local, les tentatives de synchronisation échouent
- * silencieusement (le motif n'existe pas côté serveur), ce qui dégrade
- * proprement vers le comportement local d'avant le Lot 1.
+ * `useSyncedTracker` (rather than `useTracker` directly) adds server
+ * synchronisation by versioned deltas (Lot 1): for a purely local demo
+ * pattern, sync attempts fail silently (the pattern does not exist on the
+ * server), which cleanly degrades to the local behaviour from before Lot 1.
  */
 function PatternSession({
   entry,
@@ -58,11 +57,10 @@ export function App() {
   const { screen, patternId: routePatternId, navigate } = useRouter();
   const { state: serverState, health } = useServerHealth();
 
-  // Bibliothèque de démonstration, utilisée tant que le serveur n'a rendu
-  // aucun motif (chargement en cours, serveur injoignable et rien en cache,
-  // ou instance backend absente en développement). Construite une seule
-  // fois : la génération rasterise du texte sur un canvas, ce n'est pas
-  // gratuit.
+  // Demo library, used as long as the server has returned no pattern
+  // (loading, server unreachable and nothing cached, or no backend instance
+  // in development). Built only once: generation rasterises text on a
+  // canvas, which is not free.
   const demoEntries = useMemo<LibraryEntry[]>(() => {
     const pattern = createDemoPattern();
     const main: LibraryEntry = {
@@ -76,20 +74,20 @@ export function App() {
   const library = usePatternLibrary();
   const entries: LibraryEntry[] = library.entries ?? demoEntries;
 
-  // L'URL (`/track/{id}`) est la source de vérité quand elle en porte un —
-  // c'est ce qui permet à un rechargement de page de rouvrir le même motif
-  // au lieu de retomber sur le premier de la liste (voir `lib/router.ts`).
-  // `activeId` ne sert que de repli pour les raccourcis de la barre de
-  // navigation, qui naviguent sans préciser de motif.
+  // The URL (`/track/{id}`) is the source of truth when it carries one —
+  // that is what lets a page reload reopen the same pattern instead of
+  // falling back to the first one in the list (see `lib/router.ts`).
+  // `activeId` is only a fallback for the navigation bar shortcuts, which
+  // navigate without specifying a pattern.
   const [activeId, setActiveId] = useState<string>(() => entries[0]?.pattern.id ?? "");
   const effectiveId = routePatternId ?? activeId;
   const activeEntry = entries.find((entry) => entry.pattern.id === effectiveId) ?? entries[0];
 
-  // Un motif de démonstration n'existe pas côté serveur : son historique
-  // reste factice plutôt que d'interroger un `/activity` qui répondrait 404
-  // pour de vraies raisons (voir `usePatternActivity`). Récupéré uniquement
-  // quand l'écran Statistiques est affiché — inutile de l'aller chercher en
-  // arrière-plan pendant que l'utilisateur brode.
+  // A demo pattern does not exist on the server: its history stays fake
+  // rather than querying an `/activity` that would answer 404 for genuine
+  // reasons (see `usePatternActivity`). Only fetched when the Statistics
+  // screen is shown — no point fetching it in the background while the user
+  // is stitching.
   const statsPatternId = screen === "stats" && activeEntry !== undefined ? activeEntry.pattern.id : "";
   const patternActivity = usePatternActivity(statsPatternId, library.entries === null);
 

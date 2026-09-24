@@ -1,10 +1,10 @@
-"""Application FastAPI.
+"""FastAPI application.
 
-Un seul processus sert l'API **et** le frontend construit : c'est ce qui permet
-de livrer une image Docker unique, sur un seul port, sans reverse proxy à
-configurer (cahier des charges §3). En développement, ``frontend_dist`` est
-absent : le serveur Vite sert le frontend et ce processus ne répond que sur
-``/api``.
+A single process serves the API **and** the built frontend: that is what
+makes it possible to ship a single Docker image, on a single port, with no
+reverse proxy to configure (specification §3). In development,
+``frontend_dist`` is absent: the Vite server serves the frontend and this
+process only answers on ``/api``.
 """
 
 from __future__ import annotations
@@ -31,12 +31,12 @@ from app.migrations import upgrade_to_head
 
 logger = logging.getLogger(__name__)
 
-# Vite écrit les fichiers d'application sous `assets/` avec un condensat dans
-# le nom : leur contenu ne change jamais pour une URL donnée.
+# Vite writes application files under `assets/` with a hash in the name:
+# their content never changes for a given URL.
 _IMMUTABLE_PREFIXES = ("assets/",)
 
-# Ces fichiers pilotent la mise à jour de la PWA. Les mettre en cache
-# empêcherait un appareil déjà installé de recevoir une nouvelle version.
+# These files drive the PWA update. Caching them would prevent an already
+# installed device from receiving a new version.
 _NEVER_CACHED = frozenset(
     {"index.html", "sw.js", "registerSW.js", "manifest.webmanifest", "workbox-window.prod.es5.js"}
 )
@@ -49,7 +49,7 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     if settings.run_migrations_on_startup:
         upgrade_to_head()
     logger.info(
-        "CrossStitchHelper %s prêt — données dans %s", settings.app_version, settings.data_dir
+        "CrossStitchHelper %s ready — data in %s", settings.app_version, settings.data_dir
     )
 
     task: asyncio.Task[None] | None = None
@@ -74,29 +74,29 @@ def _cache_headers(relative_path: str) -> dict[str, str]:
 
 
 def _register_frontend(app: FastAPI, dist_dir: Path) -> None:
-    # Sans cet enregistrement, le manifeste est servi en `text/plain` et Safari
-    # refuse d'installer la PWA sur l'écran d'accueil.
+    # Without this registration, the manifest is served as `text/plain` and
+    # Safari refuses to install the PWA on the home screen.
     mimetypes.add_type("application/manifest+json", ".webmanifest")
     dist = dist_dir.resolve()
 
     @app.get("/{requested_path:path}", include_in_schema=False)
     def serve_frontend(requested_path: str) -> FileResponse:
-        # Une route API inexistante doit rester une erreur JSON. Sans ce
-        # garde-fou, elle renverrait la coquille HTML de l'application et le
-        # client verrait une erreur de parsing JSON incompréhensible.
+        # A non-existent API route must remain a JSON error. Without this
+        # guard, it would return the application's HTML shell and the client
+        # would see an incomprehensible JSON parsing error.
         if requested_path == "api" or requested_path.startswith("api/"):
-            raise HTTPException(status_code=404, detail="Route API inconnue")
+            raise HTTPException(status_code=404, detail="Unknown API route")
 
         candidate = (dist / requested_path).resolve()
         if candidate.is_relative_to(dist) and candidate.is_file():
             return FileResponse(candidate, headers=_cache_headers(requested_path))
 
-        # Toute autre URL est une route applicative gérée côté client.
+        # Any other URL is an application route handled on the client.
         index = dist / "index.html"
         if not index.is_file():
             raise HTTPException(
                 status_code=404,
-                detail="Frontend non construit : lancez `npm run build` dans frontend/.",
+                detail="Frontend not built: run `npm run build` in frontend/.",
             )
         return FileResponse(index, headers={"Cache-Control": "no-cache"})
 
@@ -106,7 +106,7 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title="CrossStitchHelper",
         version=settings.app_version,
-        summary="API locale de suivi de grilles de point de croix.",
+        summary="Local API for tracking cross-stitch charts.",
         lifespan=lifespan,
         docs_url="/api/docs",
         openapi_url="/api/openapi.json",
@@ -119,12 +119,11 @@ def create_app() -> FastAPI:
     app.include_router(recipes_router, prefix="/api")
     app.include_router(backup_router, prefix="/api")
 
-    # Enregistré en dernier : la route attrape-tout ne doit jamais masquer
-    # une route d'API.
+    # Registered last: the catch-all route must never shadow an API route.
     if settings.frontend_dist is not None:
         _register_frontend(app, settings.frontend_dist)
     else:
-        logger.info("Aucun frontend construit configuré — le backend ne sert que /api.")
+        logger.info("No built frontend configured — the backend only serves /api.")
 
     return app
 

@@ -1,11 +1,11 @@
 /**
- * Maintien de l'écran allumé pendant la broderie.
+ * Keeps the screen on while stitching.
  *
- * On brode les mains occupées, sans toucher l'écran pendant plusieurs minutes :
- * sans ce verrou, l'appareil s'éteint en plein milieu d'une rangée. L'API n'est
- * pas disponible partout (Safari ne l'a que depuis iOS 16.4), et le verrou est
- * relâché par le système dès que l'onglet passe en arrière-plan — il faut donc
- * le reprendre au retour.
+ * You stitch with your hands busy, without touching the screen for several
+ * minutes: without this lock, the device goes to sleep in the middle of a row.
+ * The API is not available everywhere (Safari only has it since iOS 16.4), and
+ * the lock is released by the system as soon as the tab goes to the
+ * background — so it must be re-acquired on return.
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -32,8 +32,8 @@ export function useWakeLock(): WakeLock {
     try {
       sentinelRef.current = await navigator.wakeLock.request("screen");
     } catch {
-      // Refus du système (batterie faible, onglet masqué) : on n'insiste pas,
-      // l'utilisateur garde simplement le comportement par défaut.
+      // Refused by the system (low battery, hidden tab): don't insist, the
+      // user simply keeps the default behaviour.
     }
   }, [supported]);
 
