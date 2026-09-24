@@ -11,7 +11,7 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from app import __version__
+from app.config import get_settings
 
 
 def test_health_reports_ok_and_applied_migration(client: TestClient) -> None:
@@ -20,7 +20,7 @@ def test_health_reports_ok_and_applied_migration(client: TestClient) -> None:
     assert response.status_code == 200
     body = response.json()
     assert body["status"] == "ok"
-    assert body["version"] == __version__
+    assert body["version"] == get_settings().app_version
     assert body["database"] == "ok"
     assert body["schema_revision"] == "0005_progress_extra_layers"
 
