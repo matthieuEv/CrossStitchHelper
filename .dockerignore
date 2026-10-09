@@ -1,0 +1,23 @@
+# Host-built dependencies and outputs: the image installs and builds its own
+# (a macOS node_modules copied over the Linux one breaks esbuild).
+**/node_modules
+**/dist
+**/.venv
+**/__pycache__
+**/*.pyc
+**/.pytest_cache
+**/.mypy_cache
+**/.ruff_cache
+frontend/test-results
+frontend/playwright-report
+
+# User data and secrets never belong in the build context.
+data/
+**/*.db
+**/*.sqlite
+**/*.sqlite3
+.env
+.env.*
+
+.git
+.claude

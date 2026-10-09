@@ -1,0 +1,13 @@
+# Throw-away instance used by the fix-issue skill: builds the checked-out
+# branch and runs it next to the user's real instance, never on its data.
+# Usage: docker compose -p csh-issue -f docker-compose.yml -f .claude/compose.issue.yml up -d --build
+services:
+  crossstitchhelper:
+    build: .
+    image: crossstitchhelper:issue
+    container_name: crossstitchhelper-issue
+    restart: "no"
+    ports: !override
+      - "8766:8000"
+    volumes: !override
+      - /tmp/csh-issue-data:/data
