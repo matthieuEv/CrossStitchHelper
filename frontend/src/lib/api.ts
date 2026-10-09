@@ -237,6 +237,17 @@ function withSignal(signal?: AbortSignal): RequestInit | undefined {
   return signal === undefined ? undefined : { signal };
 }
 
+/** A shade of the DMC colour chart (`GET /api/threads/dmc`, issue #39). */
+export interface ApiThreadShade {
+  code: string;
+  name: string;
+  rgb_hex: string;
+}
+
+export function fetchDmcShades(signal?: AbortSignal): Promise<ApiThreadShade[]> {
+  return request<ApiThreadShade[]>("/threads/dmc", withSignal(signal));
+}
+
 export function fetchPatterns(signal?: AbortSignal): Promise<ApiPatternSummary[]> {
   return request<ApiPatternSummary[]>("/patterns", withSignal(signal));
 }
