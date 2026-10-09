@@ -2,7 +2,7 @@
 name: fix-issue
 description: Takes one GitHub issue assigned to the user (a given number, one with a given label, or the next one by priority), checks it is clear, reproduces it, fixes or implements it, verifies it in the browser and opens a linked PR — or asks a question on the issue and stops. Also resumes an issue whose PR has review feedback, and asks reporters to check fixes once merged.
 argument-hint: "[issue number | label] — e.g. 56, bug, or nothing"
-disable-model-invocation: true
+disable-model-invocation: false
 ---
 
 # Working on one assigned GitHub issue
