@@ -627,7 +627,7 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
                     className="swatch"
                     style={{ width: 18, height: 18, background: entry.rgb_hex }}
                   />
-                  {entry.symbol_svg !== null && entry.symbol_svg !== undefined && (
+                  {entry.symbol_svg !== null && entry.symbol_svg !== undefined ? (
                     // Real symbol cut out of the PDF (Lot 4) — see
                     // `ColorList.tsx` for the same principle in Tracking.
                     <img
@@ -635,6 +635,13 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
                       alt=""
                       style={{ width: 16, height: 16 }}
                     />
+                  ) : (
+                    // No symbol from the file (colour added by hand, or a
+                    // detection without one): fall back to the text key the
+                    // grid painter draws, as `ColorList.tsx` does in Tracking.
+                    <span style={{ minWidth: 16, textAlign: "center", fontWeight: 700 }}>
+                      {entry.symbol_key}
+                    </span>
                   )}
                   {entry.code || entry.name || "—"}
                 </button>
