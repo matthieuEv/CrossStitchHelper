@@ -1,7 +1,7 @@
 services:
   crossstitchhelper:
-    image: ghcr.io/matthieuev/crossstitchhelper:latest
-    # build: .
+    # image: ghcr.io/matthieuev/crossstitchhelper:latest
+    build: .
     container_name: crossstitchhelper
     restart: unless-stopped
     ports:
