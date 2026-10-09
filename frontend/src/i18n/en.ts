@@ -64,6 +64,7 @@ export const en: Record<TranslationKey, string> = {
   "import.paint.tool.paint": "Paint",
   "import.paint.tool.pan": "Move",
   "import.paint.eraser": "Eraser",
+  "import.paint.undo": "Undo last area",
   "import.recap.incomplete": "Incomplete configuration: dimensions and palette are required to continue.",
   "import.recap.name": "Pattern name",
   "import.recap.fabric": "Fabric (count)",
