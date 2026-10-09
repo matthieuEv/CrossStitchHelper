@@ -1,9 +1,9 @@
 /**
- * Client de l'API locale.
+ * Local API client.
  *
- * Toutes les requêtes sont relatives : le backend sert le frontend sur la même
- * origine, il n'y a donc aucune URL de serveur à configurer côté client — et
- * aucun appel vers un tiers n'est possible par construction.
+ * All requests are relative: the backend serves the frontend on the same
+ * origin, so there is no server URL to configure on the client — and no call
+ * to a third party is possible by construction.
  */
 
 import { useEffect, useState } from "react";
@@ -21,11 +21,11 @@ export interface HealthResponse {
 export type ApiErrorParams = Record<string, string | number>;
 
 /**
- * Une erreur API traduisible — jamais un message déjà composé côté serveur
- * (audit des traductions, Lot 8) : `code`/`params` reflètent tels quels
- * `ApiErrorDetail` (`backend/app/schemas.py`), à traduire côté composant via
- * `translateApiError` au moment de l'afficher (jamais ici : ce module n'a
- * pas accès à la langue choisie par l'utilisateur).
+ * A translatable API error — never a message already composed on the server
+ * (translation audit, Lot 8): `code`/`params` mirror `ApiErrorDetail`
+ * (`backend/app/schemas.py`) as is, to be translated in the component via
+ * `translateApiError` when displayed (never here: this module has no access
+ * to the language chosen by the user).
  */
 export class ApiError extends Error {
   constructor(
@@ -39,10 +39,10 @@ export class ApiError extends Error {
 }
 
 /**
- * Traduit une `ApiError` (ou toute autre erreur) en message affichable, dans
- * la langue courante. `error.<code>` peut être absente (version du serveur
- * plus récente que celle du frontend, code inconnu) : repli sur
- * `error.unknown` plutôt que planter ou afficher un code technique brut.
+ * Translates an `ApiError` (or any other error) into a displayable message,
+ * in the current language. `error.<code>` may be missing (server version
+ * newer than the frontend's, unknown code): falls back to `error.unknown`
+ * rather than crashing or showing a raw technical code.
  */
 export function translateApiError(t: Translate, error: unknown): string {
   if (error instanceof ApiError) {
@@ -67,8 +67,8 @@ async function errorFrom(response: Response): Promise<ApiError> {
       return new ApiError(response.status, (detail as { code: string }).code, params);
     }
   } catch {
-    // Corps non-JSON (ex. erreur réseau bas niveau, ou erreur de validation
-    // native de FastAPI dans une forme différente) : code générique ci-dessous.
+    // Non-JSON body (e.g. low-level network error, or a native FastAPI
+    // validation error in a different shape): generic code below.
   }
   return new ApiError(response.status, "unknown");
 }
@@ -89,9 +89,9 @@ function postJson<T>(path: string, body: unknown, signal?: AbortSignal): Promise
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
-    // `exactOptionalPropertyTypes` refuse `signal: undefined` (incompatible
-    // avec `AbortSignal | null` attendu par `RequestInit`) : on n'inclut la
-    // propriété que si elle a une valeur.
+    // `exactOptionalPropertyTypes` rejects `signal: undefined` (incompatible
+    // with the `AbortSignal | null` expected by `RequestInit`): the property
+    // is only included if it has a value.
     ...(signal !== undefined && { signal }),
   });
 }
@@ -119,7 +119,7 @@ export function fetchHealth(signal: AbortSignal): Promise<HealthResponse> {
   return request<HealthResponse>("/health", { signal });
 }
 
-/** Formes des réponses de `/api/patterns/*` — voir `backend/app/schemas.py`. */
+/** Shapes of the `/api/patterns/*` responses — see `backend/app/schemas.py`. */
 export interface ApiPaletteEntry {
   index_in_grid: number;
   brand: string;
@@ -178,8 +178,8 @@ export interface ApiGrid {
   french_knots: Array<{ x: number; y: number; palette_index: number }>;
 }
 
-/** Même énumération que `backend/app/schemas.py::ProgressOp.layer` (Lot 8) —
- * jamais un espace d'index partagé entre catégories. */
+/** Same enumeration as `backend/app/schemas.py::ProgressOp.layer` (Lot 8) —
+ * never an index space shared between categories. */
 export type ApiStitchLayer = "full" | "half" | "quarter" | "backstitch" | "knot";
 
 export interface ApiProgress {
@@ -188,12 +188,12 @@ export interface ApiProgress {
   stitched_count: number;
   cell_count: number;
   bitmap: string;
-  /** Points 1/2 cochés (Lot 8), même forme que `bitmap` — `null` si le motif
-   * n'a aucun contenu 1/2 (`ApiGrid.layer_half` absent). */
+  /** Checked 1/2 stitches (Lot 8), same shape as `bitmap` — `null` if the
+   * pattern has no 1/2 content (`ApiGrid.layer_half` absent). */
   bitmap_half: string | null;
   bitmap_quarter: string | null;
-  /** 1 bit par élément de `ApiGrid.backstitch`/`french_knots`, pas par case —
-   * `null` si la liste correspondante est vide. */
+  /** 1 bit per element of `ApiGrid.backstitch`/`french_knots`, not per cell —
+   * `null` if the corresponding list is empty. */
   bitmap_backstitch: string | null;
   bitmap_knots: string | null;
   stitched_count_half: number;
@@ -203,8 +203,8 @@ export interface ApiProgress {
 }
 
 export interface ApiProgressOp {
-  /** Défaut « full » côté serveur si omis (rétrocompatibilité) — toujours
-   * fourni explicitement côté client depuis le Lot 8. */
+  /** Defaults to "full" on the server if omitted (backward compatibility) —
+   * always provided explicitly by the client since Lot 8. */
   layer: ApiStitchLayer;
   index: number;
   stitched: boolean;
@@ -253,7 +253,7 @@ export function fetchProgress(id: string, signal?: AbortSignal): Promise<ApiProg
   return request<ApiProgress>(`/patterns/${id}/progress`, withSignal(signal));
 }
 
-/** Format ouvert et documenté (cahier des charges §6.4) — un lien direct suffit. */
+/** Open, documented format (specification §6.4) — a direct link is enough. */
 export function patternExportUrl(id: string): string {
   return `/api/patterns/${id}/export`;
 }
@@ -278,7 +278,7 @@ export function syncProgress(
   );
 }
 
-/** Formes des réponses de `/api/imports/*` — voir `backend/app/schemas.py`. */
+/** Shapes of the `/api/imports/*` responses — see `backend/app/schemas.py`. */
 export interface ApiImportCrop {
   left: number;
   top: number;
@@ -291,7 +291,7 @@ export interface ApiImportPaletteEntry {
   name: string;
   rgb_hex: string;
   symbol_key: string;
-  /** Symbole réel découpé depuis le PDF (Lot 4) — voir `ApiPaletteEntry`. */
+  /** Real symbol cut out of the PDF (Lot 4) — see `ApiPaletteEntry`. */
   symbol_svg?: string | null;
 }
 
@@ -304,22 +304,22 @@ export interface ApiImportFillZone {
 }
 
 export interface ApiImportConfig {
-  /** Cadrage manuel par numéro de page (clé str), repère purement visuel —
-   * voir `backend/app/schemas.py::ImportConfig.crop_by_page`. */
+  /** Manual cropping by page number (str key), a purely visual aid — see
+   * `backend/app/schemas.py::ImportConfig.crop_by_page`. */
   crop_by_page: Record<string, ApiImportCrop>;
   columns: number | null;
   rows: number | null;
   palette: ApiImportPaletteEntry[];
   fills: ApiImportFillZone[];
-  /** Grille détectée automatiquement (Lot 4), fond sous `fills` — voir `apply_fills`. */
+  /** Automatically detected grid (Lot 4), background under `fills` — see `apply_fills`. */
   detected_cells: number[] | null;
-  /** Index dans `detected_cells` des cases signalées incertaines par la
-   * détection type B/C (Lot 5) — couleur douteuse et/ou symbole ambigu,
-   * jamais une case fausse laissée sans indication. */
+  /** Indices into `detected_cells` of the cells flagged uncertain by type
+   * B/C detection (Lot 5) — doubtful colour and/or ambiguous symbol, never a
+   * wrong cell left without indication. */
   uncertain_cells: number[] | null;
-  /** Compte de toile lu dans le PDF (type A, Lot 9) — pré-remplit le champ
-   * de l'écran Récap, jamais imposé : une saisie manuelle l'emporte
-   * toujours, voir `manualFabricEditRef` dans `ImportScreen.tsx`. */
+  /** Fabric count read from the PDF (type A, Lot 9) — pre-fills the Summary
+   * screen's field, never imposed: manual input always wins, see
+   * `manualFabricEditRef` in `ImportScreen.tsx`. */
   detected_fabric_count: number | null;
 }
 
@@ -345,9 +345,9 @@ export interface ApiImportDetection {
 }
 
 /**
- * Traduit un avertissement de détection automatique — même principe que
- * `translateApiError` (clé `import.warning.<code>` plutôt que `error.<code>`,
- * repli sur `import.warning.unknown`).
+ * Translates an automatic detection warning — same principle as
+ * `translateApiError` (key `import.warning.<code>` rather than
+ * `error.<code>`, falling back to `import.warning.unknown`).
  */
 export function translateDetectionWarning(t: Translate, warning: ApiDetectionWarning): string {
   const key = `import.warning.${warning.code}`;
@@ -364,7 +364,7 @@ export interface ApiImportPreview {
   palette: ApiImportPaletteEntry[];
 }
 
-/** Recette (Lot 6) dont `crop_by_page` a pré-rempli ce job — voir `ApiRecipe`. */
+/** Recipe (Lot 6) whose `crop_by_page` pre-filled this job — see `ApiRecipe`. */
 export interface ApiAppliedRecipe {
   id: string;
   label: string;
@@ -430,10 +430,10 @@ export function commitImport(
 }
 
 /**
- * Bibliothèque de recettes réutilisables (Lot 6, cahier des charges §8.7).
+ * Reusable recipe library (Lot 6, specification §8.7).
  *
- * `config` ne porte que `crop_by_page` — jamais les dimensions ni la
- * palette d'un motif, qui sont son contenu créatif (voir
+ * `config` only carries `crop_by_page` — never a pattern's dimensions or
+ * palette, which are its creative content (see
  * `backend/app/models.py::Recipe`).
  */
 export interface ApiRecipe {
@@ -462,7 +462,7 @@ export function deleteRecipe(recipeId: string, signal?: AbortSignal): Promise<vo
   return deleteRequest(`/recipes/${recipeId}`, signal);
 }
 
-// --- Sauvegarde/restauration complète (Lot 8, cahier des charges §7.5) -----
+// --- Full backup/restore (Lot 8, specification §7.5) -----------------------
 
 export interface ApiBackupRestoreSummary {
   patterns_count: number;
@@ -470,19 +470,18 @@ export interface ApiBackupRestoreSummary {
   progress_events_count: number;
 }
 
-/** Format ouvert (JSON) et documenté (§7.5) — comme `patternExportUrl`, un
- * lien direct suffit : le serveur pose déjà l'en-tête de téléchargement. */
+/** Open (JSON), documented format (§7.5) — like `patternExportUrl`, a direct
+ * link is enough: the server already sets the download header. */
 export function backupExportUrl(): string {
   return "/api/backup";
 }
 
 /**
- * Restauration complète : remplace toutes les données existantes par le
- * contenu de `fileText` (le texte brut d'un fichier exporté via
- * `backupExportUrl`). Passe par `fetch` directement plutôt que par
- * `postJson` : `fileText` est déjà le JSON sérialisé à envoyer tel quel,
- * `postJson` le sérialiserait une seconde fois (`JSON.stringify` d'une
- * chaîne déjà JSON).
+ * Full restore: replaces all existing data with the contents of `fileText`
+ * (the raw text of a file exported via `backupExportUrl`). Goes through
+ * `fetch` directly rather than `postJson`: `fileText` is already the
+ * serialised JSON to send as is, `postJson` would serialise it a second time
+ * (`JSON.stringify` of a string that is already JSON).
  */
 export async function restoreBackup(fileText: string): Promise<ApiBackupRestoreSummary> {
   const response = await fetch("/api/backup/restore", {
@@ -521,10 +520,10 @@ export function setAutoBackupSetting(
 export type ServerState = "checking" | "ok" | "unreachable";
 
 /**
- * État de la liaison au serveur.
+ * State of the connection to the server.
  *
- * L'application doit rester utilisable hors ligne : un serveur injoignable
- * n'est pas une erreur bloquante, seulement une information à afficher.
+ * The application must remain usable offline: an unreachable server is not a
+ * blocking error, just information to display.
  */
 export function useServerHealth(): { state: ServerState; health: HealthResponse | null } {
   const [state, setState] = useState<ServerState>("checking");

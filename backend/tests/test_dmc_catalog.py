@@ -1,8 +1,8 @@
-"""Tests de `app/dmc_catalog.py`, en particulier `nearest_dmc_among` (Lot 7) —
-jamais exercé par la fixture `river-and-mountains-laserarts` elle-même (voir
-`app/type_e.py` : le repli couleur n'y est jamais déclenché, le comptage
-exact suffit sur ce fichier), donc vérifié ici directement plutôt que
-seulement de façon indirecte via un connecteur."""
+"""Tests for `app/dmc_catalog.py`, in particular `nearest_dmc_among` (Lot 7) —
+never exercised by the `river-and-mountains-laserarts` fixture itself (see
+`app/type_e.py`: the colour fallback is never triggered there, the exact
+count is enough on that file), so verified here directly rather than only
+indirectly through a connector."""
 
 from __future__ import annotations
 
@@ -10,9 +10,9 @@ from app.dmc_catalog import nearest_dmc, nearest_dmc_among
 
 
 def test_nearest_dmc_among_restricts_to_the_given_codes() -> None:
-    # Presque noir : le plus proche voisin sans restriction serait "310"
-    # (Noir), mais restreint à un ensemble qui ne le contient pas, un autre
-    # code sombre doit être choisi à la place.
+    # Almost black: the unrestricted nearest neighbour would be "310"
+    # (Black), but restricted to a set that does not contain it, another
+    # dark code must be chosen instead.
     near_black = (0.02, 0.02, 0.02)
     unrestricted = nearest_dmc(near_black)
     assert unrestricted.code == "310"
@@ -26,7 +26,7 @@ def test_nearest_dmc_among_restricts_to_the_given_codes() -> None:
 def test_nearest_dmc_among_is_case_insensitive_on_codes() -> None:
     match = nearest_dmc_among((0.0, 0.0, 0.0), {"BLANC"})
     assert match is not None
-    assert match.code == "BLANC"  # renvoie le code tel que demandé, pas la clé interne en minuscule
+    assert match.code == "BLANC"  # returns the code as requested, not the lowercase internal key
 
 
 def test_nearest_dmc_among_returns_none_when_no_code_is_known() -> None:

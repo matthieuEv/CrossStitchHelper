@@ -30,12 +30,11 @@ import {
 import type { CellPosition, Tracker } from "../state/useTracker";
 
 /**
- * Distance, en pixels, au-delà de laquelle un contact est considéré comme un
- * déplacement et non comme un tap.
+ * Distance, in pixels, beyond which a touch is considered a pan rather than a
+ * tap.
  *
- * Trop bas, cocher une case déplace la grille par accident ; trop haut, le
- * défilement paraît collant. Cette valeur est réglée pour un doigt, pas pour
- * une souris.
+ * Too low, and checking a cell moves the grid by accident; too high, and
+ * scrolling feels sticky. This value is tuned for a finger, not a mouse.
  */
 const DRAG_THRESHOLD = 7;
 
@@ -62,9 +61,9 @@ export function TrackScreen({ tracker, wide, onBack }: TrackScreenProps) {
     lastX: number;
     lastY: number;
     cell: CellPosition | null;
-    /** Point de contact fractionnaire (Lot 8), capturé au même instant que
-     * `cell` — nécessaire pour viser un segment de point arrière ou un nœud,
-     * qui ne sont pas alignés sur la grille de cases (voir `tracker.toggleAtPoint`). */
+    /** Fractional touch point (Lot 8), captured at the same moment as `cell`
+     * — needed to target a backstitch segment or a knot, which are not aligned
+     * on the cell grid (see `tracker.toggleAtPoint`). */
     point: { gx: number; gy: number } | null;
   }>({
     active: false,
@@ -77,13 +76,13 @@ export function TrackScreen({ tracker, wide, onBack }: TrackScreenProps) {
     point: null,
   });
 
-  /** Dernière position connue (coordonnées client) de chaque contact actif. */
+  /** Last known position (client coordinates) of each active touch. */
   const pointersRef = useRef<Map<number, { x: number; y: number }>>(new Map());
   /**
-   * État du pincement à deux doigts, actif entre le moment où le deuxième
-   * contact descend et celui où l'un des deux se relâche. `ids` fixe les deux
-   * pointeurs suivis pour tout le geste : un éventuel troisième contact est
-   * ignoré plutôt que de perturber le calcul.
+   * Two-finger pinch state, active between the moment the second touch goes
+   * down and the moment either of the two is released. `ids` fixes the two
+   * pointers tracked for the whole gesture: any third touch is ignored rather
+   * than disturbing the computation.
    */
   const pinchRef = useRef<{
     ids: [number, number];
@@ -105,15 +104,14 @@ export function TrackScreen({ tracker, wide, onBack }: TrackScreenProps) {
     version,
   } = tracker;
 
-  // Un symbole réel (Lot 4) se décode de façon asynchrone la première fois
-  // qu'il apparaît à l'écran (voir `onSymbolImageLoaded`) : ce compteur
-  // force un nouveau rendu une fois prêt, pour remplacer le repli textuel
-  // affiché entre-temps.
+  // A real symbol (Lot 4) decodes asynchronously the first time it appears on
+  // screen (see `onSymbolImageLoaded`): this counter forces a re-render once
+  // it is ready, to replace the text fallback shown in the meantime.
   const [symbolImageTick, setSymbolImageTick] = useState(0);
   useEffect(() => onSymbolImageLoaded(() => setSymbolImageTick((value) => value + 1)), []);
 
-  // Redessine la grille puis les repères. Les dépendances couvrent tout ce qui
-  // peut changer l'image : progression, vue, filtre, thème et taille de boîte.
+  // Redraws the grid then the markers. The dependencies cover everything that
+  // can change the image: progress, view, filter, theme and box size.
   useEffect(() => {
     const canvas = canvasRef.current;
     if (canvas === null) return;
@@ -147,33 +145,31 @@ export function TrackScreen({ tracker, wide, onBack }: TrackScreenProps) {
     symbolImageTick,
   ]);
 
-  // Molette et trackpad (défilement à deux doigts, macOS comme Windows) :
-  // zoome sous le curseur plutôt que de faire défiler la page. Écouteur DOM
-  // natif plutôt que `onWheel` React : un gestionnaire React est attaché en
-  // « passive » pour cet événement, ce qui empêcherait `preventDefault()`
-  // d'agir et laisserait la page défiler derrière le canvas.
+  // Wheel and trackpad (two-finger scroll, on macOS as on Windows): zooms
+  // under the cursor rather than scrolling the page. A native DOM listener
+  // rather than React `onWheel`: a React handler is attached as "passive" for
+  // this event, which would stop `preventDefault()` from working and let the
+  // page scroll behind the canvas.
   useEffect(() => {
     const canvas = canvasRef.current;
     if (canvas === null) return;
 
     const onWheel = (event: WheelEvent): void => {
       event.preventDefault();
-      // Glissé horizontal du trackpad (deltaX) : déplace la vue plutôt que
-      // de zoomer — demande explicite, distincte du défilement vertical
-      // (deltaY) qui zoome. Un geste en diagonale fait un peu des deux à la
-      // fois : les deux doivent passer par le même appel à `zoomTo`, qui
-      // recalcule l'origine de la vue en entier — un `setOffset` séparé pour
-      // le déplacement serait aussitôt écrasé (bug réel trouvé en test
-      // manuel : le déplacement semblait bloqué dès qu'on zoomait en même
-      // temps).
+      // Horizontal trackpad swipe (deltaX): pans the view rather than
+      // zooming — an explicit request, distinct from vertical scrolling
+      // (deltaY), which zooms. A diagonal gesture does a bit of both at once:
+      // both must go through the same `zoomTo` call, which recomputes the
+      // view's origin entirely — a separate `setOffset` for the pan would
+      // immediately be overwritten (a real bug found in manual testing:
+      // panning seemed stuck as soon as you zoomed at the same time).
       const panDeltaX = event.deltaX !== 0 ? event.deltaX / view.cell : 0;
       if (event.deltaY !== 0) {
         const rect = canvas.getBoundingClientRect();
-        // Échelle exponentielle du facteur de zoom : une molette de souris
-        // envoie de grands pas discrets (~100 par cran), un trackpad de
-        // petits pas continus — proportionnel au delta, le ressenti reste
-        // fluide dans les deux cas, comme le pincement à deux doigts déjà en
-        // place.
+        // Exponential scale for the zoom factor: a mouse wheel sends large
+        // discrete steps (~100 per notch), a trackpad small continuous steps —
+        // proportional to the delta, the feel stays smooth in both cases, like
+        // the existing two-finger pinch.
         const factor = Math.pow(1.0015, -event.deltaY);
         tracker.zoomTo(view.cell * factor, event.clientX, event.clientY, rect, panDeltaX);
       } else if (panDeltaX !== 0) {
@@ -197,9 +193,9 @@ export function TrackScreen({ tracker, wide, onBack }: TrackScreenProps) {
     [view],
   );
 
-  /** Comme `cellAt`, sans arrondi — nécessaire pour viser un segment de point
-   * arrière ou un nœud (Lot 8), qui ne sont pas alignés sur la grille de
-   * cases (voir `tracker.toggleAtPoint`). */
+  /** Like `cellAt`, without rounding — needed to target a backstitch segment
+   * or a knot (Lot 8), which are not aligned on the cell grid (see
+   * `tracker.toggleAtPoint`). */
   const pointAt = useCallback(
     (event: ReactPointerEvent<HTMLCanvasElement>): { gx: number; gy: number } => {
       const canvas = event.currentTarget;
@@ -217,9 +213,9 @@ export function TrackScreen({ tracker, wide, onBack }: TrackScreenProps) {
     pointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
 
     if (pointersRef.current.size >= 2 && pinchRef.current === null) {
-      // Deuxième contact : on bascule en pincement, quel que soit l'outil actif
-      // — c'est un geste de navigation, pas un outil, il doit marcher avec
-      // « cocher », « déplacer » et « sélectionner ».
+      // Second touch: switch to pinching, whatever the active tool — it is a
+      // navigation gesture, not a tool, it must work with "check", "move" and
+      // "select".
       const ids = [...pointersRef.current.keys()].slice(0, 2) as [number, number];
       const p1 = pointersRef.current.get(ids[0])!;
       const p2 = pointersRef.current.get(ids[1])!;
@@ -228,16 +224,16 @@ export function TrackScreen({ tracker, wide, onBack }: TrackScreenProps) {
         initialDistance: Math.hypot(p2.x - p1.x, p2.y - p1.y),
         initialCell: view.cell,
       };
-      // Annule tout état de cocher/sélection en cours issu du premier contact :
-      // un pincement ne doit jamais se terminer par une case cochée ou une
-      // sélection tracée par accident.
+      // Cancel any in-progress check/selection state from the first touch: a
+      // pinch must never end with a cell checked or a selection drawn by
+      // accident.
       dragRef.current = { ...dragRef.current, active: false, panning: false, cell: null, point: null };
       if (tool === "select") tracker.setSelection(null);
       tracker.setCursor(null);
       return;
     }
 
-    if (pointersRef.current.size > 2) return; // Troisième contact : ignoré.
+    if (pointersRef.current.size > 2) return; // Third touch: ignored.
 
     const cell = cellAt(event);
     const point = pointAt(event);
@@ -269,8 +265,8 @@ export function TrackScreen({ tracker, wide, onBack }: TrackScreenProps) {
       const [id1, id2] = pinchRef.current.ids;
       const p1 = pointersRef.current.get(id1);
       const p2 = pointersRef.current.get(id2);
-      // Les deux contacts suivis doivent encore être actifs ; sinon on attend
-      // le pointerup qui mettra fin au pincement.
+      // Both tracked touches must still be active; otherwise wait for the
+      // pointerup that will end the pinch.
       if (p1 !== undefined && p2 !== undefined) {
         const distance = Math.hypot(p2.x - p1.x, p2.y - p1.y);
         const scale =
@@ -278,8 +274,8 @@ export function TrackScreen({ tracker, wide, onBack }: TrackScreenProps) {
         const nextCell = pinchRef.current.initialCell * scale;
         const midX = (p1.x + p2.x) / 2;
         const midY = (p1.y + p2.y) / 2;
-        // Le point médian du pincement doit rester sur la même case du motif :
-        // on zoome « sous les doigts », pas vers un coin de l'écran.
+        // The pinch midpoint must stay on the same pattern cell: zoom "under
+        // the fingers", not towards a corner of the screen.
         tracker.zoomTo(nextCell, midX, midY, event.currentTarget.getBoundingClientRect());
       }
       return;
@@ -289,8 +285,8 @@ export function TrackScreen({ tracker, wide, onBack }: TrackScreenProps) {
     const cell = cellAt(event);
 
     if (!drag.active) {
-      // Survol à la souris : le réticule suit le pointeur. Sans contact tactile
-      // en cours, il n'y a rien d'autre à faire.
+      // Mouse hover: the crosshair follows the pointer. With no touch in
+      // progress, there is nothing else to do.
       tracker.setCursor(cell);
       return;
     }
@@ -315,9 +311,9 @@ export function TrackScreen({ tracker, wide, onBack }: TrackScreenProps) {
       return;
     }
 
-    // Outil « cocher » : un tap coche, un glissé déplace la grille. On ne bascule
-    // en déplacement qu'au-delà du seuil, sinon le moindre tremblement de doigt
-    // empêcherait de cocher.
+    // "Check" tool: a tap checks, a drag moves the grid. Only switch to panning
+    // beyond the threshold, otherwise the slightest finger tremor would
+    // prevent checking.
     if (!drag.panning) {
       const travelled = Math.abs(event.clientX - drag.startX) + Math.abs(event.clientY - drag.startY);
       if (travelled < DRAG_THRESHOLD) return;
@@ -333,9 +329,9 @@ export function TrackScreen({ tracker, wide, onBack }: TrackScreenProps) {
 
     if (pinchRef.current !== null) {
       if (pointersRef.current.size < 2) {
-        // Le pincement s'arrête dès qu'un des deux contacts suivis se relâche.
-        // Le contact restant, s'il y en a un, ne reprend pas un pan fluide —
-        // un léger saut au prochain geste est accepté.
+        // The pinch stops as soon as one of the two tracked touches is
+        // released. The remaining touch, if any, does not resume a smooth pan
+        // — a slight jump on the next gesture is accepted.
         pinchRef.current = null;
       }
       dragRef.current = { ...dragRef.current, active: false, panning: false, cell: null, point: null };
@@ -343,11 +339,11 @@ export function TrackScreen({ tracker, wide, onBack }: TrackScreenProps) {
     }
 
     const drag = dragRef.current;
-    // L'élément n'est coché qu'au relâchement : c'est ce qui permet de
-    // commencer un glissé depuis n'importe où sans cocher au passage. La
-    // catégorie ciblée (`tracker.activeLayer`, Lot 8) détermine si `point`
-    // vise une case (full/half/quarter) ou le segment/nœud le plus proche
-    // (backstitch/knot) — voir `tracker.toggleAtPoint`.
+    // The element is only checked on release: that is what allows starting a
+    // drag from anywhere without checking along the way. The targeted
+    // category (`tracker.activeLayer`, Lot 8) decides whether `point` targets
+    // a cell (full/half/quarter) or the nearest segment/knot
+    // (backstitch/knot) — see `tracker.toggleAtPoint`.
     if (drag.active && !drag.panning && drag.point !== null && tool === "stitch") {
       tracker.toggleAtPoint(drag.point);
     }
@@ -355,10 +351,10 @@ export function TrackScreen({ tracker, wide, onBack }: TrackScreenProps) {
   };
 
   const activeColor = highlight === 0 ? null : (counts[highlight - 1] ?? null);
-  // `view.cell` prend des valeurs fractionnaires en continu pendant un zoom
-  // à la molette/au trackpad ou un pincement (`zoomTo`) — arrondi seulement
-  // pour l'affichage, jamais pour le rendu lui-même (`drawGrid` s'accommode
-  // très bien d'une taille de case non entière).
+  // `view.cell` continuously takes fractional values during a wheel/trackpad
+  // zoom or a pinch (`zoomTo`) — rounded only for display, never for
+  // rendering itself (`drawGrid` copes perfectly well with a non-integer cell
+  // size).
   const roundedCell = Math.round(view.cell);
   const zoomLabel =
     roundedCell >= SYMBOL_MIN_CELL
@@ -398,8 +394,8 @@ export function TrackScreen({ tracker, wide, onBack }: TrackScreenProps) {
               className="text-muted num"
               style={{
                 fontSize: 12,
-                // Sans cela, « Ligne 140 · Colonne 100 » passe sur deux lignes
-                // sur un iPhone et fait grossir l'en-tête d'un tiers.
+                // Without this, "Row 140 · Column 100" wraps onto two lines on
+                // an iPhone and makes the header a third taller.
                 whiteSpace: "nowrap",
                 overflow: "hidden",
                 textOverflow: "ellipsis",
@@ -467,8 +463,8 @@ export function TrackScreen({ tracker, wide, onBack }: TrackScreenProps) {
                     rows: Math.abs(selection.y1 - selection.y0) + 1,
                   })}
                 </span>
-                {/* Avec un filtre couleur actif, ces actions ne touchent que
-                    cette couleur : c'est le geste « je termine ce fil ici ». */}
+                {/* With an active colour filter, these actions only affect that
+                    colour: it is the "I'm finishing this thread here" gesture. */}
                 <button type="button" className="badge" onClick={() => tracker.fillSelection(1)}>
                   {t("track.fillSelection")}
                 </button>
@@ -584,9 +580,9 @@ export function TrackScreen({ tracker, wide, onBack }: TrackScreenProps) {
                 <QuarterStitchIcon size={17} />
               </button>
               <div className="sep" />
-              {/* Point arrière / nœuds : cibles trop petites pour un tap
-                  fiable en dessous de `SYMBOL_MIN_CELL` — désactivés plutôt
-                  que silencieusement inopérants, voir `tracker.toggleAtPoint`. */}
+              {/* Backstitch / knots: targets too small for a reliable tap below
+                  `SYMBOL_MIN_CELL` — disabled rather than silently inoperative,
+                  see `tracker.toggleAtPoint`. */}
               <button
                 type="button"
                 aria-pressed={activeLayer === "backstitch"}

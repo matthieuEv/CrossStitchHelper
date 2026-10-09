@@ -1,4 +1,4 @@
-"""Socle : table de métadonnées d'instance
+"""Foundation: instance metadata table
 
 Revision ID: 0001_initial
 Revises:

@@ -9,11 +9,11 @@ export interface LibraryEntry {
   pattern: Pattern;
   progress: Progress;
   hoursAgo: number;
-  /** Version de progression connue du serveur ; absente pour un motif purement local. */
+  /** Progress version known to the server; absent for a purely local pattern. */
   version?: number;
-  /** Progression des points spéciaux (Lot 8) ; absente pour un motif de
-   * démonstration purement local (`demo/`), qui n'en a jamais — voir
-   * `emptySpecialProgress` pour le repli côté `App.tsx`. */
+  /** Special stitch progress (Lot 8); absent for a purely local demo pattern
+   * (`demo/`), which never has any — see `emptySpecialProgress` for the
+   * fallback in `App.tsx`. */
   special?: SpecialProgress;
 }
 

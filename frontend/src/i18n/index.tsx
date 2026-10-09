@@ -1,10 +1,10 @@
 /**
- * Internationalisation minimale et typée.
+ * Minimal, typed internationalisation.
  *
- * Volontairement écrite à la main plutôt qu'avec i18next : l'application n'a
- * besoin ni de pluriels complexes, ni de chargement à la demande, ni de
- * détection de locale évoluée, et une instance auto-hébergée gagne à ne pas
- * traîner de dépendance superflue (cahier des charges §3).
+ * Deliberately hand-written rather than using i18next: the application needs
+ * neither complex plurals, nor on-demand loading, nor advanced locale
+ * detection, and a self-hosted instance is better off without a superfluous
+ * dependency (specification §3).
  */
 
 import {
@@ -46,8 +46,8 @@ function detectLanguage(): Language {
     const stored = localStorage.getItem(STORAGE_KEY);
     if (isLanguage(stored)) return stored;
   } catch {
-    // Safari en navigation privée refuse localStorage : on retombe sur la
-    // langue du navigateur plutôt que de planter au démarrage.
+    // Safari in private browsing refuses localStorage: fall back to the
+    // browser language rather than crashing at startup.
   }
   return navigator.language.toLowerCase().startsWith("fr") ? "fr" : "en";
 }
@@ -72,7 +72,7 @@ export function I18nProvider({ children }: { children: ReactNode }) {
     try {
       localStorage.setItem(STORAGE_KEY, next);
     } catch {
-      // Préférence non mémorisée : sans gravité, l'interface reste correcte.
+      // Preference not remembered: harmless, the interface stays correct.
     }
   }, []);
 
@@ -91,11 +91,11 @@ export function I18nProvider({ children }: { children: ReactNode }) {
 
 export function useI18n(): I18nContextValue {
   const value = useContext(I18nContext);
-  if (value === null) throw new Error("useI18n doit être utilisé dans <I18nProvider>");
+  if (value === null) throw new Error("useI18n must be used within <I18nProvider>");
   return value;
 }
 
-/** Raccourci pour les composants qui n'ont besoin que de traduire. */
+/** Shortcut for components that only need to translate. */
 export function useT(): Translate {
   return useI18n().t;
 }

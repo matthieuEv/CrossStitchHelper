@@ -1,9 +1,10 @@
-"""Export `.cshp` — format ouvert documenté (cahier des charges §6.4, Lot 2).
+"""`.cshp` export — documented open format (specification §6.4, Lot 2).
 
-Une archive ZIP autonome, lisible sans cette application : c'est la garantie
-que l'utilisateur n'est jamais captif de CrossStitchHelper (leçon citée du
-format Cross Stitch Markup, §6.4). `grid.bin` et `progress.bin` sont les
-octets bruts déjà stockés en base (§6.1) — aucune conversion, aucune perte.
+A self-contained ZIP archive, readable without this application: this is the
+guarantee that the user is never locked into CrossStitchHelper (the lesson
+cited from the Cross Stitch Markup format, §6.4). `grid.bin` and
+`progress.bin` are the raw bytes already stored in the database (§6.1) — no
+conversion, no loss.
 """
 
 from __future__ import annotations
@@ -17,45 +18,45 @@ from app.models import Grid, PaletteEntry, Pattern, Progress
 
 FORMAT_VERSION = 2
 
-_README = f"""CrossStitchHelper — archive .cshp (format ouvert, version {FORMAT_VERSION})
+_README = f"""CrossStitchHelper — .cshp archive (open format, version {FORMAT_VERSION})
 
-Cette archive ZIP contient tout un motif de point de croix : ses métadonnées,
-sa palette, sa grille et votre progression. Elle ne dépend d'aucun logiciel
-particulier pour être relue.
+This ZIP archive contains a whole cross-stitch pattern: its metadata, its
+palette, its grid and your progress. It does not depend on any particular
+software to be read back.
 
-Fichiers :
+Files:
 
-- pattern.json   Métadonnées, palette et segments (point arrière, nœuds),
-                  en JSON. Décrit aussi le format des fichiers binaires
-                  ci-dessous (largeur, hauteur, encodage), et lequel de ces
-                  fichiers est présent dans cette archive précise.
+- pattern.json   Metadata, palette and segments (backstitch, knots), as
+                  JSON. Also describes the format of the binary files below
+                  (width, height, encoding), and which of those files are
+                  present in this particular archive.
 
-- grid.bin        La grille des points entiers, une case par valeur : un
-                  entier non signé sur 16 bits, little-endian, ligne par
-                  ligne de haut en bas et de gauche à droite. 0 = case vide ;
-                  sinon, l'entier est l'index (1-based) de la couleur dans
+- grid.bin        The full-stitch grid, one cell per value: an unsigned
+                  16-bit integer, little-endian, row by row from top to
+                  bottom and left to right. 0 = empty cell; otherwise, the
+                  integer is the (1-based) index of the colour in
                   `pattern.json` (palette[index - 1]).
 
-- grid_half.bin, grid_quarter.bin (Lot 8, présents seulement si ce motif a
-                  des points 1/2 ou 1/4) — même format que grid.bin.
+- grid_half.bin, grid_quarter.bin (Lot 8, present only if this pattern has
+                  1/2 or 1/4 stitches) — same format as grid.bin.
 
-- progress.bin    Votre progression sur les points entiers, un bit par case,
-                  même ordre de parcours que grid.bin (bit de poids faible en
-                  premier dans chaque octet). 1 = case brodée.
+- progress.bin    Your progress on full stitches, one bit per cell, same
+                  traversal order as grid.bin (least significant bit first in
+                  each byte). 1 = stitched cell.
 
-- progress_half.bin, progress_quarter.bin (Lot 8, présents avec les fichiers
-                  grid_*.bin correspondants) — même format que progress.bin.
+- progress_half.bin, progress_quarter.bin (Lot 8, present along with the
+                  matching grid_*.bin files) — same format as progress.bin.
 
-- progress_backstitch.bin, progress_knots.bin (Lot 8, présents si ce motif a
-                  des segments de point arrière / des nœuds) — un bit par
-                  élément de `pattern.json` → `segments.backstitch` /
-                  `segments.french_knots`, dans le même ordre (jamais un bit
-                  par case : ce ne sont pas des grilles).
+- progress_backstitch.bin, progress_knots.bin (Lot 8, present if this
+                  pattern has backstitch segments / knots) — one bit per
+                  element of `pattern.json` → `segments.backstitch` /
+                  `segments.french_knots`, in the same order (never one bit
+                  per cell: these are not grids).
 
-Pour re-générer une grille en une matrice lisible depuis un fichier grid*.bin
-et pattern.json, à peu près n'importe quel langage suffit : lire les entiers
-en uint16 little-endian, `width * height` d'entre eux, et les reformer en
-`height` lignes de `width` valeurs.
+To turn a grid*.bin file and pattern.json back into a readable matrix, almost
+any language will do: read the integers as little-endian uint16,
+`width * height` of them, and reshape them into `height` rows of `width`
+values.
 """
 
 

@@ -1,4 +1,4 @@
-"""Lot 2 : table import_jobs
+"""Lot 2: import_jobs table
 
 Revision ID: 0003_import_jobs
 Revises: 0002_pattern_model

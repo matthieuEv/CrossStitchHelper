@@ -15,12 +15,12 @@ interface AppShellProps {
 const NAV_ITEMS = ["library", "track", "stats", "settings"] as const;
 
 /**
- * Coquille de navigation.
+ * Navigation shell.
  *
- * Deux dispositions, un seul arbre de composants : barre latérale permanente
- * quand la largeur le permet, barre d'onglets en bas sinon. La bascule suit la
- * largeur disponible et non le modèle d'appareil, pour que le Split View d'un
- * iPad soit traité comme ce qu'il est — un écran étroit.
+ * Two layouts, a single component tree: a permanent sidebar when the width
+ * allows it, a bottom tab bar otherwise. The switch follows the available
+ * width rather than the device model, so that an iPad's Split View is treated
+ * as what it is — a narrow screen.
  */
 export function AppShell({ screen, navigate, wide, version, children }: AppShellProps) {
   const t = useT();

@@ -1,8 +1,8 @@
-"""Application programmatique des migrations Alembic.
+"""Programmatic application of Alembic migrations.
 
-Sur une instance auto-hébergée, personne ne veut lancer une commande de
-migration à la main après chaque mise à jour de l'image. Le conteneur applique
-donc lui-même les migrations au démarrage.
+On a self-hosted instance, nobody wants to run a migration command by hand
+after every image update. The container therefore applies migrations itself
+at startup.
 """
 
 from __future__ import annotations
@@ -30,5 +30,5 @@ def build_alembic_config() -> Config:
 def upgrade_to_head() -> None:
     settings = get_settings()
     settings.ensure_directories()
-    logger.info("Application des migrations sur %s", settings.database_path)
+    logger.info("Applying migrations to %s", settings.database_path)
     command.upgrade(build_alembic_config(), "head")

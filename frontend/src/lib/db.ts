@@ -1,11 +1,11 @@
 /**
- * Cache hors-ligne (IndexedDB via Dexie — cahier des charges §5.3).
+ * Offline cache (IndexedDB via Dexie — specification §5.3).
  *
- * Trois besoins distincts, trois tables : le motif et sa grille changent
- * rarement (recache à chaque visite en ligne) ; la dernière progression
- * connue du serveur permet un affichage instantané au chargement ; la file
- * d'opérations en attente est ce qui survit à une coupure réseau — elle
- * n'est vidée qu'une fois le serveur confirmé.
+ * Three distinct needs, three tables: the pattern and its grid rarely change
+ * (re-cached on every online visit); the last progress known from the server
+ * allows an instant display on load; the pending operation queue is what
+ * survives a network outage — it is only emptied once the server has
+ * confirmed.
  */
 
 import Dexie, { type Table } from "dexie";
@@ -24,8 +24,8 @@ export interface CachedProgress {
   version: number;
   stitchedCount: number;
   updatedAt: number;
-  /** Progression des points spéciaux (Lot 8) — absente pour un enregistrement
-   * mis en cache avant ce lot ; traitée comme « rien de coché » à la lecture. */
+  /** Special stitch progress (Lot 8) — absent for a record cached before
+   * that lot; treated as "nothing checked" when read. */
   half?: Uint8Array;
   quarter?: Uint8Array;
   backstitch?: Uint8Array;
@@ -35,8 +35,8 @@ export interface CachedProgress {
 export interface PendingOp {
   id?: number;
   patternId: string;
-  /** Absent pour une opération mise en file avant le Lot 8 — traitée comme
-   * « full » à la lecture (`getPendingOps`), même défaut que côté serveur. */
+  /** Absent for an operation queued before Lot 8 — treated as "full" when
+   * read (`getPendingOps`), same default as on the server. */
   layer?: StitchLayer;
   index: number;
   stitched: boolean;
@@ -120,12 +120,11 @@ export async function clearPendingOps(ids: readonly number[]): Promise<void> {
 }
 
 /**
- * Vide tout le cache hors-ligne (Lot 8, `SettingsScreen.tsx` — restauration
- * d'une sauvegarde). Après une restauration serveur, motifs/progression
- * mis en cache ici référencent un état qui n'existe plus : les garder
- * risquerait de rafficher de vieilles données avant la prochaine synchro,
- * ou pire, de rejouer une `pendingOps` obsolète par-dessus les données
- * fraîchement restaurées.
+ * Empties the whole offline cache (Lot 8, `SettingsScreen.tsx` — restoring a
+ * backup). After a server restore, the patterns/progress cached here refer
+ * to a state that no longer exists: keeping them would risk showing stale
+ * data again before the next sync, or worse, replaying an obsolete
+ * `pendingOps` on top of the freshly restored data.
  */
 export async function clearOfflineCache(): Promise<void> {
   await Promise.all([db.patterns.clear(), db.progress.clear(), db.pendingOps.clear()]);

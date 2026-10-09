@@ -1,15 +1,13 @@
 /**
- * État de l'étape « palette + peinture par zone » de l'assistant d'import
- * (Lot 2, roadmap) : sélection rectangulaire puis remplissage, exactement le
- * même geste que « marquer toute cette couleur » côté suivi
- * (`state/useTracker.ts`), appliqué ici pour construire la grille au lieu de
- * cocher une progression.
+ * State of the import wizard's "palette + area painting" step (Lot 2,
+ * roadmap): rectangular selection then fill, exactly the same gesture as
+ * "mark all of this colour" in tracking (`state/useTracker.ts`), applied here
+ * to build the grid instead of checking progress.
  *
- * Volontairement un hook séparé plutôt qu'une généralisation de
- * `useTracker` : les deux écrans ont des besoins proches mais pas
- * identiques (pas d'annulation multi-niveaux ni d'outils multiples ici), et
- * `useTracker` est un code du Lot 1 déjà testé qu'il vaut mieux ne pas
- * risquer de déstabiliser pour un besoin voisin.
+ * Deliberately a separate hook rather than a generalisation of `useTracker`:
+ * the two screens have close but not identical needs (no multi-level undo or
+ * multiple tools here), and `useTracker` is already-tested Lot 1 code that is
+ * better not destabilised for a neighbouring need.
  */
 
 import { useCallback, useMemo, useState } from "react";
@@ -40,16 +38,16 @@ export interface ImportPainter {
   setOffset: (x0: number, y0: number) => void;
   zoomIn: () => void;
   zoomOut: () => void;
-  /** Comme `useTracker.zoomTo` : zoome vers `nextCell` en gardant le point du
-   * motif sous `(anchorScreenX, anchorScreenY)` ancré au même endroit — pour
-   * la molette/le trackpad plutôt que des boutons +/- centrés. */
+  /** Like `useTracker.zoomTo`: zooms to `nextCell` keeping the pattern point
+   * under `(anchorScreenX, anchorScreenY)` anchored at the same place — for
+   * the wheel/trackpad rather than centred +/- buttons. */
   zoomTo: (
     nextCell: number,
     anchorScreenX: number,
     anchorScreenY: number,
     canvasRect: Pick<DOMRect, "left" | "top">,
-    /** Déplacement additionnel du même geste, en cases — voir
-     * `useTracker.ts::Tracker.zoomTo` pour le détail. */
+    /** Additional pan from the same gesture, in cells — see
+     * `useTracker.ts::Tracker.zoomTo` for the details. */
     panDeltaX?: number,
   ) => void;
 
@@ -59,7 +57,7 @@ export interface ImportPainter {
   selection: PainterSelection | null;
   setSelection: (selection: PainterSelection | null) => void;
 
-  /** Peint (ou, avec `paletteIndex = 0`, efface) la sélection courante. */
+  /** Paints (or, with `paletteIndex = 0`, erases) the current selection. */
   paint: (paletteIndex: number) => void;
 }
 
@@ -92,9 +90,9 @@ export function useImportPainter(
       width: columns,
       height: rows,
       cells,
-      // L'assistant d'import ne construit que le point entier — le point
-      // arrière/nœuds/1-2/1-4 restent le périmètre du Lot 9, pas encore
-      // construit (voir `lib/mappers.ts::patternFromImportPreview`).
+      // The import wizard only builds full stitches — backstitch/knots/1-2/1-4
+      // remained Lot 9's scope, not built yet at the time (see
+      // `lib/mappers.ts::patternFromImportPreview`).
       cellsHalf: new Uint8Array(columns * rows),
       cellsQuarter: new Uint8Array(columns * rows),
       backstitch: [],
@@ -137,8 +135,9 @@ export function useImportPainter(
       const anchorCellX = offset.x0 + (anchorScreenX - canvasRect.left) / cell;
       const anchorCellY = offset.y0 + (anchorScreenY - canvasRect.top) / cell;
       setCell(clampedCell);
-      // Ajoute le déplacement du même geste plutôt qu'un `setOffset` séparé,
-      // qui se ferait écraser par ce calcul — voir useTracker.ts::zoomTo.
+      // Add the pan from the same gesture rather than a separate `setOffset`,
+      // which would be overwritten by this computation — see
+      // useTracker.ts::zoomTo.
       setOffset(
         anchorCellX - (anchorScreenX - canvasRect.left) / clampedCell + panDeltaX,
         anchorCellY - (anchorScreenY - canvasRect.top) / clampedCell,

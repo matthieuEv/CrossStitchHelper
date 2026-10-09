@@ -1,12 +1,13 @@
-"""Configuration de l'instance auto-hébergée.
+"""Configuration of the self-hosted instance.
 
-Chaque réglage est surchargeable par une variable d'environnement préfixée
-``CSH_`` (par exemple ``CSH_DATA_DIR=/var/lib/crossstitchhelper``), ce qui
-permet de configurer un conteneur sans toucher au code ni à un fichier monté.
+Every setting can be overridden by an environment variable prefixed with
+``CSH_`` (for example ``CSH_DATA_DIR=/var/lib/crossstitchhelper``), which
+makes it possible to configure a container without touching the code or a
+mounted file.
 
-Principe directeur : **un seul répertoire contient toute la donnée
-utilisateur**. C'est le seul chemin que l'utilisateur doit sauvegarder, et le
-seul volume à déclarer dans ``docker-compose.yml``.
+Guiding principle: **a single directory contains all user data**. It is the
+only path the user needs to back up, and the only volume to declare in
+``docker-compose.yml``.
 """
 
 from __future__ import annotations
@@ -18,7 +19,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    """Réglages d'exécution du backend."""
+    """Backend runtime settings."""
 
     model_config = SettingsConfigDict(
         env_prefix="CSH_",
@@ -28,45 +29,46 @@ class Settings(BaseSettings):
     )
 
     data_dir: Path = Path("data")
-    """Répertoire unique contenant la base SQLite et les fichiers utilisateur."""
+    """Single directory containing the SQLite database and user files."""
 
     app_version: str = "v0.0.0-dev"
-    """Version affichée dans l'interface et par `/api/health`.
+    """Version shown in the interface and by `/api/health`.
 
-    Injectée au build de l'image Docker (`ARG VERSION` dans le `Dockerfile`)
-    à partir du tag git qui déclenche `.github/workflows/release.yml` —
-    jamais maintenue à la main dans le code. Vaut ``v0.0.0-dev`` par défaut,
-    y compris en développement, tant qu'aucune version n'a été injectée.
+    Injected when the Docker image is built (`ARG VERSION` in the
+    `Dockerfile`) from the git tag that triggers
+    `.github/workflows/release.yml` — never maintained by hand in the code.
+    Defaults to ``v0.0.0-dev``, including in development, as long as no
+    version has been injected.
     """
 
     frontend_dist: Path | None = None
-    """Répertoire du frontend construit.
+    """Directory of the built frontend.
 
-    Absent en développement : le serveur Vite sert le frontend et le backend ne
-    répond que sur ``/api``. Renseigné dans l'image Docker, où le même
-    processus sert l'API et les fichiers statiques (une seule image, un seul
-    port — voir le cahier des charges §3).
+    Absent in development: the Vite server serves the frontend and the
+    backend only answers on ``/api``. Set in the Docker image, where the same
+    process serves the API and the static files (a single image, a single
+    port — see specification §3).
     """
 
     database_filename: str = "crossstitchhelper.db"
 
     run_migrations_on_startup: bool = True
-    """Applique les migrations Alembic au démarrage.
+    """Apply Alembic migrations at startup.
 
-    Vrai par défaut : sur une instance auto-hébergée, personne ne veut avoir à
-    lancer une commande de migration à la main après chaque mise à jour.
+    True by default: on a self-hosted instance, nobody wants to have to run a
+    migration command by hand after every update.
     """
 
     import_max_upload_mb: int = 40
-    """Taille maximale d'un fichier déposé dans l'assistant d'import (Lot 2)."""
+    """Maximum size of a file dropped into the import wizard (Lot 2)."""
 
     run_auto_backup_loop: bool = True
-    """Démarre la boucle de sauvegarde automatique quotidienne (Lot 8,
-    `app/auto_backup.py`) au lancement du processus.
+    """Start the daily automatic backup loop (Lot 8, `app/auto_backup.py`)
+    when the process launches.
 
-    Vrai par défaut, sur le même principe que ``run_migrations_on_startup`` :
-    seuls les tests la désactivent, pour ne pas faire tourner une boucle de
-    fond dans chacun d'eux."""
+    True by default, on the same principle as ``run_migrations_on_startup``:
+    only the tests disable it, so as not to run a background loop in each of
+    them."""
 
     @property
     def database_path(self) -> Path:
@@ -78,20 +80,20 @@ class Settings(BaseSettings):
 
     @property
     def imports_dir(self) -> Path:
-        """Zone de dépôt temporaire des fichiers en cours d'import.
+        """Temporary drop area for files being imported.
 
-        Le PDF ou la photo source n'est jamais conservé au-delà de
-        l'extraction (CLAUDE.md) : chaque sous-répertoire ``<job_id>/`` est
-        supprimé dès que le job correspondant est validé (``commit``).
+        The source PDF or photo is never kept beyond extraction (CLAUDE.md):
+        each ``<job_id>/`` subdirectory is deleted as soon as the
+        corresponding job is validated (``commit``).
         """
         return self.data_dir / "imports"
 
     @property
     def backups_dir(self) -> Path:
-        """Instantanés écrits par la sauvegarde automatique quotidienne (Lot
-        8, `app/auto_backup.py`) — dans le même volume unique que le reste
-        (`database_path`), pour que sauvegarder `data_dir` (README) les
-        couvre aussi sans configuration supplémentaire."""
+        """Snapshots written by the daily automatic backup (Lot 8,
+        `app/auto_backup.py`) — in the same single volume as everything else
+        (`database_path`), so that backing up `data_dir` (README) covers them
+        too with no extra configuration."""
         return self.data_dir / "backups"
 
     def ensure_directories(self) -> None:
@@ -102,9 +104,9 @@ class Settings(BaseSettings):
 
 @lru_cache
 def get_settings() -> Settings:
-    """Réglages mis en cache pour la durée du processus.
+    """Settings cached for the lifetime of the process.
 
-    Les tests appellent ``get_settings.cache_clear()`` après avoir modifié
-    l'environnement.
+    Tests call ``get_settings.cache_clear()`` after changing the
+    environment.
     """
     return Settings()

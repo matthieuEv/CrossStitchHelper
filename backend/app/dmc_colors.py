@@ -1,24 +1,23 @@
-"""Table de référence couleur → fil DMC (cahier des charges §8.5).
+"""Colour → DMC thread reference table (specification §8.5).
 
-Pour le type A (`app/type_a.py`), la légende du PDF donne le code DMC en
-texte réel — il fait foi, ce module ne sert donc **pas** à un rapprochement
-par distance colorimétrique ici (ça, c'est le type B/C, Lot 5). Son seul rôle
-est de fournir une couleur d'affichage approximative pour l'interface : le
-PDF ne transmet aucune valeur RVB explicite pour chaque fil, seulement son
-nom et son code.
+For type A (`app/type_a.py`), the PDF legend gives the DMC code as real
+text — it is authoritative, so this module is **not** used for matching by
+colorimetric distance here (that is type B/C, Lot 5). Its only role is to
+provide an approximate display colour for the interface: the PDF carries no
+explicit RGB value for each thread, only its name and code.
 
-Volontairement limité aux codes rencontrés jusqu'ici plutôt qu'un catalogue
-DMC complet reconstruit de mémoire (risque d'erreurs non vérifiables) — un
-code absent de cette table est un cas géré explicitement (`dmc_hex` renvoie
-`None`), jamais une couleur inventée en silence (règle impérative du
-`pdf-extraction-specialist`, voir `.claude/agents/`).
+Deliberately limited to the codes encountered so far rather than a complete
+DMC catalogue rebuilt from memory (risk of unverifiable errors) — a code
+missing from this table is an explicitly handled case (`dmc_hex` returns
+`None`), never a colour silently made up (mandatory rule of the
+`pdf-extraction-specialist`, see `.claude/agents/`).
 """
 
 from __future__ import annotations
 
-# Approximations RVB usuelles pour l'affichage — jamais utilisées pour
-# identifier une couleur, seulement pour la représenter à l'écran une fois le
-# code déjà connu via le texte de la légende.
+# Usual RGB approximations for display — never used to identify a colour,
+# only to represent it on screen once the code is already known from the
+# legend text.
 _DMC_HEX: dict[str, str] = {
     "157": "#abc1e1",
     "159": "#c4cfdd",
@@ -56,12 +55,12 @@ _DMC_HEX: dict[str, str] = {
 }
 
 FALLBACK_HEX = "#9a9a9a"
-"""Gris neutre pour un code inconnu de la table — jamais une couleur
-inventée à partir du nom : la présence de ce code dans le résultat doit
-toujours s'accompagner d'un avertissement de confiance côté appelant."""
+"""Neutral grey for a code unknown to the table — never a colour made up
+from the name: the presence of this code in the result must always come with
+a confidence warning on the caller's side."""
 
 
 def dmc_hex(code: str) -> str | None:
-    """`None` si le code n'est pas dans la table — à l'appelant de le
-    signaler plutôt que de masquer le manque derrière `FALLBACK_HEX`."""
+    """`None` if the code is not in the table — up to the caller to flag it
+    rather than hide the gap behind `FALLBACK_HEX`."""
     return _DMC_HEX.get(code.strip().lower())

@@ -1,8 +1,8 @@
-"""Le point de santé doit prouver que la chaîne complète fonctionne.
+"""The health endpoint must prove that the whole chain works.
 
-Pas seulement « le serveur répond » : que la base a bien été créée dans le
-répertoire de données configuré et que les migrations Alembic s'y sont
-réellement appliquées au démarrage.
+Not just "the server responds": that the database was indeed created in the
+configured data directory and that the Alembic migrations were really applied
+to it at startup.
 """
 
 from __future__ import annotations
@@ -28,8 +28,8 @@ def test_health_reports_ok_and_applied_migration(client: TestClient) -> None:
 def test_database_is_created_inside_the_configured_data_dir(
     client: TestClient, tmp_path: Path
 ) -> None:
-    # Un seul répertoire à sauvegarder : si ce test casse, l'utilisateur qui
-    # sauvegarde son volume perdrait des données sans le savoir.
+    # A single directory to back up: if this test breaks, a user backing up
+    # their volume would lose data without knowing it.
     assert (tmp_path / "data" / "crossstitchhelper.db").is_file()
 
 

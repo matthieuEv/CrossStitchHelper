@@ -1,14 +1,14 @@
 import { defineConfig, devices } from "@playwright/test";
 
 /**
- * Tests e2e contre une instance réelle (backend + frontend), pas des mocks —
- * c'est ce qui vérifie les critères "terminé quand" du roadmap, en particulier
- * ceux qui touchent à la persistance et à la synchronisation (Lot 1).
+ * e2e tests against a real instance (backend + frontend), not mocks — this is
+ * what verifies the roadmap's "done when" criteria, in particular those
+ * touching persistence and synchronisation (Lot 1).
  *
- * Ne démarre aucun serveur lui-même : le backend (SQLite + motif de
- * démonstration seedé) et le frontend doivent déjà tourner — voir
- * `e2e/README.md` pour la procédure locale et `.github/workflows/ci.yml`
- * pour celle de la CI (contre l'image Docker construite).
+ * Starts no server itself: the backend (SQLite + seeded demo pattern) and the
+ * frontend must already be running — see `e2e/README.md` for the local
+ * procedure and `.github/workflows/ci.yml` for the CI one (against the built
+ * Docker image).
  */
 export default defineConfig({
   testDir: "./e2e",
@@ -19,9 +19,9 @@ export default defineConfig({
   use: {
     baseURL: process.env.PLAYWRIGHT_BASE_URL ?? "http://127.0.0.1:8000",
     trace: "retain-on-failure",
-    // L'app choisit sa langue selon celle du navigateur (i18n FR/EN, voir
-    // CLAUDE.md) ; les tests fixent le français pour ne pas dépendre de la
-    // locale par défaut de la machine qui les exécute.
+    // The app picks its language from the browser's (FR/EN i18n, see
+    // CLAUDE.md); the tests pin French so as not to depend on the default
+    // locale of the machine running them.
     locale: "fr-FR",
   },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],

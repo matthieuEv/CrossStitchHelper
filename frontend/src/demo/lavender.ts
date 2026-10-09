@@ -1,10 +1,11 @@
 /**
- * Motif de démonstration — « Bouquet de lavande », 140 × 100, 16 couleurs DMC.
+ * Demo pattern — "Bouquet de lavande" (lavender bouquet), 140 × 100, 16 DMC
+ * colours.
  *
- * Généré de façon déterministe : le même dessin à chaque chargement. Sert à
- * développer et à mesurer le rendu tant que le moteur d'extraction (Lots 4 à
- * 7) n'existe pas. **Rien ici ne doit survivre à l'arrivée de l'import réel**
- * autre que comme jeu de démonstration.
+ * Generated deterministically: the same drawing on every load. Used to
+ * develop and measure rendering while the extraction engine (Lots 4 to 7) did
+ * not exist yet. **Nothing here should survive the arrival of real import**
+ * other than as a demo set.
  */
 
 import type { PaletteEntry, Pattern, Progress } from "../pattern/types";
@@ -31,7 +32,7 @@ export const DEMO_PALETTE: readonly PaletteEntry[] = [
   { code: "3041", name: "Mauve gris moyen", hex: "#8a6f88", symbol: "♦" },
 ];
 
-/** Générateur pseudo-aléatoire à graine, pour un motif reproductible. */
+/** Seeded pseudo-random generator, for a reproducible pattern. */
 function seededRandom(seed: number): () => number {
   let state = seed;
   return () => {
@@ -43,7 +44,7 @@ function seededRandom(seed: number): () => number {
   };
 }
 
-/** Rasterise du texte en cases, pour l'inscription cursive du bas du motif. */
+/** Rasterises text into cells, for the cursive inscription at the bottom of the pattern. */
 function rasterText(text: string, font: string, width: number, height: number): Array<[number, number]> {
   const canvas = document.createElement("canvas");
   canvas.width = width;
@@ -136,7 +137,7 @@ function buildCells(): Uint8Array {
     }
   });
 
-  // Lien du bouquet.
+  // The bouquet's tie.
   for (let y = 72; y <= 76; y++) {
     for (let x = 58; x <= 84; x++) {
       if ((x + y) % 3 !== 0) set(x, y, y % 2 ? 16 : 3);
@@ -158,9 +159,9 @@ export function createDemoPattern(): Pattern {
     width: DEMO_WIDTH,
     height: DEMO_HEIGHT,
     cells: buildCells(),
-    // Motif de démonstration purement local (Lot 1) : aucun point spécial
-    // (Lot 8), qui suppose un vrai backend — voir `Pattern.cellsHalf` pour la
-    // convention « couche toujours présente, éventuellement vide ».
+    // Purely local demo pattern (Lot 1): no special stitch (Lot 8), which
+    // assumes a real backend — see `Pattern.cellsHalf` for the "layer always
+    // present, possibly empty" convention.
     cellsHalf: new Uint8Array(DEMO_WIDTH * DEMO_HEIGHT),
     cellsQuarter: new Uint8Array(DEMO_WIDTH * DEMO_HEIGHT),
     backstitch: [],
@@ -169,7 +170,7 @@ export function createDemoPattern(): Pattern {
   };
 }
 
-/** Progression de départ : le bas du motif déjà brodé, convention courante. */
+/** Starting progress: the bottom of the pattern already stitched, a common convention. */
 export function createDemoProgress(pattern: Pattern): Progress {
   const done = new Uint8Array(pattern.width * pattern.height);
   for (let y = 62; y < pattern.height; y++) {

@@ -1,16 +1,15 @@
-"""Sauvegarde automatique quotidienne (Lot 8, cahier des charges §7.5).
+"""Daily automatic backup (Lot 8, specification §7.5).
 
-Écrit un instantané de `app.backup.build_backup` sur disque, dans
-`Settings.backups_dir`, à intervalle régulier : pas de nouvelle dépendance
-d'infrastructure (pas de planificateur externe — `CLAUDE.md` : « aucune
-installation à plusieurs services »), juste une boucle asyncio en tâche de
-fond du processus applicatif, démarrée et arrêtée avec le cycle de vie
-FastAPI (`app/main.py`).
+Writes a snapshot of `app.backup.build_backup` to disk, in
+`Settings.backups_dir`, at a regular interval: no new infrastructure
+dependency (no external scheduler — `CLAUDE.md`: "no multi-service
+installation"), just an asyncio loop running as a background task of the
+application process, started and stopped with the FastAPI lifecycle
+(`app/main.py`).
 
-Activable/désactivable par l'utilisateur (`AppMeta`, réglages §7.5) — un
-réglage serveur, jamais une préférence locale au navigateur
-(`frontend/src/screens/SettingsScreen.tsx`), pour qu'elle s'applique même si
-personne n'ouvre l'application ce jour-là.
+Can be toggled by the user (`AppMeta`, settings §7.5) — a server setting,
+never a browser-local preference (`frontend/src/screens/SettingsScreen.tsx`),
+so that it applies even if nobody opens the application that day.
 """
 
 from __future__ import annotations
@@ -30,22 +29,22 @@ logger = logging.getLogger(__name__)
 
 _ENABLED_KEY = "auto_backup_enabled"
 _FILENAME_FORMAT = "backup-%Y-%m-%dT%H-%M-%S-%f.json"
-"""Microsecondes incluses : deux écritures dans la même seconde (redémarrage
-rapide du conteneur, ou la boucle de test à intervalle raccourci) ne doivent
-jamais s'écraser l'une l'autre silencieusement."""
+"""Microseconds included: two writes within the same second (quick container
+restart, or the test loop with a shortened interval) must never silently
+overwrite each other."""
 _FILENAME_GLOB = "backup-*.json"
 
 RETENTION = 14
-"""Nombre d'instantanés automatiques conservés — au-delà, les plus anciens
-sont supprimés à chaque nouvelle écriture, pour ne jamais faire croître le
-volume sans limite sur une instance qui tourne pendant des années."""
+"""Number of automatic snapshots kept — beyond that, the oldest are deleted
+on every new write, so the volume never grows without bound on an instance
+that runs for years."""
 
 INTERVAL_SECONDS = 24 * 60 * 60
 
 
 def is_auto_backup_enabled(session: Session) -> bool:
-    """Activée par défaut (aucune ligne `AppMeta` encore écrite) — même
-    défaut que le commutateur du mockup figé (`SettingsScreen.tsx`)."""
+    """Enabled by default (no `AppMeta` row written yet) — same default as
+    the switch in the frozen mockup (`SettingsScreen.tsx`)."""
     row = session.get(AppMeta, _ENABLED_KEY)
     return row is None or row.value == "true"
 
@@ -61,11 +60,11 @@ def set_auto_backup_enabled(session: Session, enabled: bool) -> None:
 
 
 def write_auto_backup(session: Session, backups_dir: Path) -> Path:
-    """Écrit un instantané et purge les plus anciens au-delà de `RETENTION`.
+    """Write a snapshot and purge the oldest ones beyond `RETENTION`.
 
-    Toujours inconditionnelle (l'appelant vérifie `is_auto_backup_enabled`
-    avant, voir `run_auto_backup_loop`) : une fonction, un rôle, directement
-    testable sans dépendre de l'horloge ni d'une vraie attente de 24h."""
+    Always unconditional (the caller checks `is_auto_backup_enabled` first,
+    see `run_auto_backup_loop`): one function, one role, directly testable
+    without depending on the clock or on a real 24h wait."""
     backups_dir.mkdir(parents=True, exist_ok=True)
     document = build_backup(session)
     path = backups_dir / datetime.now(UTC).strftime(_FILENAME_FORMAT)
@@ -81,18 +80,18 @@ def write_auto_backup(session: Session, backups_dir: Path) -> Path:
 async def run_auto_backup_loop(
     session_factory: Callable[[], Session], backups_dir: Path
 ) -> None:
-    """Une sauvegarde à chaque démarrage (si activée), puis une par
-    `INTERVAL_SECONDS` tant que le processus tourne. Annulée proprement à
-    l'arrêt de l'application (`app/main.py`, `CancelledError` avalée ici)."""
+    """One backup at every startup (if enabled), then one every
+    `INTERVAL_SECONDS` while the process runs. Cleanly cancelled when the
+    application stops (`app/main.py`, `CancelledError` swallowed here)."""
     try:
         while True:
             try:
                 with session_factory() as session:
                     if is_auto_backup_enabled(session):
                         path = write_auto_backup(session, backups_dir)
-                        logger.info("Sauvegarde automatique écrite : %s", path)
+                        logger.info("Automatic backup written: %s", path)
             except Exception:
-                logger.exception("Échec de la sauvegarde automatique quotidienne")
+                logger.exception("Daily automatic backup failed")
             await asyncio.sleep(INTERVAL_SECONDS)
     except asyncio.CancelledError:
         pass

@@ -1,4 +1,4 @@
-"""Lot 6 : table recipes
+"""Lot 6: recipes table
 
 Revision ID: 0004_recipes
 Revises: 0003_import_jobs

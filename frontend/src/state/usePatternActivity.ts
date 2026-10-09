@@ -1,11 +1,11 @@
 /**
- * Historique d'activité (Lot 3) : dérivé côté serveur de `progress_events`
- * (voir `backend/app/activity.py`) — jamais recalculé côté client, qui
- * n'a de toute façon pas la vue complète multi-appareils de ce journal.
+ * Activity history (Lot 3): derived on the server from `progress_events`
+ * (see `backend/app/activity.py`) — never recomputed on the client, which
+ * does not have the complete multi-device view of that log anyway.
  *
- * Pour un motif de démonstration purement local (aucune existence côté
- * serveur), on affiche un historique factice plutôt que d'aller vers un
- * `/api/patterns/{id}/activity` qui répondrait 404 pour de vraies raisons.
+ * For a purely local demo pattern (no existence on the server), a fake
+ * history is shown rather than calling a `/api/patterns/{id}/activity` that
+ * would answer 404 for genuine reasons.
  */
 
 import { useEffect, useState } from "react";
@@ -40,7 +40,7 @@ export interface PatternActivity {
   sessions: readonly ActivitySession[];
 }
 
-/** `patternId` vide (écran Statistiques pas affiché) : aucun appel réseau. */
+/** Empty `patternId` (Statistics screen not shown): no network call. */
 export function usePatternActivity(patternId: string, isDemo: boolean): PatternActivity {
   const [state, setState] = useState<PatternActivity>(
     isDemo
@@ -69,9 +69,9 @@ export function usePatternActivity(patternId: string, isDemo: boolean): PatternA
         });
       })
       .catch(() => {
-        // Serveur injoignable ou motif introuvable côté serveur (cache
-        // hors-ligne, Lot 1) : rien à afficher plutôt qu'un historique
-        // inventé pour un vrai motif.
+        // Server unreachable or pattern not found on the server (offline
+        // cache, Lot 1): nothing to show rather than a made-up history for a
+        // real pattern.
       });
     return () => controller.abort();
   }, [patternId, isDemo]);

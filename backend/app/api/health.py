@@ -1,8 +1,8 @@
-"""Point de santé de l'instance.
+"""Instance health endpoint.
 
-Utilisé par trois publics : l'écran d'accueil du frontend (pour afficher
-« serveur joignable »), l'utilisateur qui auto-héberge (pour vérifier son
-installation), et ``docker compose`` via son ``healthcheck``.
+Used by three audiences: the frontend home screen (to show "server
+reachable"), the self-hosting user (to check their installation), and
+``docker compose`` via its ``healthcheck``.
 """
 
 from __future__ import annotations
@@ -19,28 +19,28 @@ from app.config import get_settings
 from app.db import get_session
 from app.models import AppMeta
 
-router = APIRouter(tags=["système"])
+router = APIRouter(tags=["system"])
 
 
 class HealthResponse(BaseModel):
-    status: str = Field(description="`ok` si l'instance est pleinement fonctionnelle.")
-    version: str = Field(description="Version du backend.")
-    database: str = Field(description="`ok` si la base répond en lecture.")
+    status: str = Field(description="`ok` if the instance is fully functional.")
+    version: str = Field(description="Backend version.")
+    database: str = Field(description="`ok` if the database responds to reads.")
     schema_revision: str | None = Field(
         default=None,
-        description="Révision Alembic appliquée, ou null si aucune migration n'a tourné.",
+        description="Applied Alembic revision, or null if no migration has run.",
     )
 
 
-@router.get("/health", response_model=HealthResponse, summary="État de l'instance")
+@router.get("/health", response_model=HealthResponse, summary="Instance status")
 def health(session: Annotated[Session, Depends(get_session)]) -> HealthResponse:
     try:
-        # Une vraie requête sur une vraie table : vérifie que la base répond en
-        # lecture, pas seulement que le fichier existe.
+        # A real query on a real table: checks that the database responds to
+        # reads, not just that the file exists.
         session.execute(select(AppMeta).limit(1)).first()
         database = "ok"
     except SQLAlchemyError:
-        database = "erreur"
+        database = "error"
 
     try:
         row = session.execute(text("SELECT version_num FROM alembic_version")).first()

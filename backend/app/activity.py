@@ -1,9 +1,9 @@
-"""Agrégation de l'historique d'activité à partir de `progress_events`.
+"""Aggregation of the activity history from `progress_events`.
 
-Rien n'est stocké séparément (§11, Lot 3) : le journal des deltas déjà écrit
-pour la synchronisation multi-appareils (Lot 1) est la seule source de vérité
-de « qui a brodé quand ». Séparé de `app/api/patterns.py` pour rester testable
-sans base de données — voir `backend/tests/test_activity.py`.
+Nothing is stored separately (§11, Lot 3): the delta log already written for
+multi-device synchronisation (Lot 1) is the only source of truth for "who
+stitched when". Kept separate from `app/api/patterns.py` so it stays testable
+without a database — see `backend/tests/test_activity.py`.
 """
 
 from __future__ import annotations
@@ -13,12 +13,12 @@ from typing import Any
 
 from app.schemas import ActivityDayOut, ActivitySessionOut, PatternActivityOut
 
-# Au-delà de cette coupure, deux événements de progression sont considérés
-# comme deux séances de broderie distinctes plutôt qu'une seule interrompue.
+# Beyond this gap, two progress events are considered two distinct stitching
+# sessions rather than a single interrupted one.
 SESSION_GAP = timedelta(minutes=30)
 
-# Le graphique d'activité ne couvre que les 7 derniers jours glissants — un
-# historique plus long n'apporte rien à un geste de confort de suivi.
+# The activity chart only covers the last 7 rolling days — a longer history
+# adds nothing to a tracking-comfort feature.
 ACTIVITY_WINDOW = timedelta(days=7)
 
 MAX_SESSIONS = 20
@@ -31,7 +31,7 @@ def _stitched_count(ops: list[dict[str, Any]]) -> int:
 def compute_activity(
     events: list[tuple[datetime, list[dict[str, Any]]]], now: datetime | None = None
 ) -> PatternActivityOut:
-    """`events` doit être trié par `ts` croissant (l'ordre naturel de la table)."""
+    """`events` must be sorted by ascending `ts` (the table's natural order)."""
     now = now if now is not None else datetime.now(UTC)
 
     activity_by_weekday: dict[int, int] = {}
@@ -42,7 +42,7 @@ def compute_activity(
         stitched = _stitched_count(ops)
         if stitched == 0:
             continue
-        weekday = ts.isoweekday() - 1  # ISO : lundi=1..dimanche=7 -> 0..6
+        weekday = ts.isoweekday() - 1  # ISO: Monday=1..Sunday=7 -> 0..6
         activity_by_weekday[weekday] = activity_by_weekday.get(weekday, 0) + stitched
     activity = [
         ActivityDayOut(weekday=weekday, stitches=activity_by_weekday.get(weekday, 0))

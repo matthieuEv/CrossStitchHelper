@@ -1,46 +1,45 @@
 /**
- * Rendu de grille sur `<canvas>`.
+ * Grid rendering on `<canvas>`.
  *
- * Contrainte non négociable du projet : **jamais un élément DOM par case**.
- * Un motif de référence fait 45 900 cases ; seules les cases réellement
- * visibles sont dessinées, ce qui rend le coût d'une image proportionnel à la
- * taille de l'écran et non à celle du motif.
+ * Non-negotiable project constraint: **never one DOM element per cell**. A
+ * reference pattern has 45,900 cells; only the actually visible cells are
+ * drawn, which makes a frame's cost proportional to the screen size rather
+ * than the pattern size.
  */
 
 import type { Pattern, Progress, SpecialProgress } from "./types";
 
-/** En dessous de cette taille de case, les symboles deviennent illisibles. */
+/** Below this cell size, symbols become unreadable. */
 export const SYMBOL_MIN_CELL = 15;
-/** En dessous de cette taille, le quadrillage mange le motif. */
+/** Below this size, the grid lines swallow the pattern. */
 export const GRIDLINE_MIN_CELL = 7;
-/** Bornes de zoom, en pixels CSS par case. */
+/** Zoom bounds, in CSS pixels per cell. */
 export const MIN_CELL = 4;
 export const MAX_CELL = 34;
 
 /**
- * Marge de débord autorisée au-delà d'un bord du motif, en cases — pour
- * qu'on puisse cocher/peindre une case de bord sans qu'elle ne reste collée
- * à l'arête de l'écran, et plus généralement pour que la vue ne se bloque
- * jamais pile sur le contour de la grille. Proportionnelle à la dimension
- * (10 %) plutôt qu'un nombre de cases fixe : un petit motif peint à la main
- * (Lot 2) et une grille de 255 cases de large ont besoin d'une marge très
- * différente en valeur absolue pour paraître comparable — un plancher évite
- * qu'un tout petit motif n'ait presque aucun débord.
+ * Overscroll margin allowed beyond a pattern edge, in cells — so an edge cell
+ * can be checked/painted without it staying stuck to the edge of the screen,
+ * and more generally so the view never locks exactly on the grid's outline.
+ * Proportional to the dimension (10%) rather than a fixed number of cells: a
+ * small pattern painted by hand (Lot 2) and a 255-cell-wide grid need very
+ * different absolute margins to feel comparable — a floor prevents a tiny
+ * pattern from having almost no overscroll.
  */
 export function panMargin(dimension: number): number {
   return Math.max(6, dimension * 0.1);
 }
 
 export interface GridTheme {
-  /** Couleur de la toile, derrière les cases non brodées. */
+  /** Fabric colour, behind unstitched cells. */
   fabric: string;
-  /** Couleur de fond de l'application, utilisée pour délaver les cases faites. */
+  /** Application background colour, used to wash out done cells. */
   ground: string;
-  /** Couleur d'encre, utilisée pour les traits et les symboles. */
+  /** Ink colour, used for strokes and symbols. */
   ink: string;
 }
 
-/** Portion visible de la grille. `x0`/`y0` peuvent être fractionnaires. */
+/** Visible portion of the grid. `x0`/`y0` can be fractional. */
 export interface GridView {
   cell: number;
   x0: number;
@@ -48,21 +47,21 @@ export interface GridView {
 }
 
 /**
- * Cache des symboles réels découpés depuis un PDF (Lot 4, `symbolSvg`),
- * décodés une seule fois puis réutilisés à chaque case et à chaque rendu —
- * jamais rechargés depuis la chaîne SVG à chaque frame. Module-level plutôt
- * que par composant : plusieurs canvas (Suivi, pinceau d'import) affichent
- * souvent la même palette, inutile de décoder deux fois la même image.
+ * Cache of the real symbols cut out of a PDF (Lot 4, `symbolSvg`), decoded
+ * only once then reused for every cell and every render — never reloaded
+ * from the SVG string on each frame. Module-level rather than per component:
+ * several canvases (Tracking, import brush) often show the same palette, no
+ * point decoding the same image twice.
  */
 const symbolImageCache = new Map<string, HTMLImageElement>();
 const symbolImagePending = new Set<string>();
 const symbolImageListeners = new Set<() => void>();
 
 /**
- * S'abonne au chargement d'un symbole réel — un composant appelant `drawGrid`
- * doit redessiner quand celui-ci se déclenche, pour remplacer le repli
- * textuel (`entry.symbol`) dès que l'image devient disponible. Renvoie une
- * fonction de désabonnement, pour un `useEffect` React classique.
+ * Subscribes to a real symbol finishing loading — a component calling
+ * `drawGrid` must redraw when it fires, to replace the text fallback
+ * (`entry.symbol`) as soon as the image becomes available. Returns an
+ * unsubscribe function, for a regular React `useEffect`.
  */
 export function onSymbolImageLoaded(listener: () => void): () => void {
   symbolImageListeners.add(listener);
@@ -81,8 +80,8 @@ function getSymbolImage(svg: string): HTMLImageElement | null {
       for (const listener of symbolImageListeners) listener();
     };
     image.onerror = () => {
-      // Repli silencieux sur `entry.symbol` — un SVG mal formé ne doit
-      // jamais faire disparaître la case ni casser le rendu du reste.
+      // Silent fallback to `entry.symbol` — a malformed SVG must never make
+      // the cell disappear or break the rendering of the rest.
       symbolImagePending.delete(svg);
     };
     image.src = `data:image/svg+xml;base64,${btoa(svg)}`;
@@ -94,36 +93,36 @@ export interface DrawGridOptions {
   pattern: Pattern;
   done: Progress | null;
   /**
-   * Progression des quatre catégories de points spéciaux (Lot 8) — absente
-   * (`null`/`undefined`) pour un contexte qui n'en suit pas (pinceau
-   * d'import) : chaque catégorie s'affiche alors comme entièrement non
-   * cochée, jamais une erreur ni une case manquante.
+   * Progress of the four special stitch categories (Lot 8) — absent
+   * (`null`/`undefined`) for a context that does not track them (import
+   * brush): each category is then shown as entirely unchecked, never an
+   * error or a missing cell.
    */
   special?: SpecialProgress | null;
   view: GridView;
   theme: GridTheme;
-  /** Index de palette 1-based à mettre en avant ; 0 pour n'en surligner aucun. */
+  /** 1-based palette index to highlight; 0 to highlight none. */
   highlight: number;
   gridlines?: boolean;
-  /** Masque les cases déjà brodées (toile nue) plutôt que de les délaver. */
+  /** Hides already stitched cells (bare fabric) rather than washing them out. */
   hideDone?: boolean;
   /**
-   * Index de cases (mêmes indices que `pattern.cells`) signalées incertaines
-   * par la détection automatique type B/C (Lot 5, `uncertain_cells`) —
-   * couleur douteuse et/ou symbole ambigu. Repère visuel dans l'assistant
-   * d'import (`ImportGridPainter`) uniquement, jamais utilisé côté Suivi.
+   * Indices of cells (same indices as `pattern.cells`) flagged uncertain by
+   * type B/C automatic detection (Lot 5, `uncertain_cells`) — doubtful colour
+   * and/or ambiguous symbol. A visual marker in the import wizard
+   * (`ImportGridPainter`) only, never used in Tracking.
    */
   uncertainCells?: ReadonlySet<number> | null;
-  /** Couleur du repère d'incertitude — lue depuis `--color-accent` par
-   * l'appelant, comme `drawOverlay`, plutôt que dérivée de `theme`. */
+  /** Colour of the uncertainty marker — read from `--color-accent` by the
+   * caller, like `drawOverlay`, rather than derived from `theme`. */
   uncertainColor?: string;
 }
 
 /**
- * Lit les couleurs du thème depuis les variables CSS.
+ * Reads the theme colours from the CSS variables.
  *
- * Évite de dupliquer la palette du thème en JavaScript : `index.css` reste la
- * seule source de vérité, et un changement de thème suffit à changer le rendu.
+ * Avoids duplicating the theme palette in JavaScript: `index.css` remains the
+ * single source of truth, and a theme change is enough to change rendering.
  */
 export function readGridTheme(element: Element): GridTheme {
   const styles = getComputedStyle(element);
@@ -154,7 +153,7 @@ function parseHex(hex: string): [number, number, number] {
   ];
 }
 
-/** Mélange deux couleurs hexadécimales. `amount` va de 0 (a) à 1 (b). */
+/** Mixes two hexadecimal colours. `amount` goes from 0 (a) to 1 (b). */
 export function mix(a: string, b: string, amount: number): string {
   const left = parseHex(a);
   const right = parseHex(b);
@@ -166,11 +165,11 @@ export function mix(a: string, b: string, amount: number): string {
 }
 
 /**
- * Ajuste la résolution interne du canvas à la densité de l'écran.
+ * Adjusts the canvas's internal resolution to the screen density.
  *
- * Sans cela, la grille est floue sur tous les appareils Apple. Le ratio est
- * plafonné à 2 : au-delà, on quadruple le nombre de pixels à peindre pour un
- * gain invisible, et le défilement décroche sur les grands motifs.
+ * Without this, the grid is blurry on every Apple device. The ratio is capped
+ * at 2: beyond that, the number of pixels to paint quadruples for an
+ * invisible gain, and scrolling stutters on large patterns.
  */
 function prepareCanvas(canvas: HTMLCanvasElement): {
   context: CanvasRenderingContext2D;
@@ -196,10 +195,10 @@ function prepareCanvas(canvas: HTMLCanvasElement): {
 }
 
 /**
- * Point 1/2 (Lot 8) : triangle occupant la moitié de la case, diagonale —
- * une seule orientation (coin haut-gauche) faute d'information de direction
- * réelle dans le modèle de données (§6.3 : une valeur par case, pas un sens
- * de point), simplification déjà actée au Lot 8.
+ * 1/2 stitch (Lot 8): a triangle taking half of the cell, diagonal — a
+ * single orientation (top-left corner) for lack of real direction
+ * information in the data model (§6.3: one value per cell, not a stitch
+ * direction), a simplification already settled in Lot 8.
  */
 function fillHalfTriangle(
   g: CanvasRenderingContext2D,
@@ -217,7 +216,7 @@ function fillHalfTriangle(
   g.fill();
 }
 
-/** Point 1/4 (Lot 8) : un triangle plus petit qu'un point 1/2, même coin. */
+/** 1/4 stitch (Lot 8): a triangle smaller than a 1/2 stitch, same corner. */
 function fillQuarterTriangle(
   g: CanvasRenderingContext2D,
   px: number,
@@ -279,16 +278,15 @@ export function drawGrid(canvas: HTMLCanvasElement, options: DrawGridOptions): b
         const entry = pattern.palette[value - 1];
         if (entry !== undefined) {
           const isDone = done !== null && done[index] === 1;
-          // Case masquée : on la laisse en toile nue, exactement comme une
-          // case vide du motif — c'est ce qui fait disparaître visuellement
-          // ce qui est déjà brodé plutôt que de simplement le délaver.
+          // Hidden cell: leave it as bare fabric, exactly like an empty
+          // pattern cell — this is what makes already stitched work visually
+          // disappear rather than just washing it out.
           if (!(isDone && options.hideDone === true)) {
             const dimmed = highlight !== 0 && highlight !== value;
 
             g.globalAlpha = dimmed ? 0.14 : 1;
-            // Une case faite reste reconnaissable à sa couleur, mais délavée :
-            // c'est ce qui permet de voir d'un coup d'œil ce qu'il reste à
-            // broder.
+            // A done cell stays recognisable by its colour, but washed out:
+            // that is what shows at a glance what is left to stitch.
             g.fillStyle = isDone ? mix(entry.hex, theme.ground, 0.62) : entry.hex;
             g.fillRect(px, py, cell + 0.5, cell + 0.5);
 
@@ -315,11 +313,10 @@ export function drawGrid(canvas: HTMLCanvasElement, options: DrawGridOptions): b
             g.globalAlpha = 1;
 
             if (!isDone && cell >= 6 && options.uncertainCells?.has(index) === true) {
-              // Petit triangle plein dans le coin — un repère d'incertitude
-              // doit rester visible même sur une case minuscule, contrairement
-              // au symbole (`withSymbols`) qui, lui, devient illisible en
-              // dessous de `SYMBOL_MIN_CELL` et disparaît entièrement à ce
-              // zoom.
+              // Small solid triangle in the corner — an uncertainty marker
+              // must stay visible even on a tiny cell, unlike the symbol
+              // (`withSymbols`), which becomes unreadable below
+              // `SYMBOL_MIN_CELL` and disappears entirely at that zoom.
               const size = Math.max(4, cell * 0.36);
               g.fillStyle = options.uncertainColor ?? theme.ink;
               g.beginPath();
@@ -333,9 +330,9 @@ export function drawGrid(canvas: HTMLCanvasElement, options: DrawGridOptions): b
         }
       }
 
-      // Points 1/2 et 1/4 (Lot 8) : couches indépendantes du point entier
-      // ci-dessus, une case peut en porter une, l'autre, les deux, ou aucune
-      // — voir `Pattern.cellsHalf`/`cellsQuarter`.
+      // 1/2 and 1/4 stitches (Lot 8): layers independent of the full stitch
+      // above, a cell can carry one, the other, both, or neither — see
+      // `Pattern.cellsHalf`/`cellsQuarter`.
       if (halfValue !== 0) {
         const entry = pattern.palette[halfValue - 1];
         if (entry !== undefined) {
@@ -374,19 +371,18 @@ export function drawGrid(canvas: HTMLCanvasElement, options: DrawGridOptions): b
     }
   }
 
-  // Point arrière et nœuds (Lot 8) : rendus à tout niveau de zoom, contrairement
-  // aux symboles (`withSymbols`) — sur un vrai diagramme papier, ces traits
-  // restent visibles même sur une vue d'ensemble de la grille, et un
-  // brodeur s'attend à la même chose ici (retour direct après usage réel).
-  // `lineWidth`/`radius` ci-dessous ont un plancher en pixels (jamais
-  // proportionnels à `cell` seul) pour rester visibles même très dézoomé.
-  // Cocher un segment/nœud reste réservé au zoom rapproché (`useTracker.ts`,
-  // même seuil `SYMBOL_MIN_CELL`) : le voir n'implique pas de pouvoir viser
-  // précisément une case de quelques pixels au doigt. Balayage linéaire de
-  // la liste complète avec recadrage grossier sur la vue (comme avant) :
-  // négligeable même pour un motif réel qui en compte plusieurs centaines
-  // (Lot 9 à venir), voir `pattern/specialHitTest.ts` pour la même limite
-  // côté interaction.
+  // Backstitch and knots (Lot 8): rendered at every zoom level, unlike
+  // symbols (`withSymbols`) — on a real paper diagram, these strokes stay
+  // visible even on an overview of the grid, and a stitcher expects the same
+  // here (direct feedback after real use). `lineWidth`/`radius` below have a
+  // pixel floor (never proportional to `cell` alone) so they stay visible
+  // even when zoomed far out. Checking a segment/knot remains reserved for
+  // close zoom (`useTracker.ts`, same `SYMBOL_MIN_CELL` threshold): seeing it
+  // does not imply being able to precisely target a cell a few pixels wide
+  // with a finger. Linear scan of the whole list with coarse culling to the
+  // view (as before): negligible even for a real pattern with several
+  // hundred of them (Lot 9), see `pattern/specialHitTest.ts` for the same
+  // limit on the interaction side.
   if (pattern.backstitch.length > 0) {
     const specialDone = special?.backstitch ?? null;
     g.lineCap = "round";
@@ -453,8 +449,8 @@ export function drawGrid(canvas: HTMLCanvasElement, options: DrawGridOptions): b
     }
     g.stroke();
 
-    // Lignes maîtresses toutes les 10 cases : c'est ainsi qu'on compte les
-    // points sur une grille papier, et sans elles on se perd immédiatement.
+    // Major lines every 10 cells: that is how stitches are counted on a
+    // paper chart, and without them you get lost immediately.
     g.strokeStyle = mix(theme.ground, theme.ink, 0.55);
     g.lineWidth = 1.6;
     g.beginPath();
@@ -483,7 +479,7 @@ export interface OverlayOptions {
   selection: { x0: number; y0: number; x1: number; y1: number } | null;
 }
 
-/** Repères de position et de sélection, dessinés par-dessus la grille. */
+/** Position and selection markers, drawn on top of the grid. */
 export function drawOverlay(canvas: HTMLCanvasElement, options: OverlayOptions): void {
   const g = canvas.getContext("2d");
   if (g === null) return;
@@ -526,7 +522,7 @@ export function drawOverlay(canvas: HTMLCanvasElement, options: OverlayOptions):
   }
 }
 
-/** Vignette : le motif entier ajusté au canvas, sans symbole ni quadrillage. */
+/** Thumbnail: the whole pattern fitted to the canvas, without symbols or grid lines. */
 export function drawThumbnail(
   canvas: HTMLCanvasElement,
   pattern: Pattern,

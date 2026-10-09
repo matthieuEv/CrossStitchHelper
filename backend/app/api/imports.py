@@ -1,23 +1,23 @@
-"""Assistant d'import — Lot 2 (cahier des charges §7.2, §9), détection
-automatique depuis les Lots 4-5-7.
+"""Import wizard — Lot 2 (specification §7.2, §9), automatic detection since
+Lots 4-5-7.
 
-L'utilisateur dépose un fichier, le cadre et le calibre lui-même, saisit sa
-propre palette, et peint chaque zone de la grille à la main — ce parcours
-manuel reste toujours disponible et jamais contourné de force (§4.4 :
-« jamais un résultat imposé »). Pour un PDF, `_run_auto_detection` tente en
-tâche de fond `app/type_a.py`, puis s'il ne reconnaît rien `app/type_bc.py`,
-puis en dernier recours `app/type_e.py` (catalogue fermé d'images bitmap
-réutilisées, Lot 7) — la typologie A/B/C/E est une classification, jamais
-un empilement de suppositions concurrentes : un seul résultat de détection
-par fichier. Le résultat ne fait que pré-remplir la même configuration
-modifiable : dimensions, palette, et une grille de fond que les zones
-peintes peuvent corriger (`app/imports_engine.apply_fills`, paramètre
-`base`).
+The user drops a file, crops and calibrates it themselves, enters their own
+palette, and paints each area of the grid by hand — this manual path always
+remains available and is never forcibly bypassed (§4.4: "never an imposed
+result"). For a PDF, `_run_auto_detection` tries, as a background task,
+`app/type_a.py`, then if it recognises nothing `app/type_bc.py`, then as a
+last resort `app/type_e.py` (closed catalogue of reused bitmap images,
+Lot 7) — the A/B/C/E typology is a classification, never a stack of
+competing guesses: a single detection result per file. The result only
+pre-fills the same editable configuration: dimensions, palette, and a
+background grid that the painted areas can correct
+(`app/imports_engine.apply_fills`, `base` parameter).
 
-Depuis le Lot 6, cette même tâche de fond applique aussi une recette
-connue (`app/api/recipes.py`) quand l'empreinte du fichier (`app/fingerprint.py`)
-en rapproche une : seul `crop_by_page` en est tiré (jamais les dimensions ni
-la palette, qui sont propres à chaque motif — voir `app/models.py::Recipe`).
+Since Lot 6, this same background task also applies a known recipe
+(`app/api/recipes.py`) when the file's fingerprint (`app/fingerprint.py`)
+matches one: only `crop_by_page` is taken from it (never the dimensions or
+the palette, which are specific to each pattern — see
+`app/models.py::Recipe`).
 """
 
 from __future__ import annotations
@@ -73,7 +73,7 @@ from app.type_e import TypeEPaletteEntry, detect_type_e
 router = APIRouter(prefix="/imports", tags=["import"])
 
 _ALLOWED_TYPES: dict[str, tuple[str, str]] = {
-    # content-type -> (extension sur disque, "pdf" | "image")
+    # content-type -> (extension on disk, "pdf" | "image")
     "application/pdf": ("pdf", "pdf"),
     "image/png": ("png", "image"),
     "image/jpeg": ("jpg", "image"),
@@ -105,18 +105,17 @@ def _save_result(job: ImportJob, result: dict[str, Any]) -> None:
 
 
 def _detected_base(config: dict[str, Any], columns: int, rows: int) -> list[int] | None:
-    """`config["detected_cells"]` (Lot 4), seulement si elle correspond encore
-    aux dimensions courantes.
+    """`config["detected_cells"]` (Lot 4), only if it still matches the
+    current dimensions.
 
-    Une grille détectée automatiquement est calculée pour des dimensions
-    précises : si l'utilisateur change ensuite `columns`/`rows` à la main
-    (par exemple parce qu'il a corrigé une détection imprécise, ou tapé plus
-    vite que l'analyse en tâche de fond — voir `_run_type_a_detection`), elle
-    ne s'applique plus. `apply_fills` refuse `base` d'une mauvaise longueur
-    plutôt que de mal l'aligner en silence ; sans ce garde-fou, l'aperçu
-    plante au lieu de simplement repartir d'une grille vide pour les
-    nouvelles dimensions — un import ne doit jamais aboutir à une impasse
-    (cahier des charges §10)."""
+    An automatically detected grid is computed for specific dimensions: if
+    the user then changes `columns`/`rows` by hand (for example because they
+    corrected an imprecise detection, or typed faster than the background
+    analysis — see `_run_type_a_detection`), it no longer applies.
+    `apply_fills` rejects a `base` of the wrong length rather than silently
+    misaligning it; without this guard, the preview crashes instead of simply
+    starting again from an empty grid for the new dimensions — an import must
+    never end in a dead end (specification §10)."""
     detected = config.get("detected_cells")
     if detected is None or len(detected) != columns * rows:
         return None
@@ -124,9 +123,9 @@ def _detected_base(config: dict[str, Any], columns: int, rows: int) -> list[int]
 
 
 def _detected_layer(config: dict[str, Any], key: str, columns: int, rows: int) -> list[int] | None:
-    """Même garde-fou que `_detected_base`, généralisé aux couches 1/2 et
-    1/4 (Lot 9) : une couche détectée pour des dimensions précises ne
-    s'applique plus si l'utilisateur a changé `columns`/`rows` depuis."""
+    """Same guard as `_detected_base`, generalised to the 1/2 and 1/4 layers
+    (Lot 9): a layer detected for specific dimensions no longer applies if
+    the user has changed `columns`/`rows` since."""
     detected = config.get(key)
     if detected is None or len(detected) != columns * rows:
         return None
@@ -136,15 +135,14 @@ def _detected_layer(config: dict[str, Any], key: str, columns: int, rows: int) -
 def _detected_special_items(
     config: dict[str, Any], key: str, palette_size: int
 ) -> list[dict[str, Any]]:
-    """Segments de point arrière ou nœuds détectés (Lot 9), en écartant
-    silencieusement ceux dont l'index de palette ne correspond plus à rien.
+    """Detected backstitch segments or knots (Lot 9), silently discarding
+    those whose palette index no longer refers to anything.
 
-    La détection fixe ces index au moment où elle tourne ; si l'utilisateur
-    modifie ensuite la palette à la main (ajout/retrait d'une couleur,
-    toujours possible même après une détection réussie — §4.4, « jamais un
-    résultat imposé »), ils peuvent devenir périmés. Mieux vaut perdre
-    silencieusement ces quelques éléments que planter la validation ou
-    écrire une référence à une couleur qui n'existe plus."""
+    Detection fixes these indices when it runs; if the user then edits the
+    palette by hand (adding/removing a colour, always possible even after a
+    successful detection — §4.4, "never an imposed result"), they can become
+    stale. Better to silently lose these few elements than to crash the
+    validation or write a reference to a colour that no longer exists."""
     items = config.get(key) or []
     return [item for item in items if 1 <= item.get("palette_index", 0) <= palette_size]
 
@@ -201,7 +199,7 @@ def _require_editable(job: ImportJob) -> None:
         raise api_error(400, "import_already_committed")
 
 
-@router.post("", response_model=ImportJobOut, summary="Dépose un fichier, crée un job d'import")
+@router.post("", response_model=ImportJobOut, summary="Upload a file, create an import job")
 async def create_import(
     background_tasks: BackgroundTasks,
     session: Annotated[Session, Depends(get_session)],
@@ -230,28 +228,28 @@ async def create_import(
 
     try:
         page_count = pdf_page_count(source_path) if kind == "pdf" else 1
-    except Exception as error:  # pragma: no cover - fichier corrompu, chemin défensif
+    except Exception as error:  # pragma: no cover - corrupt file, defensive path
         shutil.rmtree(job_dir, ignore_errors=True)
         raise api_error(400, "import_file_unreadable") from error
 
-    # Un PDF déclenche une tentative de détection automatique (Lot 4) en
-    # tâche de fond — jamais dans la requête elle-même : sur la fixture de
-    # référence (11 pages), l'analyse structurelle prend plusieurs dizaines
-    # de secondes, largement au-dessus de ce qu'une requête HTTP doit
-    # attendre (cahier des charges §5.2 : tâches longues via
-    # `BackgroundTasks` + statut interrogé par le client, jamais
-    # synchrone). Le job reste utilisable manuellement (Lot 2) sans attendre
-    # cette détection, qui ne fait que pré-remplir sa configuration une fois
-    # prête (`GET /api/imports/{id}` reflète `detecting: false`).
+    # A PDF triggers an automatic detection attempt (Lot 4) as a background
+    # task — never in the request itself: on the reference fixture
+    # (11 pages), structural analysis takes several tens of seconds, far
+    # beyond what an HTTP request should wait for (specification §5.2: long
+    # tasks via `BackgroundTasks` + status polled by the client, never
+    # synchronous). The job remains usable manually (Lot 2) without waiting
+    # for this detection, which only pre-fills its configuration once ready
+    # (`GET /api/imports/{id}` reflects `detecting: false`).
     will_detect = kind == "pdf"
     result = {
         "page_count": page_count,
         "source_filename": file.filename or f"source.{ext}",
         "source_ext": ext,
         "source_sha256": sha256_file(source_path),
-        # Calculée dans la tâche de fond (`_run_auto_detection`), jamais ici
-        # — voir `app/fingerprint.py` pour le bug de performance réel qui a
-        # motivé ce choix, même une fois le calcul lui-même rendu rapide.
+        # Computed in the background task (`_run_auto_detection`), never here
+        # — see `app/fingerprint.py` for the real performance bug that
+        # motivated this choice, even once the computation itself was made
+        # fast.
         "source_fingerprint": None,
         "applied_recipe": None,
         "config": {
@@ -287,16 +285,16 @@ async def create_import(
 
 
 def _symbol_svg_for(glyph: SymbolGlyphLocation | None, source_path: Path) -> str | None:
-    """`None` si l'entrée n'a pas de position de glyphe/symbole connue, ou si
-    le découpage échoue — un aperçu manquant retombe sur `symbol_key` côté
-    rendu (jamais un import cassé pour un symbole qu'on n'a pas pu
-    illustrer, cahier des charges §10). Commun aux types A (`app/type_a.py`)
-    et B/C (`app/type_bc.py`), qui partagent la même dataclass de position."""
+    """`None` if the entry has no known glyph/symbol position, or if cropping
+    fails — a missing preview falls back to `symbol_key` when rendering
+    (never a broken import for a symbol that could not be illustrated,
+    specification §10). Shared by types A (`app/type_a.py`) and B/C
+    (`app/type_bc.py`), which use the same position dataclass."""
     if glyph is None:
         return None
     try:
         return render_symbol_svg(source_path, glyph.page_number, glyph.bbox)
-    except Exception:  # pragma: no cover - filet de sécurité défensif
+    except Exception:  # pragma: no cover - defensive safety net
         return None
 
 
@@ -311,41 +309,40 @@ class _Detected:
     warnings: list[DetectionWarning]
     uncertain_cells: list[int]
     cells_half: list[int] = field(default_factory=list)
-    """Points 1/2 (Lot 9, type A seulement — B/C/E laissent la valeur par
-    défaut : aucune détection de points spéciaux pour eux dans ce lot)."""
+    """1/2 stitches (Lot 9, type A only — B/C/E keep the default value: no
+    special stitch detection for them in this lot)."""
     cells_quarter: list[int] = field(default_factory=list)
     backstitch: list[BackstitchSegment] = field(default_factory=list)
     french_knots: list[FrenchKnot] = field(default_factory=list)
     fabric_count: int | None = None
-    """Compte de toile déclaré par le PDF, si trouvé (type A seulement)."""
+    """Fabric count declared by the PDF, if found (type A only)."""
 
 
 def _run_auto_detection(job_id: str, source_path: Path) -> None:
-    """Tâche de fond (Lots 4-5-7) : détection automatique, jamais bloquante
-    pour la requête d'upload. Essaie `detect_type_a` puis, s'il ne reconnaît
-    rien, `detect_type_bc`, puis en dernier recours `detect_type_e` (aucun
-    des trois ne lève jamais — voir leurs modules) — un seul résultat de
-    détection par fichier (§4.4 : une classification, jamais un empilement
-    de suppositions concurrentes). Un filet de sécurité ici garantit malgré
-    tout que le job sort toujours de l'état « en cours d'analyse », même
-    face à un bug imprévu : un import qui reste éternellement « en cours »
-    serait une impasse (§10 : « aucun import ne doit aboutir à une
-    impasse »).
+    """Background task (Lots 4-5-7): automatic detection, never blocking the
+    upload request. Tries `detect_type_a` then, if it recognises nothing,
+    `detect_type_bc`, then as a last resort `detect_type_e` (none of the
+    three ever raises — see their modules) — a single detection result per
+    file (§4.4: a classification, never a stack of competing guesses). A
+    safety net here still guarantees that the job always leaves the
+    "analysing" state, even in the face of an unforeseen bug: an import that
+    stays "in progress" forever would be a dead end (§10: "no import may end
+    in a dead end").
 
-    L'analyse tourne **avant** d'ouvrir la session ou de lire l'état courant
-    du job : elle prend plusieurs secondes, largement de quoi laisser
-    l'utilisateur commencer à configurer le job à la main pendant ce temps
-    (le message affiché pendant l'attente l'y invite explicitement). Lire
-    `result["config"]` avant l'analyse plutôt qu'après figerait un
-    instantané périmé — la décision « l'utilisateur a-t-il déjà commencé ? »
-    doit se prendre sur l'état le plus frais possible, juste avant d'écrire,
-    pas sur celui d'il y a plusieurs secondes.
+    The analysis runs **before** opening the session or reading the job's
+    current state: it takes several seconds, plenty of time for the user to
+    start configuring the job by hand in the meantime (the message shown
+    while waiting explicitly invites them to). Reading `result["config"]`
+    before the analysis rather than after would freeze a stale snapshot —
+    the "has the user already started?" decision must be made on the freshest
+    possible state, just before writing, not on the state from several
+    seconds earlier.
 
-    L'empreinte (Lot 6, `app/fingerprint.py`) est calculée ici plutôt que
-    dans `create_import`, jamais dans la requête d'upload — voir le module
-    pour le détail d'un bug de performance réel trouvé et corrigé à cet
-    endroit précis (une première implémentation à base de `pdfplumber`
-    prenait ~14 s sur la fixture Café Brasserie, remplacée par PyMuPDF)."""
+    The fingerprint (Lot 6, `app/fingerprint.py`) is computed here rather
+    than in `create_import`, never in the upload request — see that module
+    for the details of a real performance bug found and fixed at this exact
+    spot (a first `pdfplumber`-based implementation took ~14 s on the Cafe
+    Brasserie fixture, replaced with PyMuPDF)."""
     fingerprint = compute_fingerprint(source_path, "pdf")
 
     detection_error: Exception | None = None
@@ -394,13 +391,13 @@ def _run_auto_detection(job_id: str, source_path: Path) -> None:
                         warnings=type_e.warnings,
                         uncertain_cells=type_e.uncertain_cells,
                     )
-    except Exception as error:  # pragma: no cover - filet de sécurité défensif
+    except Exception as error:  # pragma: no cover - defensive safety net
         detection_error = error
 
     with get_session_factory()() as session:
         job = session.get(ImportJob, job_id)
         if job is None or job.status == "committed":
-            return  # Job supprimé ou déjà validé entre-temps.
+            return  # Job deleted or already validated in the meantime.
 
         result = _result_of(job)
         result["source_fingerprint"] = fingerprint
@@ -423,9 +420,9 @@ def _run_auto_detection(job_id: str, source_path: Path) -> None:
 
         result["detecting"] = False
 
-        # Lot 6 : indépendant du type A/B/C (une recette aide même un fichier
-        # qu'aucun des deux ne reconnaît) — seul `crop_by_page` en est tiré,
-        # jamais réécrit s'il a déjà été cadré à la main.
+        # Lot 6: independent of type A/B/C (a recipe helps even a file none
+        # of them recognises) — only `crop_by_page` is taken from it, never
+        # rewritten if it has already been cropped by hand.
         if fingerprint is not None and not result["config"].get("crop_by_page"):
             recipe = find_matching_recipe(session, fingerprint)
             if recipe is not None:
@@ -436,13 +433,13 @@ def _run_auto_detection(job_id: str, source_path: Path) -> None:
 
         if detected is not None:
             config = result["config"]
-            # Si l'utilisateur a déjà commencé à renseigner la configuration
-            # à la main pendant que l'analyse tournait (dimensions, palette —
-            # le message affiché pendant l'attente l'invite explicitement à
-            # le faire, voir `import.detection.running` côté frontend), la
-            # proposition automatique ne doit pas écraser sa saisie en
-            # silence : elle arriverait après coup, sans qu'il l'ait vue ni
-            # validée (§4.4 : « jamais un résultat imposé »).
+            # If the user has already started filling in the configuration by
+            # hand while the analysis was running (dimensions, palette — the
+            # message shown while waiting explicitly invites them to, see
+            # `import.detection.running` on the frontend), the automatic
+            # proposal must not silently overwrite their input: it would
+            # arrive after the fact, without them having seen or validated it
+            # (§4.4: "never an imposed result").
             already_configured = (
                 config.get("columns") is not None
                 or config.get("rows") is not None
@@ -453,11 +450,11 @@ def _run_auto_detection(job_id: str, source_path: Path) -> None:
                 config["rows"] = detected.rows
                 config["detected_cells"] = detected.cells
                 config["uncertain_cells"] = detected.uncertain_cells or None
-                # Lot 9 : points spéciaux, type A seulement (B/C/E laissent
-                # ces listes vides — voir `_Detected`). Aucun mécanisme de
-                # correction manuelle pour ces couches ; `or None` pour
-                # rester cohérent avec `Grid.layer_half`/`layer_quarter`
-                # (`NULL`, pas une liste vide, quand le motif n'en a aucun).
+                # Lot 9: special stitches, type A only (B/C/E leave these
+                # lists empty — see `_Detected`). No manual correction
+                # mechanism for these layers; `or None` to stay consistent
+                # with `Grid.layer_half`/`layer_quarter` (`NULL`, not an
+                # empty list, when the pattern has none).
                 config["detected_half"] = detected.cells_half or None
                 config["detected_quarter"] = detected.cells_quarter or None
                 config["detected_backstitch"] = [
@@ -484,8 +481,8 @@ def _run_auto_detection(job_id: str, source_path: Path) -> None:
             result["detection"] = {
                 "grid_type": detected.grid_type,
                 "confidence": detected.confidence,
-                # Sérialisé en dictionnaires simples : `result` est stocké tel
-                # quel en JSON (`_save_result`), jamais un modèle Pydantic.
+                # Serialised as plain dictionaries: `result` is stored as is
+                # in JSON (`_save_result`), never as a Pydantic model.
                 "warnings": [warning.model_dump() for warning in detection_warnings],
             }
         _save_result(job, result)
@@ -495,7 +492,7 @@ def _run_auto_detection(job_id: str, source_path: Path) -> None:
 @router.get(
     "/{job_id}",
     response_model=ImportJobOut,
-    summary="État du job et configuration courante",
+    summary="Job status and current configuration",
 )
 def get_import(job_id: str, session: Annotated[Session, Depends(get_session)]) -> ImportJobOut:
     return _job_out(_get_job(session, job_id))
@@ -503,7 +500,7 @@ def get_import(job_id: str, session: Annotated[Session, Depends(get_session)]) -
 
 @router.get(
     "/{job_id}/pages/{page_number}/preview",
-    summary="Aperçu raster d'une page",
+    summary="Raster preview of a page",
     response_class=Response,
 )
 def get_page_preview(
@@ -539,7 +536,7 @@ def get_page_preview(
 @router.patch(
     "/{job_id}/config",
     response_model=ImportJobOut,
-    summary="Met à jour la configuration",
+    summary="Update the configuration",
 )
 def patch_config(
     job_id: str,
@@ -568,11 +565,11 @@ def patch_config(
     if payload.uncertain_cells is not None:
         config["uncertain_cells"] = payload.uncertain_cells
 
-    # Ne garde une grille détectée (et son signalement de cases incertaines,
-    # qui référence les mêmes index) que si elle correspond encore aux
-    # dimensions courantes (voir `_detected_base`) — pas seulement pour la
-    # lecture ici, mais pour ne pas trimballer indéfiniment un blob de
-    # plusieurs dizaines de milliers d'entiers devenu sans objet.
+    # Only keep a detected grid (and its uncertain-cell flags, which
+    # reference the same indices) if it still matches the current dimensions
+    # (see `_detected_base`) — not just for reading here, but so as not to
+    # carry around indefinitely a blob of several tens of thousands of
+    # integers that has become pointless.
     columns, rows = config.get("columns"), config.get("rows")
     if columns is not None and rows is not None and _detected_base(config, columns, rows) is None:
         config["detected_cells"] = None
@@ -587,14 +584,13 @@ def patch_config(
 @router.post(
     "/{job_id}/extract",
     response_model=ImportJobOut,
-    summary="Recalcule la grille depuis la configuration courante",
+    summary="Recompute the grid from the current configuration",
 )
 def extract(job_id: str, session: Annotated[Session, Depends(get_session)]) -> ImportJobOut:
-    # Le Lot 2 n'a aucun moteur de détection : « extraire » ne fait ici que
-    # rejouer `apply_fills` sur la configuration déjà connue. L'endpoint
-    # existe pour respecter le contrat d'API (§9) et pour que l'étape
-    # récapitulative de l'assistant ait un point d'appel stable quand un
-    # vrai moteur (Lot 4+) viendra le remplacer.
+    # Lot 2 has no detection engine: "extracting" here only replays
+    # `apply_fills` on the already known configuration. The endpoint exists
+    # to honour the API contract (§9) and so the wizard's summary step has a
+    # stable call point for when a real engine (Lot 4+) replaces it.
     job = _get_job(session, job_id)
     _require_editable(job)
     result = _result_of(job)
@@ -607,7 +603,7 @@ def extract(job_id: str, session: Annotated[Session, Depends(get_session)]) -> I
 @router.post(
     "/{job_id}/commit",
     response_model=ImportCommitResponse,
-    summary="Crée le motif définitif",
+    summary="Create the final pattern",
 )
 def commit(
     job_id: str,
@@ -632,11 +628,11 @@ def commit(
         base=_detected_base(result["config"], columns, rows),
     )
 
-    # Points fractionnés et spéciaux (Lot 9, type A seulement) : aucun
-    # mécanisme de correction manuelle pour ces couches (contrairement à
-    # `cells`, jamais de `fills` équivalent) — elles sont commitées telles
-    # que détectées, ou absentes si la détection ne les a pas produites ou
-    # si les dimensions ont changé depuis (`_detected_layer`).
+    # Fractional and special stitches (Lot 9, type A only): no manual
+    # correction mechanism for these layers (unlike `cells`, never an
+    # equivalent of `fills`) — they are committed as detected, or absent if
+    # detection did not produce them or if the dimensions have changed since
+    # (`_detected_layer`).
     config = result["config"]
     cells_half = _detected_layer(config, "detected_half", columns, rows)
     cells_quarter = _detected_layer(config, "detected_quarter", columns, rows)
@@ -661,10 +657,10 @@ def commit(
     )
     session.add(pattern)
 
-    # Longueur cumulée (en cases) par index de palette, pour
-    # `backstitch_length_cm` ci-dessous — jamais un centimètre inventé si le
-    # PDF ne déclare pas de compte de toile (`payload.fabric_count`, saisi ou
-    # corrigé par l'utilisateur à cette étape, voir `ImportCommitRequest`).
+    # Cumulative length (in cells) per palette index, for
+    # `backstitch_length_cm` below — never a made-up centimetre if the PDF
+    # declares no fabric count (`payload.fabric_count`, entered or corrected
+    # by the user at this step, see `ImportCommitRequest`).
     backstitch_length_by_index: dict[int, float] = {}
     for segment in backstitch:
         length = math.hypot(segment["x2"] - segment["x1"], segment["y2"] - segment["y1"])
@@ -724,11 +720,11 @@ def commit(
         )
     )
 
-    # `import_jobs.pattern_id` référence `patterns.id` : le motif (et ses
-    # lignes dépendantes) doit exister en base avant que cette mise à jour ne
-    # soit exécutée, sans quoi SQLite refuse la contrainte de clé étrangère —
-    # aucune `relationship()` ORM ne relie les deux tables pour que
-    # SQLAlchemy déduise cet ordre tout seul.
+    # `import_jobs.pattern_id` references `patterns.id`: the pattern (and its
+    # dependent rows) must exist in the database before this update runs,
+    # otherwise SQLite rejects the foreign key constraint — no ORM
+    # `relationship()` links the two tables for SQLAlchemy to infer this
+    # order on its own.
     session.flush()
 
     job.status = "committed"
@@ -736,8 +732,8 @@ def commit(
     job.finished_at = now
     session.commit()
 
-    # Le fichier source ne survit jamais à l'extraction (CLAUDE.md) : une
-    # fois le motif créé, plus besoin du PDF ou de la photo d'origine.
+    # The source file never survives extraction (CLAUDE.md): once the
+    # pattern is created, the original PDF or photo is no longer needed.
     shutil.rmtree(_job_dir(settings, job_id), ignore_errors=True)
 
     return ImportCommitResponse(pattern_id=pattern_id)

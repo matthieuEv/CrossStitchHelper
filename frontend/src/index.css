@@ -1,12 +1,12 @@
 /* ==========================================================================
-   Système de design « Organic » — porté depuis les maquettes Claude Design.
+   "Organic" design system — ported from the Claude Design mockups.
 
-   Écart assumé par rapport à la maquette : celle-ci chargeait Caprasimo et
-   Figtree depuis Google Fonts. Une instance auto-hébergée ne doit dépendre
-   d'aucun service tiers et doit fonctionner hors ligne (cahier des charges
-   §3), donc les piles système sont utilisées par défaut. Pour retrouver la
-   typographie exacte : déposer les .woff2 dans `src/assets/fonts/`, les
-   déclarer en @font-face ici, et changer les deux variables ci-dessous.
+   Deliberate departure from the mockup: it loaded Caprasimo and Figtree from
+   Google Fonts. A self-hosted instance must not depend on any third-party
+   service and must work offline (specification §3), so system font stacks
+   are used by default. To get the exact typography back: drop the .woff2
+   files into `src/assets/fonts/`, declare them with @font-face here, and
+   change the two variables below.
    ========================================================================== */
 
 :root {
@@ -60,8 +60,8 @@
   --shadow-md: 0 3px 10px color-mix(in srgb, #2e2b25 16%, transparent);
   --shadow-lg: 0 12px 32px color-mix(in srgb, #2e2b25 22%, transparent);
 
-  /* Teintes utilisées par le rendu canvas. Lues via getComputedStyle pour
-     que le dessin suive le thème sans dupliquer les valeurs en JavaScript. */
+  /* Shades used by canvas rendering. Read via getComputedStyle so drawing
+     follows the theme without duplicating the values in JavaScript. */
   --canvas-fabric: #efe3cd;
   --canvas-ground: #f5ead8;
   --canvas-ink: #201e1d;
@@ -75,12 +75,12 @@
   --color-accent-2: #aebf92;
   --color-divider: color-mix(in srgb, #f9f4ed 18%, transparent);
 
-  /* Échelle numérotée (`--color-neutral-*`/`--color-accent-700`) : seuls les
-     paliers réellement consommés en dehors des classes `.tag-*` ci-dessous
-     (déjà couvertes par leurs propres overrides) sont redéfinis ici — pas
-     l'échelle 100-900 entière, qui n'aurait aucun consommateur direct côté
-     sombre. Rôle inversé par rapport au clair (100 = proche du fond, 900 =
-     proche du texte), même principe que `.tag-neutral` juste en dessous. */
+  /* Numbered scale (`--color-neutral-*`/`--color-accent-700`): only the steps
+     actually consumed outside the `.tag-*` classes below (already covered by
+     their own overrides) are redefined here — not the whole 100-900 scale,
+     which would have no direct consumer in dark mode. Role inverted compared
+     with light (100 = close to the background, 900 = close to the text),
+     same principle as `.tag-neutral` just below. */
   --color-neutral-200: #332e27;
   --color-neutral-300: #433d33;
   --color-neutral-400: #6b6255;
@@ -134,8 +134,8 @@ body {
   line-height: 1.55;
   background: var(--color-bg);
   color: var(--color-text);
-  /* Empêche le rebond élastique de Safari : l'application occupe l'écran et
-     gère son propre défilement zone par zone. */
+  /* Prevents Safari's elastic bounce: the application fills the screen and
+     manages its own scrolling area by area. */
   overscroll-behavior: none;
   -webkit-text-size-adjust: 100%;
 }
@@ -170,7 +170,7 @@ button { font-family: inherit; color: inherit; }
 .elev-md { box-shadow: var(--shadow-md); }
 .elev-lg { box-shadow: var(--shadow-lg); }
 
-/* — boutons — */
+/* — buttons — */
 .btn {
   display: inline-flex;
   align-items: center;
@@ -199,13 +199,13 @@ button { font-family: inherit; color: inherit; }
 .btn-icon { width: 44px; height: 44px; padding: 0; flex: none; }
 .btn-block { width: 100%; }
 
-/* — formulaires — */
+/* — forms — */
 .input {
   width: 100%;
   min-height: 44px;
   padding: 6px 14px;
   font: inherit;
-  /* 16px minimum : en dessous, iOS zoome automatiquement à la mise au point. */
+  /* 16px minimum: below that, iOS automatically zooms in on focus. */
   font-size: 16px;
   color: var(--color-text);
   caret-color: var(--color-accent);
@@ -254,7 +254,7 @@ button { font-family: inherit; color: inherit; }
   box-shadow: var(--shadow-sm);
 }
 
-/* — cartes, tags, tables — */
+/* — cards, tags, tables — */
 .card {
   display: flex;
   flex-direction: column;
@@ -306,7 +306,7 @@ button { font-family: inherit; color: inherit; }
   border-bottom: 1px solid color-mix(in srgb, var(--color-text) 8%, transparent);
 }
 
-/* — barre de progression — */
+/* — progress bar — */
 .bar {
   height: 8px;
   border-radius: 999px;
@@ -315,7 +315,7 @@ button { font-family: inherit; color: inherit; }
 }
 .bar > span { display: block; height: 100%; border-radius: 999px; background: var(--color-accent); }
 
-/* — pastille de couleur de fil — */
+/* — thread colour swatch — */
 .swatch {
   flex: none;
   border-radius: 999px;
@@ -323,7 +323,7 @@ button { font-family: inherit; color: inherit; }
 }
 
 /* ==========================================================================
-   Coquille applicative
+   Application shell
    ========================================================================== */
 
 .app {
@@ -346,7 +346,7 @@ button { font-family: inherit; color: inherit; }
   padding: 20px 20px 28px;
 }
 
-/* — barre latérale (iPad) — */
+/* — sidebar (iPad) — */
 .sidebar {
   flex: none;
   width: 224px;
@@ -376,7 +376,7 @@ button { font-family: inherit; color: inherit; }
   color: var(--color-accent);
 }
 
-/* — barre d'onglets (iPhone) — */
+/* — tab bar (iPhone) — */
 .tabbar {
   flex: none;
   display: flex;
@@ -403,8 +403,8 @@ button { font-family: inherit; color: inherit; }
 
 .status-bar-spacer { flex: none; height: env(safe-area-inset-top); }
 
-/* — écran de suivi — */
-/* Deux colonnes sur écran large : la grille, puis le panneau des couleurs. */
+/* — tracking screen — */
+/* Two columns on a wide screen: the grid, then the colour panel. */
 .track-layout { flex: 1; min-height: 0; display: flex; }
 .track { flex: 1; min-width: 0; display: flex; flex-direction: column; position: relative; }
 .track-head {
@@ -472,9 +472,9 @@ button.badge {
 .toolbar button[aria-pressed="true"] { background: var(--color-accent); color: var(--color-bg); }
 .toolbar .sep { width: 1px; height: 30px; background: var(--color-divider); margin: 0 4px; }
 
-/* Catégorie de point (Lot 8) — barre compacte distincte de `.toolbar`
-   principale : cinq boutons de plus l'auraient fait déborder sur un écran
-   étroit (voir `TrackScreen.tsx`). */
+/* Stitch category (Lot 8) — a compact bar separate from the main `.toolbar`:
+   five more buttons would have made it overflow on a narrow screen (see
+   `TrackScreen.tsx`). */
 .toolbar-layers {
   position: absolute;
   bottom: 78px;
@@ -501,7 +501,7 @@ button.badge {
 .toolbar-layers button[aria-pressed="true"] { background: var(--color-accent); color: var(--color-bg); }
 .toolbar-layers button:disabled { opacity: 0.32; cursor: not-allowed; }
 
-/* — panneau / tiroir des couleurs — */
+/* — colour panel / drawer — */
 .color-row {
   width: 100%;
   display: flex;
@@ -546,7 +546,7 @@ button.badge {
   padding-bottom: env(safe-area-inset-bottom);
 }
 
-/* — assistant d'import — */
+/* — import wizard — */
 .dropzone {
   border: 2px dashed var(--color-divider);
   border-radius: 28px;

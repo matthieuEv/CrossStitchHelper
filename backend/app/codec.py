@@ -1,9 +1,9 @@
-"""Encodage compact de la grille et de la progression (cahier des charges §6.1, §6.3).
+"""Compact encoding of the grid and of progress (specification §6.1, §6.3).
 
-Une grille de 45 900 cases n'est jamais interrogée case par case : elle est
-lue et écrite comme un bloc. Ces fonctions convertissent entre la
-représentation Python la plus pratique (liste d'entiers, ensemble d'index
-cochés) et le format compact stocké en base / transmis sur le fil.
+A 45,900-cell grid is never queried cell by cell: it is read and written as
+a block. These functions convert between the most convenient Python
+representation (list of integers, set of checked indices) and the compact
+format stored in the database / sent over the wire.
 """
 
 from __future__ import annotations
@@ -16,10 +16,10 @@ GRID_ENCODING = "uint16le"
 
 
 def encode_uint16_layer(values: Sequence[int]) -> bytes:
-    """Encode une couche de grille en `Uint16Array` little-endian (§6.3).
+    """Encode a grid layer as a little-endian `Uint16Array` (§6.3).
 
-    Ordre de parcours attendu par l'appelant : ligne par ligne, de gauche à
-    droite, de haut en bas — cette fonction ne fait qu'empaqueter les octets.
+    Traversal order expected from the caller: row by row, left to right, top
+    to bottom — this function only packs the bytes.
     """
     if not values:
         return b""
@@ -42,7 +42,7 @@ def base64_to_bytes(data: str) -> bytes:
 
 
 def bitmap_byte_length(cell_count: int) -> int:
-    """Nombre d'octets nécessaires pour un bitmap de `cell_count` cases."""
+    """Number of bytes needed for a bitmap of `cell_count` cells."""
     return (cell_count + 7) // 8
 
 
@@ -51,7 +51,7 @@ def empty_bitmap(cell_count: int) -> bytes:
 
 
 def bitmap_from_indices(indices: Iterable[int], cell_count: int) -> bytes:
-    """Construit un bitmap à partir des index cochés (utilisé par le seed de démonstration)."""
+    """Build a bitmap from the checked indices (used by the demo seed)."""
     bitmap = bytearray(bitmap_byte_length(cell_count))
     for index in indices:
         byte_index, bit_index = divmod(index, 8)

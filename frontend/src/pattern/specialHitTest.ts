@@ -1,19 +1,17 @@
 /**
- * Recherche du segment de point arrière / nœud le plus proche d'un point de
- * contact (Lot 8) — géométrie pure, sans dépendance au canvas, pour rester
- * testable indépendamment du rendu.
+ * Finds the backstitch segment / knot closest to a touch point (Lot 8) —
+ * pure geometry, with no canvas dependency, so it stays testable
+ * independently of rendering.
  *
- * Point arrière et nœuds ne sont pas alignés sur la grille de cases comme les
- * points entiers/1-2/1-4 : la cible d'un tap est le segment ou le point le
- * plus proche, dans une tolérance donnée en unités de grille (voir
- * `state/useTracker.ts::toggleAtPoint` pour le calcul de cette tolérance à
- * partir du zoom courant).
+ * Backstitches and knots are not aligned on the cell grid like full/1-2/1-4
+ * stitches: a tap's target is the nearest segment or point, within a
+ * tolerance given in grid units (see `state/useTracker.ts::toggleAtPoint` for
+ * how that tolerance is computed from the current zoom).
  *
- * Balayage linéaire sur la liste complète : largement suffisant pour le
- * nombre d'éléments d'un motif réel (quelques dizaines à quelques centaines
- * de segments/nœuds) — pas d'index spatial pour l'instant, à revisiter si un
- * futur connecteur d'extraction (Lot 9) produit des motifs nettement plus
- * denses en points spéciaux.
+ * Linear scan over the whole list: largely sufficient for the number of
+ * elements in a real pattern (a few dozen to a few hundred segments/knots) —
+ * no spatial index for now, to revisit if a future extraction connector
+ * (Lot 9) produces patterns much denser in special stitches.
  */
 
 import type { BackstitchSegment, FrenchKnot } from "./types";
@@ -35,9 +33,9 @@ function distanceToSegment(
 }
 
 /**
- * Index (dans `segments`) du segment le plus proche de `(gx, gy)` (mêmes
- * coordonnées de coins de case que `BackstitchSegment`), dans la limite de
- * `maxDistance` cases — `null` si rien d'assez proche.
+ * Index (into `segments`) of the segment closest to `(gx, gy)` (same cell
+ * corner coordinates as `BackstitchSegment`), within `maxDistance` cells —
+ * `null` if nothing is close enough.
  */
 export function nearestBackstitchIndex(
   segments: readonly BackstitchSegment[],
@@ -60,9 +58,9 @@ export function nearestBackstitchIndex(
 }
 
 /**
- * Index (dans `knots`) du nœud le plus proche de `(gx, gy)` (mêmes
- * coordonnées de centre de case que `FrenchKnot`), dans la limite de
- * `maxDistance` cases — `null` si rien d'assez proche.
+ * Index (into `knots`) of the knot closest to `(gx, gy)` (same cell centre
+ * coordinates as `FrenchKnot`), within `maxDistance` cells — `null` if
+ * nothing is close enough.
  */
 export function nearestKnotIndex(
   knots: readonly FrenchKnot[],

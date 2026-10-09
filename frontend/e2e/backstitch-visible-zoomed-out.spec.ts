@@ -1,26 +1,24 @@
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 
 /**
- * Retour utilisateur direct après usage réel : sur un vrai diagramme papier,
- * les traits de point arrière restent visibles même sur une vue d'ensemble
- * de la grille — l'application les masquait entièrement en dessous du même
- * seuil de zoom que les symboles (`SYMBOL_MIN_CELL`, `pattern/render.ts`),
- * ce qui ne correspond à aucune référence papier. Corrigé en découplant le
- * rendu du point arrière/des nœuds de ce seuil — l'interaction (cocher),
- * elle, reste réservée au zoom rapproché (`state/useTracker.ts`), pas
- * couverte ici.
+ * Direct user feedback after real use: on a real paper diagram, backstitch
+ * strokes stay visible even on an overview of the grid — the application
+ * hid them entirely below the same zoom threshold as symbols
+ * (`SYMBOL_MIN_CELL`, `pattern/render.ts`), which matches no paper reference.
+ * Fixed by decoupling backstitch/knot rendering from that threshold — the
+ * interaction (checking) remains reserved for close zoom
+ * (`state/useTracker.ts`), not covered here.
  *
- * Géométrie et point d'échantillonnage repris tels quels de
- * lot8-special-stitches.spec.ts (issus de
- * `backend/app/seed.py::_build_special_stitches`) — le milieu du segment
- * bas→gauche du losange de point arrière, déjà vérifié empiriquement par ce
- * test-là comme tombant sur une case vide du point entier (sans quoi la
- * comparaison à la couleur de toile n'aurait aucun sens).
+ * Geometry and sampling point taken as is from lot8-special-stitches.spec.ts
+ * (derived from `backend/app/seed.py::_build_special_stitches`) — the
+ * midpoint of the backstitch diamond's bottom→left segment, already verified
+ * empirically by that test as falling on an empty full-stitch cell
+ * (otherwise comparing with the fabric colour would make no sense).
  */
 
 const DEMO_PATTERN_ID = "demo-perf-255x180";
-// En dessous de `SYMBOL_MIN_CELL` (15, `pattern/render.ts`) : c'est
-// exactement le niveau de zoom où le bug se manifestait.
+// Below `SYMBOL_MIN_CELL` (15, `pattern/render.ts`): exactly the zoom level
+// where the bug showed up.
 const BELOW_SYMBOL_THRESHOLD = 15;
 
 interface PatternSummary {
@@ -45,12 +43,12 @@ async function fetchDemoPattern(request: APIRequestContext): Promise<PatternSumm
   const response = await request.get("/api/patterns");
   const patterns = (await response.json()) as PatternSummary[];
   const demo = patterns.find((pattern) => pattern.id === DEMO_PATTERN_ID);
-  if (demo === undefined) throw new Error("Motif de démonstration introuvable en base");
+  if (demo === undefined) throw new Error("Demo pattern not found in the database");
   return demo;
 }
 
-/** Repris de lot8-special-stitches.spec.ts — voir ce fichier pour le détail
- * du raisonnement (le glissé applique `dx = pixels / cell` par évènement). */
+/** Taken from lot8-special-stitches.spec.ts — see that file for the
+ * reasoning (the drag applies `dx = pixels / cell` per event). */
 async function panByPixels(page: Page, box: Box, totalDx: number, totalDy: number): Promise<void> {
   const maxStep = 250;
   const startX = box.x + box.width / 2;
@@ -82,11 +80,11 @@ async function centerOn(page: Page, box: Box, view: View, gx: number, gy: number
 async function zoomBadgeSize(page: Page): Promise<number> {
   const text = await page.locator(".track-badges .badge").first().textContent();
   const match = text?.match(/(\d+)\s*px\/case/);
-  if (match?.[1] === undefined) throw new Error(`Badge de zoom introuvable dans : ${text}`);
+  if (match?.[1] === undefined) throw new Error(`Zoom badge not found in: ${text}`);
   return Number(match[1]);
 }
 
-test("le point arrière reste visible bien en dessous du seuil d'apparition des symboles", async ({
+test("backstitch stays visible well below the symbol appearance threshold", async ({
   page,
   request,
 }) => {
@@ -97,21 +95,21 @@ test("le point arrière reste visible bien en dessous du seuil d'apparition des 
   const canvas = page.locator("canvas.track-canvas");
   await expect(canvas).toBeVisible();
   const box = await canvas.boundingBox();
-  if (box === null) throw new Error("Le canvas de suivi n'a pas de boîte englobante");
+  if (box === null) throw new Error("The tracking canvas has no bounding box");
 
-  // Vue initiale connue (`useTracker.ts`, motif 255×180) — même valeur que
-  // lot8-special-stitches.spec.ts. On centre sur le losange de point arrière
-  // (`_CX, _CY` de `seed.py`) pendant qu'on est encore au-dessus du seuil,
-  // le glissé de recentrage étant plus simple à raisonner à ce zoom déjà
-  // vérifié par l'autre test.
+  // Known initial view (`useTracker.ts`, 255×180 pattern) — same value as in
+  // lot8-special-stitches.spec.ts. Centre on the backstitch diamond (`_CX,
+  // _CY` in `seed.py`) while still above the threshold, the re-centring drag
+  // being easier to reason about at this zoom already verified by the other
+  // test.
   const initialView: View = { x0: 30, y0: 24, cell: 16 };
   await centerOn(page, box, initialView, 127, 90);
 
-  // Le curseur est maintenant exactement au centre du canvas, et ce point
-  // écran correspond exactement à la case (127, 90) du motif. Un dézoom à la
-  // molette recentré sur le curseur (voir wheel-zoom.spec.ts) garde ce même
-  // point de grille au centre de l'écran quel que soit le nombre de crans,
-  // ce qui évite d'avoir à recalculer x0/y0 après coup — seul `cell` change.
+  // The cursor is now exactly at the centre of the canvas, and that screen
+  // point matches exactly the pattern's cell (127, 90). A wheel zoom-out
+  // centred on the cursor (see wheel-zoom.spec.ts) keeps this same grid point
+  // at the centre of the screen whatever the number of notches, which avoids
+  // recomputing x0/y0 afterwards — only `cell` changes.
   const center = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
   await page.mouse.move(center.x, center.y);
 
@@ -124,10 +122,10 @@ test("le point arrière reste visible bien en dessous du seuil d'apparition des 
   }
   expect(cell).toBeLessThan(BELOW_SYMBOL_THRESHOLD);
 
-  // Milieu du segment bas→gauche du losange : (127,105)→(112,90), déjà
-  // vérifié par lot8-special-stitches.spec.ts comme tombant sur une case
-  // vide du point entier à ce zoom-là — donc, sans le correctif, ce pixel
-  // serait resté exactement la couleur de toile (`--canvas-fabric`).
+  // Midpoint of the diamond's bottom→left segment: (127,105)→(112,90),
+  // already verified by lot8-special-stitches.spec.ts as falling on an empty
+  // full-stitch cell at that zoom — so, without the fix, this pixel would
+  // have stayed exactly the fabric colour (`--canvas-fabric`).
   const targetGrid = { x: (127 + 112) / 2, y: (105 + 90) / 2 };
   const px = box.width / 2 + (targetGrid.x - 127) * cell;
   const py = box.height / 2 + (targetGrid.y - 90) * cell;
@@ -137,7 +135,7 @@ test("le point arrière reste visible bien en dessous du seuil d'apparition des 
       const el = element as HTMLCanvasElement;
       const ratio = Math.min(window.devicePixelRatio || 1, 2);
       const ctx = el.getContext("2d");
-      if (ctx === null) throw new Error("pas de contexte 2d");
+      if (ctx === null) throw new Error("no 2d context");
       const data = ctx.getImageData(Math.round(x * ratio), Math.round(y * ratio), 1, 1).data;
       return [data[0] ?? 0, data[1] ?? 0, data[2] ?? 0] as [number, number, number];
     },

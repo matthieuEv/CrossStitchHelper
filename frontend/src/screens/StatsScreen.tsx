@@ -5,7 +5,7 @@ import { STITCHES_PER_SKEIN, type ColorCount, type PatternTotals } from "../patt
 import type { Pattern } from "../pattern/types";
 
 export interface ActivityDay {
-  /** Jour de la semaine, 0 = lundi. */
+  /** Day of the week, 0 = Monday. */
   weekday: number;
   stitches: number;
 }

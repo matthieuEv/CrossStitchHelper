@@ -1,7 +1,7 @@
 /**
- * Motifs de démonstration secondaires, pour donner à la bibliothèque sa forme
- * réelle (plusieurs cartes, plusieurs tailles, plusieurs états d'avancement).
- * Supprimables sans conséquence dès que l'import réel existe.
+ * Secondary demo patterns, to give the library its real shape (several
+ * cards, several sizes, several progress states). Removable without
+ * consequence once real import exists.
  */
 
 import type { PaletteEntry, Pattern, Progress } from "../pattern/types";
@@ -149,7 +149,7 @@ function buildVariant(kind: VariantKind): { cells: Uint8Array; width: number; he
 export interface DemoLibraryEntry {
   pattern: Pattern;
   progress: Progress;
-  /** Ancienneté de la dernière séance, en heures. */
+  /** Age of the last session, in hours. */
   hoursAgo: number;
 }
 
@@ -185,8 +185,8 @@ export function createDemoVariants(): DemoLibraryEntry[] {
       width: built.width,
       height: built.height,
       cells: built.cells,
-      // Motifs de démonstration purement locaux : aucun point spécial (Lot
-      // 8) — voir `demo/lavender.ts::createDemoPattern` pour la même note.
+      // Purely local demo patterns: no special stitch (Lot 8) — see
+      // `demo/lavender.ts::createDemoPattern` for the same note.
       cellsHalf: new Uint8Array(built.width * built.height),
       cellsQuarter: new Uint8Array(built.width * built.height),
       backstitch: [],

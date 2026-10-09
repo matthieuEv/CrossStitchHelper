@@ -1,14 +1,13 @@
-"""Modèles SQLAlchemy.
+"""SQLAlchemy models.
 
-Modèle métier complet du Lot 1 (voir ``docs/roadmap.md`` et le cahier des
-charges §6) : ``patterns``, ``palette_entries``, ``grids``, ``progress``,
-``progress_events``. Contrainte structurante rappelée dans ``CLAUDE.md`` :
-**la progression est stockée séparément de la grille**, dans des tables
-distinctes reliées uniquement par ``pattern_id`` — un ré-import ne touche
-jamais à ``progress``.
+Complete domain model from Lot 1 (see ``docs/roadmap.md`` and specification
+§6): ``patterns``, ``palette_entries``, ``grids``, ``progress``,
+``progress_events``. Structural constraint recalled in ``CLAUDE.md``:
+**progress is stored separately from the grid**, in distinct tables linked
+only by ``pattern_id`` — a re-import never touches ``progress``.
 
-``recipes`` (§6.2, Lot 6) complète ce modèle : une empreinte de fichier
-(``app/fingerprint.py``) associée à une configuration d'import réutilisable.
+``recipes`` (§6.2, Lot 6) completes this model: a file fingerprint
+(``app/fingerprint.py``) associated with a reusable import configuration.
 """
 
 from __future__ import annotations
@@ -35,12 +34,12 @@ def _utcnow() -> datetime:
 
 
 class AppMeta(Base):
-    """Métadonnées de l'instance, sous forme clé/valeur.
+    """Instance metadata, as key/value pairs.
 
-    Sert deux besoins concrets : donner une première migration non vide (donc
-    une chaîne Alembic réellement vérifiée de bout en bout), et permettre au
-    point de santé de prouver que la base répond en lecture, pas seulement
-    que le fichier existe.
+    Serves two concrete needs: providing a non-empty first migration (hence
+    an Alembic chain really verified end to end), and letting the health
+    endpoint prove that the database responds to reads, not just that the
+    file exists.
     """
 
     __tablename__ = "app_meta"
@@ -51,15 +50,16 @@ class AppMeta(Base):
         DateTime(timezone=True), nullable=False, default=_utcnow, onupdate=_utcnow
     )
 
-    def __repr__(self) -> str:  # pragma: no cover - confort de débogage
+    def __repr__(self) -> str:  # pragma: no cover - debugging convenience
         return f"AppMeta(key={self.key!r}, value={self.value!r})"
 
 
 class Pattern(Base):
-    """Un motif importé (ou, avant le Lot 2, injecté directement en base).
+    """An imported pattern (or, before Lot 2, injected directly into the
+    database).
 
-    ``owner_id`` est nullable dès la V1 mono-utilisateur, pour ne pas fermer
-    la porte au multi-utilisateurs plus tard (cahier des charges §5.2).
+    ``owner_id`` is nullable from the single-user V1 onwards, so as not to
+    close the door on multi-user later (specification §5.2).
     """
 
     __tablename__ = "patterns"
@@ -92,15 +92,15 @@ class Pattern(Base):
         back_populates="pattern", cascade="all, delete-orphan"
     )
 
-    def __repr__(self) -> str:  # pragma: no cover - confort de débogage
+    def __repr__(self) -> str:  # pragma: no cover - debugging convenience
         return f"Pattern(id={self.id!r}, name={self.name!r}, {self.width}x{self.height})"
 
 
 class PaletteEntry(Base):
-    """Une couleur de la palette d'un motif.
+    """A colour in a pattern's palette.
 
-    ``index_in_grid`` est l'entier utilisé dans le blob de grille (§6.3) :
-    0 signifie « case vide », donc les index de palette réelle commencent à 1.
+    ``index_in_grid`` is the integer used in the grid blob (§6.3): 0 means
+    "empty cell", so real palette indices start at 1.
     """
 
     __tablename__ = "palette_entries"
@@ -131,20 +131,20 @@ class PaletteEntry(Base):
 
     pattern: Mapped[Pattern] = relationship(back_populates="palette_entries")
 
-    def __repr__(self) -> str:  # pragma: no cover - confort de débogage
+    def __repr__(self) -> str:  # pragma: no cover - debugging convenience
         return f"PaletteEntry(pattern_id={self.pattern_id!r}, code={self.code!r})"
 
 
 class Grid(Base):
-    """Les couches de la grille d'un motif, compactées (§6.1).
+    """A pattern's grid layers, compacted (§6.1).
 
-    Une ligne par motif : ``pattern_id`` est à la fois clé primaire et clé
-    étrangère (relation un-à-un stricte).
+    One row per pattern: ``pattern_id`` is both primary key and foreign key
+    (strict one-to-one relationship).
 
-    ``backstitch_json``/``french_knots_json`` (Lot 8) : voir
-    ``app/schemas.py::BackstitchSegment``/``FrenchKnot`` pour la convention
-    de coordonnées exacte (coins de case pour l'un, centre de case pour
-    l'autre — jamais des pixels).
+    ``backstitch_json``/``french_knots_json`` (Lot 8): see
+    ``app/schemas.py::BackstitchSegment``/``FrenchKnot`` for the exact
+    coordinate convention (cell corners for one, cell centre for the other —
+    never pixels).
     """
 
     __tablename__ = "grids"
@@ -162,28 +162,28 @@ class Grid(Base):
 
     pattern: Mapped[Pattern] = relationship(back_populates="grid")
 
-    def __repr__(self) -> str:  # pragma: no cover - confort de débogage
+    def __repr__(self) -> str:  # pragma: no cover - debugging convenience
         return f"Grid(pattern_id={self.pattern_id!r}, version={self.version})"
 
 
 class Progress(Base):
-    """Bitmap de progression d'un motif — séparé de ``Grid`` (§6.1).
+    """A pattern's progress bitmap — separate from ``Grid`` (§6.1).
 
-    ``version`` est incrémenté à chaque delta appliqué (voir
-    :mod:`app.api.patterns`) ; c'est la valeur comparée par le client pour
-    détecter s'il a manqué des changements faits depuis un autre appareil.
+    ``version`` is incremented on every applied delta (see
+    :mod:`app.api.patterns`); it is the value the client compares to detect
+    whether it missed changes made from another device.
 
-    ``bitmap`` couvre uniquement les points entiers (``Grid.layer_full``) —
-    c'est lui qui fait foi pour ``stitched_count`` et le pourcentage global
-    (§7.1), inchangé depuis le Lot 1. Les quatre colonnes suivantes (Lot 8)
-    suivent le même principe pour les autres catégories de points, chacune
-    ``NULL`` tant que la grille correspondante n'a aucun contenu de cette
-    catégorie (même convention que ``Grid.layer_half``/``layer_quarter``) :
-    ``bitmap_half``/``bitmap_quarter`` ont la même forme que ``bitmap`` (1 bit
-    par case, ``Grid.layer_half``/``layer_quarter``) ; ``bitmap_backstitch``/
-    ``bitmap_knots`` sont dimensionnés sur le nombre d'éléments de
-    ``Grid.backstitch_json``/``french_knots_json`` (1 bit par segment/nœud,
-    jamais par case — ce ne sont pas des grilles)."""
+    ``bitmap`` covers full stitches only (``Grid.layer_full``) — it is
+    authoritative for ``stitched_count`` and the overall percentage (§7.1),
+    unchanged since Lot 1. The next four columns (Lot 8) follow the same
+    principle for the other stitch categories, each ``NULL`` as long as the
+    corresponding grid has no content in that category (same convention as
+    ``Grid.layer_half``/``layer_quarter``): ``bitmap_half``/``bitmap_quarter``
+    have the same shape as ``bitmap`` (1 bit per cell,
+    ``Grid.layer_half``/``layer_quarter``); ``bitmap_backstitch``/
+    ``bitmap_knots`` are sized on the number of elements of
+    ``Grid.backstitch_json``/``french_knots_json`` (1 bit per segment/knot,
+    never per cell — these are not grids)."""
 
     __tablename__ = "progress"
 
@@ -203,18 +203,18 @@ class Progress(Base):
 
     pattern: Mapped[Pattern] = relationship(back_populates="progress")
 
-    def __repr__(self) -> str:  # pragma: no cover - confort de débogage
+    def __repr__(self) -> str:  # pragma: no cover - debugging convenience
         return f"Progress(pattern_id={self.pattern_id!r}, version={self.version})"
 
 
 class ProgressEvent(Base):
-    """Journal des deltas de progression appliqués, pour annulation et reprise
-    multi-appareils (§6.2).
+    """Log of applied progress deltas, for undo and multi-device resume
+    (§6.2).
 
-    ``version_after`` correspond à ``Progress.version`` immédiatement après
-    l'application de cet événement : un client qui connaît une version plus
-    ancienne peut donc récupérer, en une requête, tous les événements à
-    rejouer pour rattraper l'état courant.
+    ``version_after`` matches ``Progress.version`` immediately after this
+    event was applied: a client that knows an older version can therefore
+    fetch, in one request, all the events to replay to catch up with the
+    current state.
     """
 
     __tablename__ = "progress_events"
@@ -227,23 +227,23 @@ class ProgressEvent(Base):
     ops_json: Mapped[str] = mapped_column(Text, nullable=False)
     version_after: Mapped[int] = mapped_column(Integer, nullable=False)
 
-    def __repr__(self) -> str:  # pragma: no cover - confort de débogage
+    def __repr__(self) -> str:  # pragma: no cover - debugging convenience
         return (
             f"ProgressEvent(pattern_id={self.pattern_id!r}, version_after={self.version_after})"
         )
 
 
 class Recipe(Base):
-    """Une configuration d'import validée, réutilisable sur un futur fichier
-    de même empreinte (Lot 6, cahier des charges §8.7, §6.2).
+    """A validated import configuration, reusable on a future file with the
+    same fingerprint (Lot 6, specification §8.7, §6.2).
 
-    ``config_json`` ne contient **que des paramètres géométriques et
-    structurels** (`CLAUDE.md` : « jamais le contenu créatif du motif ») —
-    en l'état, uniquement ``crop_by_page`` (voir `app/api/recipes.py`).
-    Jamais les dimensions, la palette ou les zones peintes : ce sont le
-    contenu propre à chaque motif, qui diffère toujours d'un fichier à
-    l'autre même au sein d'un même éditeur (cahier des charges §4.1, cas
-    Winter Wreath/Summer Flight vs Botanical Citrus/Cucurbit).
+    ``config_json`` contains **only geometric and structural parameters**
+    (`CLAUDE.md`: "never the pattern's creative content") — currently only
+    ``crop_by_page`` (see `app/api/recipes.py`). Never the dimensions, the
+    palette or the painted areas: those are content specific to each pattern,
+    which always differs from one file to the next even within the same
+    publisher (specification §4.1, Winter Wreath/Summer Flight vs Botanical
+    Citrus/Cucurbit case).
     """
 
     __tablename__ = "recipes"
@@ -258,18 +258,19 @@ class Recipe(Base):
     )
     usage_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
-    def __repr__(self) -> str:  # pragma: no cover - confort de débogage
+    def __repr__(self) -> str:  # pragma: no cover - debugging convenience
         return f"Recipe(id={self.id!r}, label={self.label!r}, fingerprint={self.fingerprint[:8]!r})"
 
 
 class ImportJob(Base):
-    """L'état d'un import en cours (assistant, Lot 2 — cahier des charges §6.2, §9).
+    """The state of an import in progress (wizard, Lot 2 — specification §6.2,
+    §9).
 
-    ``result_json`` porte à la fois ce que l'utilisateur a saisi dans
-    l'assistant (``config`` : cadrage, dimensions, palette, zones peintes) et
-    ce qui en a été calculé (``preview`` : la grille assemblée). Le Lot 2
-    n'a aucun moteur de détection automatique — ``config`` est donc
-    entièrement manuel, jamais déduit d'une analyse du fichier.
+    ``result_json`` carries both what the user entered in the wizard
+    (``config``: cropping, dimensions, palette, painted areas) and what was
+    computed from it (``preview``: the assembled grid). Lot 2 has no
+    automatic detection engine — ``config`` is therefore entirely manual,
+    never inferred from an analysis of the file.
     """
 
     __tablename__ = "import_jobs"
@@ -288,5 +289,5 @@ class ImportJob(Base):
     )
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
-    def __repr__(self) -> str:  # pragma: no cover - confort de débogage
+    def __repr__(self) -> str:  # pragma: no cover - debugging convenience
         return f"ImportJob(id={self.id!r}, status={self.status!r}, kind={self.kind!r})"

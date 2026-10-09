@@ -15,10 +15,10 @@ import { clearOfflineCache } from "../lib/db";
 import { useTheme, type ThemeChoice } from "../lib/theme";
 import { useWakeLock } from "../lib/wakeLock";
 
-/** Un document de sauvegarde vide : réutilise exactement le mécanisme de
- * restauration (`app/backup.py::restore_backup`, remplacement complet) pour
- * « effacer toutes les données », plutôt que dupliquer une logique de
- * suppression séparée côté serveur pour le même résultat. */
+/** An empty backup document: reuses exactly the restore mechanism
+ * (`app/backup.py::restore_backup`, full replacement) to "clear all data",
+ * rather than duplicating a separate server-side deletion logic for the same
+ * result. */
 const EMPTY_BACKUP_DOCUMENT = JSON.stringify({
   format: "csh-backup",
   format_version: 1,
@@ -62,14 +62,13 @@ export function SettingsScreen({ version }: SettingsScreenProps) {
   const { choice, setChoice } = useTheme();
   const wakeLock = useWakeLock();
 
-  // Réglage encore local : deviendra une préférence serveur quand un besoin
-  // réel de la faire influencer l'extraction/l'import se présentera.
+  // Still a local setting: it will become a server preference when a real
+  // need to have it influence extraction/import arises.
   const [brand, setBrand] = useState<(typeof BRANDS)[number]>("DMC");
 
-  // Sauvegarde automatique quotidienne (Lot 8) : un réglage serveur
-  // (`AppMeta`, `app/auto_backup.py`), pas une préférence locale au
-  // navigateur — elle doit s'appliquer même si personne n'ouvre
-  // l'application ce jour-là.
+  // Daily automatic backup (Lot 8): a server setting (`AppMeta`,
+  // `app/auto_backup.py`), not a browser-local preference — it must apply
+  // even if nobody opens the application that day.
   const [autoBackup, setAutoBackupState] = useState(true);
   const [autoBackupError, setAutoBackupError] = useState(false);
   const [dataBusy, setDataBusy] = useState(false);
@@ -81,10 +80,9 @@ export function SettingsScreen({ version }: SettingsScreenProps) {
     void fetchAutoBackupSetting(controller.signal)
       .then((setting) => setAutoBackupState(setting.enabled))
       .catch((error: unknown) => {
-        // Un `AbortError` vient de notre propre nettoyage (démontage, ou
-        // double montage de StrictMode en développement) — jamais un vrai
-        // échec réseau, donc jamais affiché comme tel (même garde que
-        // `useServerHealth` ci-dessous).
+        // An `AbortError` comes from our own cleanup (unmount, or StrictMode's
+        // double mount in development) — never a real network failure, so
+        // never shown as such (same guard as `useServerHealth` below).
         if (error instanceof DOMException && error.name === "AbortError") return;
         setAutoBackupError(true);
       });
@@ -92,10 +90,10 @@ export function SettingsScreen({ version }: SettingsScreenProps) {
   }, []);
 
   const toggleAutoBackup = (value: boolean): void => {
-    setAutoBackupState(value); // optimiste : reflète le tap immédiatement.
+    setAutoBackupState(value); // optimistic: reflects the tap immediately.
     setAutoBackupError(false);
     void setAutoBackupSetting(value).catch(() => {
-      setAutoBackupState(!value); // repli si le serveur est injoignable.
+      setAutoBackupState(!value); // revert if the server is unreachable.
       setAutoBackupError(true);
     });
   };
@@ -108,7 +106,7 @@ export function SettingsScreen({ version }: SettingsScreenProps) {
 
   const handleRestoreFile = (event: ChangeEvent<HTMLInputElement>): void => {
     const file = event.target.files?.[0];
-    event.target.value = ""; // permet de rechoisir le même fichier ensuite.
+    event.target.value = ""; // allows picking the same file again afterwards.
     if (!file) return;
     if (!window.confirm(t("settings.data.restore.confirm"))) return;
 
@@ -117,7 +115,7 @@ export function SettingsScreen({ version }: SettingsScreenProps) {
     void file
       .text()
       .then((text) => {
-        JSON.parse(text); // validation locale : message clair avant l'aller-retour réseau.
+        JSON.parse(text); // local validation: a clear message before the network round trip.
         return restoreBackup(text);
       })
       .then((summary) => {

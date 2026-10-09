@@ -1,10 +1,10 @@
-"""Accès à la base SQLite.
+"""SQLite database access.
 
-SQLite est un choix assumé du cahier des charges (§3) : une instance
-auto-hébergée sert une poignée d'utilisateurs, et une base fichier supprime
-toute installation supplémentaire. Les réglages ci-dessous sont ce qui sépare
-une base SQLite jouet d'une base utilisable par plusieurs appareils qui
-synchronisent leur progression en même temps.
+SQLite is a deliberate choice of the specification (§3): a self-hosted
+instance serves a handful of users, and a file database removes any extra
+installation. The settings below are what separate a toy SQLite database
+from one usable by several devices synchronising their progress at the same
+time.
 """
 
 from __future__ import annotations
@@ -20,21 +20,21 @@ from app.config import get_settings
 
 
 class Base(DeclarativeBase):
-    """Base déclarative commune à tous les modèles."""
+    """Declarative base shared by all models."""
 
 
 def _configure_sqlite_connection(dbapi_connection: Any, _record: Any) -> None:
     cursor = dbapi_connection.cursor()
-    # WAL : les lectures ne bloquent plus pendant une écriture. Indispensable
-    # dès que deux appareils poussent des deltas de progression en parallèle.
+    # WAL: reads no longer block during a write. Essential as soon as two
+    # devices push progress deltas in parallel.
     cursor.execute("PRAGMA journal_mode=WAL")
-    # SQLite n'applique pas les clés étrangères par défaut.
+    # SQLite does not enforce foreign keys by default.
     cursor.execute("PRAGMA foreign_keys=ON")
-    # NORMAL en mode WAL : durable face à un crash applicatif, sans payer un
-    # fsync par transaction.
+    # NORMAL in WAL mode: durable against an application crash, without
+    # paying one fsync per transaction.
     cursor.execute("PRAGMA synchronous=NORMAL")
-    # Laisse SQLite attendre plutôt que de renvoyer immédiatement "database is
-    # locked" quand deux requêtes écrivent en même temps.
+    # Let SQLite wait rather than immediately return "database is locked"
+    # when two requests write at the same time.
     cursor.execute("PRAGMA busy_timeout=5000")
     cursor.close()
 
@@ -45,8 +45,8 @@ def get_engine() -> Engine:
     settings.ensure_directories()
     engine = create_engine(
         settings.database_url,
-        # FastAPI sert les routes synchrones depuis un pool de threads : la
-        # connexion peut donc changer de thread entre deux requêtes.
+        # FastAPI serves synchronous routes from a thread pool: the
+        # connection can therefore change threads between two requests.
         connect_args={"check_same_thread": False},
         future=True,
     )
@@ -60,12 +60,12 @@ def get_session_factory() -> sessionmaker[Session]:
 
 
 def get_session() -> Iterator[Session]:
-    """Dépendance FastAPI fournissant une session par requête."""
+    """FastAPI dependency providing one session per request."""
     with get_session_factory()() as session:
         yield session
 
 
 def reset_engine_cache() -> None:
-    """Oublie le moteur et la fabrique de sessions (utilisé par les tests)."""
+    """Forget the engine and the session factory (used by tests)."""
     get_engine.cache_clear()
     get_session_factory.cache_clear()

@@ -1,12 +1,11 @@
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 
 /**
- * Vérifie les critères "terminé quand" du Lot 3 (docs/roadmap.md) restés à
- * couvrir après le Lot 1 (filtrage couleur et surlignage ligne/colonne y
- * étaient déjà réels) : un historique de statistiques dérivé de vraies
- * données de progression, le masquage des cases déjà brodées, et une
- * annulation qui revient sur plusieurs gestes d'affilée — contre un vrai
- * backend, pas des mocks.
+ * Checks Lot 3's "done when" criteria (docs/roadmap.md) still to be covered
+ * after Lot 1 (colour filtering and row/column highlighting were already real
+ * there): a statistics history derived from real progress data, hiding
+ * already stitched cells, and an undo that goes back over several gestures in
+ * a row — against a real backend, not mocks.
  */
 
 interface PatternSummary {
@@ -15,27 +14,27 @@ interface PatternSummary {
   cell_count: number;
 }
 
-/** `backend/app/seed.py` — identifiant stable, jamais régénéré. */
+/** `backend/app/seed.py` — stable id, never regenerated. */
 const DEMO_PATTERN_ID = "demo-perf-255x180";
 
 /**
- * Même repli que lot1-persistence.spec.ts, mais par identifiant plutôt que
- * par taille : le Lot 4 importe un vrai motif de mêmes dimensions
- * (255×180) dans la même base, donc `cell_count` seul ne distingue plus le
- * motif seedé d'un motif importé.
+ * Same lookup as lot1-persistence.spec.ts, but by id rather than by size:
+ * Lot 4 imports a real pattern of the same dimensions (255×180) into the same
+ * database, so `cell_count` alone no longer tells the seeded pattern apart
+ * from an imported one.
  */
 async function fetchDemoPattern(request: APIRequestContext): Promise<PatternSummary> {
   const response = await request.get("/api/patterns");
   const patterns = (await response.json()) as PatternSummary[];
   const demo = patterns.find((pattern) => pattern.id === DEMO_PATTERN_ID);
-  if (demo === undefined) throw new Error("Motif de démonstration introuvable en base");
+  if (demo === undefined) throw new Error("Demo pattern not found in the database");
   return demo;
 }
 
 async function remainingCount(page: Page): Promise<number> {
   const text = await page.getByText(/restants$/).first().textContent();
   const match = text?.match(/([\d\s ]+)\s*restants/);
-  if (match?.[1] === undefined) throw new Error(`Compteur "restants" introuvable dans : ${text}`);
+  if (match?.[1] === undefined) throw new Error(`"Remaining" counter not found in: ${text}`);
   return Number(match[1].replace(/[\s ]/g, ""));
 }
 
@@ -47,7 +46,7 @@ async function fillZone(
   action: "Cocher la zone" | "Décocher la zone",
 ): Promise<void> {
   const box = await canvas.boundingBox();
-  if (box === null) throw new Error("Le canvas de suivi n'a pas de boîte englobante");
+  if (box === null) throw new Error("The tracking canvas has no bounding box");
   const from = { x: box.x + box.width * fromFraction.x, y: box.y + box.height * fromFraction.y };
   const to = { x: box.x + box.width * toFraction.x, y: box.y + box.height * toFraction.y };
 
@@ -59,7 +58,7 @@ async function fillZone(
   await page.getByRole("button", { name: action, exact: true }).click();
 }
 
-test("cocher des cases apparaît dans l'historique d'activité réel des statistiques", async ({
+test("checking cells shows up in the real statistics activity history", async ({
   page,
   request,
 }) => {
@@ -70,15 +69,13 @@ test("cocher des cases apparaît dans l'historique d'activité réel des statist
   const canvas = page.locator("canvas.track-canvas");
   await expect(canvas).toBeVisible();
 
-  // Baseline connue, comme lot1-persistence.spec.ts : vider puis remplir,
-  // pour un changement garanti quel que soit l'état laissé par une
-  // exécution précédente.
+  // Known baseline, like lot1-persistence.spec.ts: clear then fill, for a
+  // guaranteed change whatever state a previous run left.
   await fillZone(page, canvas, { x: 0.3, y: 0.3 }, { x: 0.7, y: 0.7 }, "Décocher la zone");
   await fillZone(page, canvas, { x: 0.3, y: 0.3 }, { x: 0.7, y: 0.7 }, "Cocher la zone");
 
-  // La synchronisation est asynchrone (voir lot1-persistence.spec.ts) :
-  // laisser le temps au serveur d'écrire le `progress_events` avant de
-  // l'interroger.
+  // Synchronisation is asynchronous (see lot1-persistence.spec.ts): give the
+  // server time to write the `progress_events` before querying it.
   await page.waitForTimeout(1500);
 
   const activity = await request
@@ -90,57 +87,57 @@ test("cocher des cases apparaît dans l'historique d'activité réel des statist
 
   await page.getByRole("button", { name: "Statistiques" }).click();
   await expect(page.getByRole("heading", { name: "Statistiques" })).toBeVisible();
-  // Une vraie séance récente, jamais un texte figé du jeu de données factice
-  // (voir usePatternActivity.ts : ce motif n'est pas un motif de démo).
+  // A real recent session, never frozen text from the fake data set (see
+  // usePatternActivity.ts: this pattern is not a demo pattern).
   await expect(page.getByText(/il y a (\d+ )?(minute|seconde)/)).toBeVisible();
 });
 
-test("masquer les cases déjà brodées les vide visuellement", async ({ page, request }) => {
+test("hiding already stitched cells visually empties them", async ({ page, request }) => {
   const pattern = await fetchDemoPattern(request);
   await page.goto("/");
   await page.getByText(pattern.name).click();
   const canvas = page.locator("canvas.track-canvas");
   await expect(canvas).toBeVisible();
 
-  // Dézoome jusqu'à la borne (MIN_CELL) puis déplace la vue jusqu'à sa borne
-  // opposée (-panMargin(255) cases, voir pattern/render.ts `panMargin` et son
-  // usage dans useTracker.ts `setOffset`) : quel que soit le nombre exact de
-  // clics/la distance du glissé, on atterrit systématiquement au même
-  // endroit — l'angle du motif, dont la bordure (cases 310, noir) est
-  // intégralement brodée dès le seed (voir `backend/app/seed.py`).
+  // Zoom out to the bound (MIN_CELL) then pan the view to its opposite bound
+  // (-panMargin(255) cells, see pattern/render.ts `panMargin` and its use in
+  // useTracker.ts `setOffset`): whatever the exact number of clicks/drag
+  // distance, we always land at the same place — the pattern's corner, whose
+  // border (310 cells, black) is fully stitched from the seed onwards (see
+  // `backend/app/seed.py`).
   const zoomOut = page.getByRole("button", { name: "Dézoomer" });
   for (let i = 0; i < 10; i++) await zoomOut.click();
 
   await page.getByRole("button", { name: "Déplacer" }).click();
   const box = await canvas.boundingBox();
-  if (box === null) throw new Error("Le canvas de suivi n'a pas de boîte englobante");
+  if (box === null) throw new Error("The tracking canvas has no bounding box");
   const center = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
   await page.mouse.move(center.x, center.y);
   await page.mouse.down();
   await page.mouse.move(center.x + 3000, center.y + 3000, { steps: 8 });
   await page.mouse.up();
 
-  // Case (0,0) du motif : bordure noire, 100 % brodée depuis le seed. Avec
-  // MIN_CELL = 4px et panMargin(255) = max(6, 255*0.1) = 25.5 cases de
-  // débord, son coin haut-gauche occupe le pixel (25.5*4 = 102, 102) du
-  // canvas — sans quadrillage ni symbole à cette taille (sous
-  // GRIDLINE_MIN_CELL/SYMBOL_MIN_CELL), un aplat de couleur pur.
+  // Pattern cell (0,0): black border, 100% stitched since the seed. With
+  // MIN_CELL = 4px and panMargin(255) = max(6, 255*0.1) = 25.5 cells of
+  // overscroll, its top-left corner sits at canvas pixel (25.5*4 = 102, 102)
+  // — with no grid lines or symbol at that size (below
+  // GRIDLINE_MIN_CELL/SYMBOL_MIN_CELL), a pure flat colour.
   const sample = (): Promise<[number, number, number]> =>
     canvas.evaluate((element) => {
       const ctx = (element as HTMLCanvasElement).getContext("2d");
-      if (ctx === null) throw new Error("pas de contexte 2d");
+      if (ctx === null) throw new Error("no 2d context");
       const data = ctx.getImageData(104, 104, 1, 1).data;
       return [data[0] ?? 0, data[1] ?? 0, data[2] ?? 0];
     });
 
   const stitchedColor = await sample();
-  // Case brodée : délavée (mélange noir/fond), donc claire — jamais du noir pur.
+  // Stitched cell: washed out (black/background mix), hence light — never pure black.
   expect(stitchedColor[0]).toBeGreaterThan(80);
 
   const hideButton = page.getByRole("button", { name: "Masquer les cases faites" });
   await hideButton.click();
   const hiddenColor = await sample();
-  // Masquée : couleur de la toile nue, sensiblement différente du délavé.
+  // Hidden: bare fabric colour, noticeably different from the washed-out one.
   expect(Math.abs(hiddenColor[0] - stitchedColor[0])).toBeGreaterThan(20);
 
   await page.getByRole("button", { name: "Réafficher les cases faites" }).click();
@@ -148,15 +145,15 @@ test("masquer les cases déjà brodées les vide visuellement", async ({ page, r
   expect(shownAgainColor).toEqual(stitchedColor);
 });
 
-test("l'annulation revient sur plusieurs zones cochées d'affilée", async ({ page, request }) => {
+test("undo goes back over several areas checked in a row", async ({ page, request }) => {
   const pattern = await fetchDemoPattern(request);
   await page.goto("/");
   await page.getByText(pattern.name).click();
   const canvas = page.locator("canvas.track-canvas");
   await expect(canvas).toBeVisible();
 
-  // Deux zones adjacentes, disjointes, toutes deux vidées d'abord pour une
-  // base connue (même motif que les autres specs).
+  // Two adjacent, disjoint areas, both cleared first for a known baseline
+  // (same pattern as the other specs).
   await fillZone(page, canvas, { x: 0.25, y: 0.3 }, { x: 0.45, y: 0.7 }, "Décocher la zone");
   await fillZone(page, canvas, { x: 0.5, y: 0.3 }, { x: 0.7, y: 0.7 }, "Décocher la zone");
   const baseline = await remainingCount(page);

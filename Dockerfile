@@ -1,30 +1,30 @@
 # syntax=docker/dockerfile:1
 
-# Image unique : un seul conteneur sert l'API et le frontend construit, sur un
-# seul port. C'est la condition pour qu'une installation tienne en une commande
-# et n'impose ni reverse proxy ni base de données à administrer.
+# Single image: one container serves the API and the built frontend, on a
+# single port. That is what lets an installation fit in one command and
+# require neither a reverse proxy nor a database to administer.
 
 # ---------------------------------------------------------------------------
-# 1. Construction du frontend
+# 1. Frontend build
 # ---------------------------------------------------------------------------
 FROM node:25-alpine AS frontend
 
 WORKDIR /build
 COPY frontend/package.json frontend/package-lock.json* ./
-# `npm ci` exige un verrou ; au premier clone il n'existe pas encore.
+# `npm ci` requires a lockfile; on a first clone it does not exist yet.
 RUN if [ -f package-lock.json ]; then npm ci; else npm install; fi
 
 COPY frontend/ ./
 RUN npm run build
 
 # ---------------------------------------------------------------------------
-# 2. Exécution
+# 2. Runtime
 # ---------------------------------------------------------------------------
 FROM python:3.14-slim AS runtime
 
-# Injecté par `.github/workflows/release.yml` (`--build-arg VERSION=<tag>`) au
-# push d'un tag git : la version affichée dans l'app est ainsi toujours celle
-# du tag qui a produit l'image, jamais maintenue à la main dans le code.
+# Injected by `.github/workflows/release.yml` (`--build-arg VERSION=<tag>`) when
+# a git tag is pushed: the version shown in the app is thus always that of the
+# tag that produced the image, never maintained by hand in the code.
 ARG VERSION=v0.0.0-dev
 
 ENV PYTHONUNBUFFERED=1 \
@@ -36,9 +36,9 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 
-# Les dépendances sont lues depuis pyproject.toml : une seule source de vérité
-# pour le développement et pour l'image. Cette couche n'est reconstruite que
-# lorsque pyproject.toml change.
+# Dependencies are read from pyproject.toml: a single source of truth for
+# development and for the image. This layer is only rebuilt when
+# pyproject.toml changes.
 COPY backend/pyproject.toml /tmp/pyproject.toml
 RUN python -c "\
 import subprocess, sys, tomllib;\
@@ -49,7 +49,7 @@ subprocess.check_call([sys.executable, '-m', 'pip', 'install', '--no-cache-dir',
 COPY backend/ /app/
 COPY --from=frontend /build/dist /app/frontend-dist
 
-# L'application tourne sans privilèges ; le volume de données lui appartient.
+# The application runs unprivileged; the data volume belongs to it.
 RUN useradd --system --uid 10001 --home /app csh \
     && mkdir -p /data \
     && chown -R csh:csh /app /data
@@ -58,7 +58,7 @@ USER csh
 VOLUME ["/data"]
 EXPOSE 8000
 
-# `curl` n'est pas installé dans l'image slim : la sonde utilise Python.
+# `curl` is not installed in the slim image: the probe uses Python.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
     CMD python -c "import urllib.request, sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=4).status == 200 else 1)"
 

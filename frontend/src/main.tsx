@@ -7,7 +7,7 @@ import "./index.css";
 import { ThemeProvider } from "./lib/theme";
 
 const container = document.getElementById("root");
-if (container === null) throw new Error("Élément racine introuvable");
+if (container === null) throw new Error("Root element not found");
 
 createRoot(container).render(
   <StrictMode>

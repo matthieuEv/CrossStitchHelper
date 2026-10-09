@@ -1,11 +1,11 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 /**
- * Suit une media query.
+ * Tracks a media query.
  *
- * Les maquettes distinguaient iPhone et iPad par une propriété ; dans
- * l'application réelle c'est une question de largeur disponible, pas
- * d'appareil : un iPad en Split View mérite la disposition compacte.
+ * The mockups distinguished iPhone and iPad by a prop; in the real
+ * application it is a matter of available width, not of device: an iPad in
+ * Split View deserves the compact layout.
  */
 export function useMediaQuery(query: string): boolean {
   const [matches, setMatches] = useState<boolean>(() => window.matchMedia(query).matches);
@@ -21,7 +21,7 @@ export function useMediaQuery(query: string): boolean {
   return matches;
 }
 
-/** Seuil de la disposition large : barre latérale et panneau des couleurs. */
+/** Wide layout threshold: sidebar and colour panel. */
 export const WIDE_LAYOUT_QUERY = "(min-width: 768px)";
 
 export function useWideLayout(): boolean {
@@ -29,11 +29,11 @@ export function useWideLayout(): boolean {
 }
 
 /**
- * Observe la taille d'un élément.
+ * Observes an element's size.
  *
- * Le canvas doit être redessiné quand sa boîte change — rotation de l'appareil,
- * ouverture du panneau des couleurs, clavier logiciel. `resize` sur `window` ne
- * couvre pas ces cas.
+ * The canvas must be redrawn when its box changes — device rotation, opening
+ * the colour panel, on-screen keyboard. `resize` on `window` does not cover
+ * these cases.
  */
 export function useElementSize<T extends HTMLElement>(): [
   React.RefObject<T | null>,

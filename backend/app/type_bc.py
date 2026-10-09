@@ -1,28 +1,26 @@
-"""Détection automatique des types B et C (grilles vectorielles DMC-style,
-cahier des charges §4.3, §4.4 et §8.4-8.5, Lot 5).
+"""Automatic detection of types B and C (DMC-style vector grids,
+specification §4.3, §4.4 and §8.4-8.5, Lot 5).
 
-Contrairement au type A (`app/type_a.py`), il n'y a **aucune police de
-symboles embarquée** ici : la couleur de chaque case vient du remplissage
-d'un rectangle vectoriel, et le symbole (quand il existe) d'un petit tracé
-vectoriel (lignes/courbes/fragments de rectangles) — jamais du texte.
+Unlike type A (`app/type_a.py`), there is **no embedded symbol font** here:
+each cell's colour comes from a vector rectangle's fill, and the symbol (when
+there is one) from a small vector path (lines/curves/rectangle fragments) —
+never text.
 
-Rien n'est codé en dur pour une fixture précise. En particulier, **la
-relation entre les pages d'un même PDF n'est jamais supposée fixe** (leçon
-du cas piège `summer-flight-dmc`, cahier des charges §4.3) : ce module
-mesure, pour chaque page candidate, la densité de tracés vectoriels par
-rapport aux rectangles de couleur avant de décider si une page de symboles
-séparée doit être superposée, ou si la page couleur porte déjà elle-même
-les symboles (constaté aussi bien sur `summer-flight-dmc` que sur
-`winter-wreath-dmc` — les deux se comportent pareil malgré ce qu'on
-pourrait attendre d'un simple coup d'œil au cahier des charges : seule la
-mesure réelle sur le fichier fait foi, jamais une hypothèse de structure
-fixe, cf. `CLAUDE.md`).
+Nothing is hard-coded for a particular fixture. In particular, **the
+relationship between the pages of the same PDF is never assumed fixed** (the
+lesson of the `summer-flight-dmc` trap case, specification §4.3): this module
+measures, for each candidate page, the density of vector paths relative to
+colour rectangles before deciding whether a separate symbol page must be
+overlaid, or whether the colour page itself already carries the symbols
+(observed on `summer-flight-dmc` as well as on `winter-wreath-dmc` — both
+behave the same despite what a quick look at the specification might
+suggest: only the real measurement on the file is authoritative, never a
+fixed-structure assumption, cf. `CLAUDE.md`).
 
-Module pur : aucune dépendance FastAPI/SQLAlchemy. Le point d'entrée
-`detect_type_bc` ne lève jamais d'exception — il renvoie `None` si le PDF ne
-ressemble pas à un type B/C (y compris quand il s'agit en réalité d'un type
-A, ou d'un type E à base d'images bitmap réutilisées comme
-`river-and-mountains-laserarts`, cahier des charges §4.3)."""
+Pure module: no FastAPI/SQLAlchemy dependency. The `detect_type_bc` entry
+point never raises — it returns `None` if the PDF does not look like a type
+B/C (including when it is actually a type A, or a type E based on reused
+bitmap images like `river-and-mountains-laserarts`, specification §4.3)."""
 
 from __future__ import annotations
 
@@ -41,214 +39,201 @@ from PIL import Image
 from app.dmc_catalog import lab_distance, nearest_dmc, rgb_to_lab
 from app.grid_lines import is_grid_ruling
 
-# `app.schemas` ne dépend que de Pydantic — l'importer ici ne rompt pas la
-# pureté du module (aucune dépendance FastAPI/SQLAlchemy, voir docstring).
+# `app.schemas` only depends on Pydantic — importing it here does not break
+# the module's purity (no FastAPI/SQLAlchemy dependency, see docstring).
 from app.schemas import DetectionWarning
 from app.type_a import SymbolGlyphLocation, detect_type_a
 
-# Voir `app/type_a.py` pour le rationnel de ce typage : pdfplumber représente
-# chaque objet positionné (rectangle, ligne, courbe) comme un dictionnaire
-# hétérogène, sans TypedDict public à réutiliser.
+# See `app/type_a.py` for the rationale of this typing: pdfplumber represents
+# each positioned object (rectangle, line, curve) as a heterogeneous
+# dictionary, with no public TypedDict to reuse.
 Obj = dict[str, Any]
 Color = tuple[float, ...]
 Bbox = tuple[float, float, float, float]
 
 # --------------------------------------------------------------------------
-# Seuils — tous ajustables, aucun n'est spécifique à une fixture précise.
+# Thresholds — all adjustable, none is specific to a particular fixture.
 # --------------------------------------------------------------------------
 
-# Nombre minimal de rectangles de la taille d'une case pour qu'une page soit
-# candidate « grille couleur » (en dessous, ce n'est probablement qu'une
-# légende ou une page de garde avec quelques pastilles de couleur).
+# Minimum number of cell-sized rectangles for a page to be a "colour grid"
+# candidate (below that, it is probably just a legend or a cover page with a
+# few colour swatches).
 _MIN_CELLSIZED_RECTS = 150
-# Tolérance de taille pour qu'un rectangle rempli soit considéré comme « une
-# case » plutôt qu'un fragment de trait de symbole (bien plus petit) ou une
-# grosse pastille de légende (bien plus grand).
+# Size tolerance for a filled rectangle to be considered "a cell" rather than
+# a symbol stroke fragment (much smaller) or a large legend swatch (much
+# larger).
 _CELL_SIZE_MIN_RATIO = 0.6
 _CELL_SIZE_MAX_RATIO = 1.35
-# Ratio largeur/hauteur de pas acceptable pour une grille de point de croix
-# (cases proches du carré, jamais un tableau de texte).
+# Acceptable pitch width/height ratio for a cross-stitch grid (cells close to
+# square, never a text table).
 _PITCH_RATIO_MIN = 0.5
 _PITCH_RATIO_MAX = 2.0
-# Un connecteur type B/C authentique observé (§4.1, §4.3) est 100 %
-# vectoriel — aucune image bitmap sur ses pages de grille. `river-and-
-# mountains-laserarts` (type E, catalogue d'icônes réutilisées) porte lui
-# aussi un habillage de rectangles de fond par case sur toutes ses pages de
-# grille (gabarit d'éditeur commun), ce qui le rendrait autrement éligible
-# comme page couleur B/C — seule la présence d'au moins une image sur la
-# page suffit à l'exclure : aucune tolérance, quitte à rater un éventuel
-# logo isolé (repli sûr sur le mode assisté plutôt qu'un faux positif
-# silencieux, règle impérative du `pdf-extraction-specialist`).
+# A genuine type B/C file observed (§4.1, §4.3) is 100% vector — no bitmap
+# image on its grid pages. `river-and-mountains-laserarts` (type E,
+# catalogue of reused icons) also carries a dressing of background rectangles
+# per cell on all its grid pages (common publisher template), which would
+# otherwise make it eligible as a B/C colour page — the presence of at least
+# one image on the page is enough to exclude it: no tolerance, even at the
+# cost of missing an isolated logo (a safe fallback to assisted mode rather
+# than a silent false positive, mandatory rule of the
+# `pdf-extraction-specialist`).
 _MAX_IMAGES_ON_COLOR_PAGE = 0
-# Densité (tracés vectoriels / cases coloriées) au-delà de laquelle la page
-# couleur porte déjà elle-même les symboles (mesuré : ~0.02-0.04 sur les
-# pages « propres » winter-wreath/botanical/cucurbit contre ~0.2-0.5 sur les
-# pages déjà combinées winter-wreath et summer-flight — voir docstring du
-# module). Marge large entre les deux régimes observés.
+# Density (vector paths / coloured cells) beyond which the colour page itself
+# already carries the symbols (measured: ~0.02-0.04 on the "clean"
+# winter-wreath/botanical/cucurbit pages versus ~0.2-0.5 on the already
+# combined winter-wreath and summer-flight pages — see the module docstring).
+# A wide margin between the two observed regimes.
 _SYMBOLS_ALREADY_PRESENT_DENSITY = 0.1
-# Densité minimale sur une page candidate « symboles » pour l'accepter comme
-# calque de superposition plutôt qu'une page annexe sans rapport.
+# Minimum density on a candidate "symbols" page to accept it as an overlay
+# layer rather than an unrelated annex page.
 _MIN_SYMBOL_PAGE_DENSITY = 0.15
-# Un unique remplissage ne peut raisonnablement pas couvrir une fraction
-# aussi énorme d'une grille multicolore : au-delà, c'est un calque de fond
-# (ombrage alterné, aplat de fond de page) plutôt qu'un vrai fil à broder —
-# voir `_exclude_background_color`.
+# A single fill cannot reasonably cover such a huge fraction of a
+# multicoloured grid: beyond it, it is a background layer (alternating
+# shading, page background fill) rather than a real thread to stitch — see
+# `_exclude_background_color`.
 _BACKGROUND_DOMINANCE_RATIO = 0.3
-# Fusion de couleurs quasi identiques (bruit d'arrondi CMJN/RVB) en une
-# seule entrée de palette — bien en dessous de l'écart perceptible le plus
-# faible observé entre deux teintes réellement distinctes dans nos fixtures
-# de référence (~4.4 en Lab).
+# Merging nearly identical colours (CMYK/RGB rounding noise) into a single
+# palette entry — well below the smallest perceptible gap observed between
+# two genuinely distinct shades in our reference fixtures (~4.4 in Lab).
 _COLOR_MERGE_LAB_EPSILON = 2.5
-# Au-delà de cette distance Lab, le rapprochement DMC le plus proche est
-# jugé douteux et signalé (cahier des charges §8.5).
+# Beyond this Lab distance, the nearest DMC match is deemed doubtful and
+# flagged (specification §8.5).
 _UNCERTAIN_COLOR_DISTANCE = 12.0
-# Correctif « cases incertaines » du Lot 5 (suite) : une première piste
-# (desserrer un seuil de différence de bits sur l'ancien bitmap grossier
-# 6x6, construit à partir des quelques points de tracé vectoriel de chaque
-# case, de 3 à 4-6) avait été abandonnée après vérification visuelle sur
-# `botanical-citrus-dmc` — à 4 bits d'écart, elle fusionnait à tort un
-# symbole « + » et un symbole « flèche vers le haut ». Un second diagnostic,
-# plus poussé, a montré pourquoi aucun seuil global sur ce bitmap ne
-# pouvait marcher : sur `cucurbit-dmc`, des cases portant des symboles
-# réellement différents (un rond, une flèche, une croix — confirmé en
-# rendant les cases via `render_symbol_svg`) pouvaient tomber sur le
-# *même* bitmap 6x6 (aliasing pur, faute de résolution avec seulement 4 à 6
-# points de tracé source par case) — un problème d'identité dès le
-# regroupement exact initial, pas seulement de tolérance de fusion.
+# Lot 5 "uncertain cells" fix (continued): a first avenue (loosening a
+# bit-difference threshold on the old coarse 6x6 bitmap, built from each
+# cell's few vector path points, from 3 to 4-6) was abandoned after visual
+# verification on `botanical-citrus-dmc` — at a 4-bit gap, it wrongly merged
+# a "+" symbol and an "up arrow" symbol. A second, deeper diagnosis showed
+# why no global threshold on that bitmap could work: on `cucurbit-dmc`,
+# cells carrying genuinely different symbols (a circle, an arrow, a cross —
+# confirmed by rendering the cells via `render_symbol_svg`) could land on the
+# *same* 6x6 bitmap (pure aliasing, for lack of resolution with only 4 to 6
+# source path points per cell) — an identity problem from the initial exact
+# grouping onwards, not just a merge tolerance issue.
 #
-# `_build_symbol_signatures` construit donc désormais l'empreinte de chaque
-# case (`_raster_fingerprint`) à partir du rendu raster réel de la page de
-# symboles (page rendue une seule fois par fichier via PyMuPDF, cf.
-# `_render_symbol_page_gray`) plutôt que des points de tracé vectoriels —
-# ~256 pixels par case contre ~4-6 points, un risque d'aliasing bien plus
-# faible. `_merge_near_duplicate_signatures` compare ensuite ces empreintes
-# avec une tolérance de petit décalage de quelques pixels (le bruit de
-# redessin observé est bien une translation, pas un changement de forme) et
-# un garde-fou supplémentaire sur l'aire d'encre (une vraie différence de
-# forme, même à faible distance de recouvrement post-décalage, change
-# presque toujours la quantité d'encre — utile par exemple contre un
-# symbole qui serait un sous-ensemble strict d'un autre). Seuils mesurés sur
-# les 4 fixtures DMC (voir `backend/tests/test_type_bc.py`) avant d'être
-# fixés, jamais devinés — voir le détail sous chaque seuil ci-dessous.
+# `_build_symbol_signatures` therefore now builds each cell's fingerprint
+# (`_raster_fingerprint`) from the real raster rendering of the symbol page
+# (page rendered only once per file via PyMuPDF, cf.
+# `_render_symbol_page_gray`) rather than from vector path points — ~256
+# pixels per cell versus ~4-6 points, a much lower aliasing risk.
+# `_merge_near_duplicate_signatures` then compares these fingerprints with a
+# tolerance for a small shift of a few pixels (the observed redraw noise is
+# indeed a translation, not a change of shape) and an extra guard on ink area
+# (a real difference in shape, even at a small post-shift overlap distance,
+# almost always changes the amount of ink — useful for example against a
+# symbol that would be a strict subset of another). Thresholds measured on
+# the 4 DMC fixtures (see `backend/tests/test_type_bc.py`) before being
+# fixed, never guessed — see the details under each threshold below.
 #
-# Troisième diagnostic (régression `winter-wreath-dmc`, 22 % -> 35 % de
-# cases incertaines après le passage au rendu raster) : rendu visuel
-# (`render_symbol_svg`) de plusieurs cases d'une même couleur canonique
-# (vert olive) réparties sur toute la grille, pas seulement près de
-# l'origine — deux cases portant le même symbole (une barre diagonale)
-# tombaient dans deux regroupements différents. La différence n'était pas
-# un fragment de la case voisine (hypothèse initiale) mais **un trait de
-# quadrillage majeur** (une ligne « décade », tracée tous les 10 cases,
-# bien plus épaisse que le quadrillage mineur — mesuré directement sur les
-# `lines` vectorielles de la page : ~0.13-0.27 pt pour le quadrillage
-# mineur contre jusqu'à 1.07-1.34 pt pour les lignes décade, soit jusqu'à
-# ~6 px de large une fois rendu au zoom utilisé ici). Avec l'ancienne marge
-# de 4 px, les cases adjacentes à une ligne décade gardaient un fragment de
-# cette ligne épaisse dans leur recadrage — et seulement elles, ce qui
-# explique pourquoi seule une fraction des cases d'une même couleur
-# basculait dans un second regroupement (confirmé : les positions de grille
-# des cases mal groupées se concentrent near des colonnes/lignes multiples
-# de 10, pas uniformément sur la grille comme l'aurait produit une imprécision
-# de recalage systématique).
+# Third diagnosis (`winter-wreath-dmc` regression, 22% -> 35% uncertain
+# cells after switching to raster rendering): visual rendering
+# (`render_symbol_svg`) of several cells of the same canonical colour (olive
+# green) spread across the whole grid, not just near the origin — two cells
+# carrying the same symbol (a diagonal bar) fell into two different groups.
+# The difference was not a fragment of the neighbouring cell (initial
+# hypothesis) but **a major grid line** (a "decade" line, drawn every 10
+# cells, much thicker than the minor grid — measured directly on the page's
+# vector `lines`: ~0.13-0.27 pt for the minor grid versus up to 1.07-1.34 pt
+# for the decade lines, i.e. up to ~6 px wide once rendered at the zoom used
+# here). With the old 4 px margin, cells adjacent to a decade line kept a
+# fragment of that thick line in their crop — and only those, which explains
+# why only a fraction of the cells of the same colour tipped into a second
+# group (confirmed: the grid positions of the wrongly grouped cells cluster
+# near columns/rows that are multiples of 10, not uniformly across the grid
+# as a systematic registration imprecision would have produced).
 #
-# `river-and-mountains-laserarts` mis à part (type E, jamais éligible ici),
-# les pages symboles de `botanical-citrus-dmc` et `cucurbit-dmc` portent
-# elles aussi des lignes de ~6 px de large au même zoom, mais en bien plus
-# petit nombre (quelques dizaines, probablement le rectangle de bordure et
-# quelques repères, pas un quadrillage décade complet superposé à toute la
-# grille comme sur `winter-wreath-dmc`) — ce qui explique qu'elles n'aient
-# jamais montré ce symptôme avant que `winter-wreath-dmc` ne soit mesuré
-# spécifiquement.
+# `river-and-mountains-laserarts` aside (type E, never eligible here), the
+# symbol pages of `botanical-citrus-dmc` and `cucurbit-dmc` also carry ~6 px
+# wide lines at the same zoom, but far fewer of them (a few dozen, probably
+# the border rectangle and a few landmarks, not a complete decade grid laid
+# over the whole grid as on `winter-wreath-dmc`) — which explains why they
+# never showed this symptom before `winter-wreath-dmc` was measured
+# specifically.
 #
-# `_RASTER_CORE_MARGIN_PX` a donc été élargie de 4 à 5 px et mesurée sur les
-# 4 fixtures DMC de référence (jamais seulement sur celle qui régressait,
-# cf. `CLAUDE.md`) : le taux de cases incertaines de `winter-wreath-dmc`
-# tombe à 17.7 % (611/3460), sous son taux d'avant même le passage au rendu
-# raster (~22 %), tandis que `botanical-citrus-dmc` (0.8 %) et
-# `cucurbit-dmc` (3.7 %) restent identiques à leur valeur mesurée à 4 px —
-# voir `backend/tests/test_type_bc.py`. Un balayage plus large (5 à 10 px)
-# montre un comportement non monotone au-delà de 6 px (la résolution utile
-# commence à se dégrader : `cucurbit-dmc` remonte à 17.7 % d'incertaines à
-# 8 px) — 5 px est la valeur la plus basse qui élimine la contamination
-# mesurée sur `winter-wreath-dmc`, jamais desserrée au-delà de ce qui est
-# nécessaire. Le reliquat de cases incertaines sur `winter-wreath-dmc` après
-# ce correctif (611 cases) vient très majoritairement (592/611, mesuré) de
-# deux teintes sans correspondance DMC proche dans le catalogue communautaire
-# partiel (§8.5) — une incertitude réelle et déjà attendue, indépendante de
-# la reconnaissance de forme, jamais quelque chose que ce correctif doit ou
-# peut faire disparaître.
+# `_RASTER_CORE_MARGIN_PX` was therefore widened from 4 to 5 px and measured
+# on the 4 reference DMC fixtures (never only on the one that regressed, cf.
+# `CLAUDE.md`): the uncertain-cell rate of `winter-wreath-dmc` drops to 17.7%
+# (611/3460), below its rate from before even the switch to raster rendering
+# (~22%), while `botanical-citrus-dmc` (0.8%) and `cucurbit-dmc` (3.7%) stay
+# identical to their value measured at 4 px — see
+# `backend/tests/test_type_bc.py`. A wider sweep (5 to 10 px) shows
+# non-monotonic behaviour beyond 6 px (useful resolution starts to degrade:
+# `cucurbit-dmc` climbs back to 17.7% uncertain at 8 px) — 5 px is the lowest
+# value that eliminates the contamination measured on `winter-wreath-dmc`,
+# never loosened beyond what is necessary. The remaining uncertain cells on
+# `winter-wreath-dmc` after this fix (611 cells) come overwhelmingly
+# (592/611, measured) from two shades with no close DMC match in the partial
+# community catalogue (§8.5) — real and already expected uncertainty,
+# independent of shape recognition, never something this fix must or can
+# make disappear.
 _RASTER_CELL_PX = 24
-"""Résolution du rendu de la page de symboles : pixels par case (zoom non
-uniforme si le pas n'est pas parfaitement carré, cf. `_render_symbol_page_gray`).
-Assez fin pour distinguer des formes de quelques pixels de large, sans
-gonfler inutilement le temps de rendu d'une page entière."""
+"""Rendering resolution of the symbol page: pixels per cell (non-uniform
+zoom if the pitch is not perfectly square, cf. `_render_symbol_page_gray`).
+Fine enough to tell apart shapes a few pixels wide, without needlessly
+inflating the rendering time of a whole page."""
 _RASTER_CORE_MARGIN_PX = 5
-"""Marge retirée de chaque côté de la case avant comparaison — exclut le
-quadrillage imprimé, qui longe exactement la frontière de case et
-fausserait sinon toute comparaison de recouvrement (mesuré : sans cette
-marge, la quasi-totalité des cases d'un même fichier se ressemblent à
-cause du quadrillage commun, pas du symbole).
+"""Margin removed from each side of the cell before comparison — excludes
+the printed grid, which runs exactly along the cell boundary and would
+otherwise distort any overlap comparison (measured: without this margin,
+almost all cells of the same file look alike because of the shared grid,
+not the symbol).
 
-Élargie de 4 à 5 px (Lot 5, troisième correctif « cases incertaines »,
-régression `winter-wreath-dmc`) : à 4 px, les cases adjacentes à une ligne
-de quadrillage « décade » (tracée tous les 10 cases, bien plus épaisse que
-le quadrillage mineur — jusqu'à ~6 px de large une fois rendue) gardaient
-un fragment de cette ligne dans leur recadrage, ce qui faisait dériver leur
-empreinte raster et cassait le regroupement de symboles pourtant
-identiques. Voir le commentaire détaillé au-dessus de `_RASTER_CELL_PX`
-pour le diagnostic complet et les mesures sur les 4 fixtures DMC."""
+Widened from 4 to 5 px (Lot 5, third "uncertain cells" fix,
+`winter-wreath-dmc` regression): at 4 px, cells adjacent to a "decade" grid
+line (drawn every 10 cells, much thicker than the minor grid — up to ~6 px
+wide once rendered) kept a fragment of that line in their crop, which made
+their raster fingerprint drift and broke the grouping of symbols that were
+nonetheless identical. See the detailed comment above `_RASTER_CELL_PX` for
+the full diagnosis and the measurements on the 4 DMC fixtures."""
 _RASTER_SHIFT_TOLERANCE_PX = 4
-"""Décalage maximal (en pixels, dans chaque direction) toléré pour aligner
-deux cases avant de les comparer — absorbe le bruit de sous-position
-observé (redessin légèrement décalé du même symbole), mesuré suffisant sur
-les 4 fixtures DMC de référence sans avoir besoin d'être élargi davantage
-(le desserrer ne réduit plus la distance mesurée sur les cas de test au-delà
-de ce seuil, cf. rapport de tâche)."""
+"""Maximum shift (in pixels, in each direction) tolerated to align two cells
+before comparing them — absorbs the observed sub-position noise (slightly
+shifted redraw of the same symbol), measured as sufficient on the 4
+reference DMC fixtures without needing to be widened further (loosening it
+no longer reduces the distance measured on the test cases beyond this
+threshold, cf. task report)."""
 _RASTER_INK_DELTA = 40
-"""Un pixel est considéré comme de l'encre s'il est au moins ce nombre de
-niveaux de gris plus sombre que la couleur dominante (le fond) de la case —
-jamais un seuil de luminosité absolu : la couleur de fond d'une case type
-B/C n'est pas toujours blanche (page couleur+symboles combinée, cas
-`winter-wreath-dmc`), un seuil absolu classerait alors tout l'aplat de
-couleur comme « encre » et ferait strictement tout fusionner (mesuré :
-52 fusions erronées sur `winter-wreath-dmc` avec un seuil absolu, contre 3
-avec ce seuil relatif à la couleur dominante locale)."""
+"""A pixel counts as ink if it is at least this many grey levels darker than
+the cell's dominant colour (the background) — never an absolute brightness
+threshold: a type B/C cell's background colour is not always white (combined
+colour+symbol page, `winter-wreath-dmc` case), an absolute threshold would
+then classify the whole colour fill as "ink" and make strictly everything
+merge (measured: 52 wrong merges on `winter-wreath-dmc` with an absolute
+threshold, versus 3 with this threshold relative to the local dominant
+colour)."""
 _RASTER_MERGE_MAX_JACCARD = 0.40
-"""Distance de Jaccard (1 - aire d'intersection / aire d'union, meilleur
-décalage toléré) en dessous de laquelle deux cases sont regroupées. Mesuré
-sur `cucurbit-dmc` (positions de grille (24,29)/(22,31)/(23,29)/(21,31), le
-même rond redessiné) : distance maximale 0.369 entre les 4 cases. Mesuré sur
-`botanical-citrus-dmc` (« + » contre flèche) : 0.475. Seuil placé à mi-chemin
-avec une marge confortable des deux côtés — jamais resserré au point de
-casser au moindre écart mineur, jamais desserré au point d'engloutir la
-paire « + »/flèche."""
+"""Jaccard distance (1 - intersection area / union area, best tolerated
+shift) below which two cells are grouped. Measured on `cucurbit-dmc` (grid
+positions (24,29)/(22,31)/(23,29)/(21,31), the same redrawn circle): maximum
+distance 0.369 between the 4 cells. Measured on `botanical-citrus-dmc` ("+"
+versus arrow): 0.475. Threshold placed halfway with a comfortable margin on
+both sides — never tightened to the point of breaking at the slightest minor
+deviation, never loosened to the point of swallowing the "+"/arrow pair."""
 _RASTER_MERGE_MIN_AREA_RATIO = 0.75
-"""Ratio (aire d'encre la plus petite / la plus grande) en dessous duquel
-deux cases ne sont jamais regroupées, même à faible distance de Jaccard —
-garde-fou indépendant contre un vrai symbole qui serait un sous-ensemble
-strict d'un autre (un trait simple contenu dans un symbole plus riche, par
-exemple) : ce cas de figure peut faire chuter la distance de Jaccard sans
-que les deux formes soient réellement identiques, la distance de Jaccard
-seule ne suffit donc pas toujours. Sur les 4 fixtures DMC de référence, les
-regroupements réellement effectués ont tous un ratio d'aire d'au moins
-0.938 (paire « + »/flèche de `botanical-citrus-dmc`, qui elle reste
-distincte grâce à la distance de Jaccard, pas à ce garde-fou) à 0.943 (rond
-redessiné de `cucurbit-dmc`, qui lui fusionne) — ce seuil n'est donc jamais
-le facteur déterminant sur ces quatre fichiers précis, mais reste une
-protection mesurée comme peu coûteuse (elle ne bloque aucun regroupement
-correct observé) contre un cas non couvert par ces fixtures."""
-# Nombre de regroupements distincts / nombre de cases coloriées au-delà
-# duquel la reconnaissance de forme est jugée trop peu fiable pour tout le
-# fichier (repli en type B). Mesuré avec l'empreinte raster (voir plus haut) :
-# 0.006-0.014 sur les trois fixtures DMC à reconnaissance fiable contre
-# 0.290 sur le cas piège `summer-flight-dmc` (illustration richement
-# nuancée, §4.3) — grande marge entre les deux régimes, mais nettement plus
-# bas qu'avec l'ancien bitmap vectoriel (où le même cas piège atteignait
-# ~0.9) : l'empreinte raster, beaucoup moins bruitée, regroupe aussi mieux
-# les fragments de l'illustration nuancée de `summer-flight-dmc` sans pour
-# autant les rendre fiables (194 regroupements distincts sur 668 cases
-# coloriées reste bien plus qu'un catalogue de symboles plausible) — ce
-# seuil a donc dû être resserré en conséquence, pas seulement recopié.
+"""Ratio (smallest ink area / largest) below which two cells are never
+grouped, even at a small Jaccard distance — an independent guard against a
+real symbol that would be a strict subset of another (a simple stroke
+contained in a richer symbol, for example): that situation can make the
+Jaccard distance drop without the two shapes being really identical, so the
+Jaccard distance alone is not always enough. On the 4 reference DMC
+fixtures, the groupings actually made all have an area ratio of at least
+0.938 (`botanical-citrus-dmc`'s "+"/arrow pair, which stays distinct thanks
+to the Jaccard distance, not this guard) to 0.943 (`cucurbit-dmc`'s redrawn
+circle, which does merge) — this threshold is therefore never the deciding
+factor on these four particular files, but remains a protection measured as
+cheap (it blocks no correct grouping observed) against a case not covered by
+these fixtures."""
+# Number of distinct groups / number of coloured cells beyond which shape
+# recognition is deemed too unreliable for the whole file (fallback to
+# type B). Measured with the raster fingerprint (see above): 0.006-0.014 on
+# the three DMC fixtures with reliable recognition versus 0.290 on the
+# `summer-flight-dmc` trap case (richly shaded illustration, §4.3) — a wide
+# margin between the two regimes, but clearly lower than with the old vector
+# bitmap (where the same trap case reached ~0.9): the much less noisy raster
+# fingerprint also groups the fragments of `summer-flight-dmc`'s shaded
+# illustration better without making them reliable (194 distinct groups over
+# 668 coloured cells is still far more than a plausible symbol catalogue) —
+# this threshold therefore had to be tightened accordingly, not just copied.
 _MAX_SIGNATURE_FRAGMENTATION = 0.1
 
 
@@ -266,30 +251,29 @@ class TypeBCResult:
     columns: int
     rows: int
     cells: list[int]
-    """Longueur `columns * rows`, ligne par ligne, (0,0) en haut à gauche en
-    premier. 0 = case vide, n = index 1-based dans `palette`."""
+    """Length `columns * rows`, row by row, (0,0) at the top left first.
+    0 = empty cell, n = 1-based index into `palette`."""
     palette: list[TypeBCPaletteEntry]
     grid_type: Literal["B", "C"]
     confidence: float
     uncertain_cells: list[int] = field(default_factory=list)
-    """Index 0-based dans `cells` des cases dont la couleur et/ou le symbole
-    est incertain — jamais une case fausse laissée sans signalement (règle
-    impérative du `pdf-extraction-specialist`)."""
+    """0-based indices into `cells` of the cells whose colour and/or symbol
+    is uncertain — never a wrong cell left unflagged (mandatory rule of the
+    `pdf-extraction-specialist`)."""
     warnings: list[DetectionWarning] = field(default_factory=list)
-    """Jamais un texte déjà composé en français : un code de message et ses
-    paramètres, traduits côté client (`import.warning.<code>`, audit des
-    traductions du Lot 8)."""
+    """Never text already composed in French: a message code and its
+    parameters, translated on the client (`import.warning.<code>`, Lot 8
+    translation audit)."""
 
 
 def detect_type_bc(pdf_path: Path) -> TypeBCResult | None:
-    """Renvoie `None` (sans jamais lever) si le PDF ne ressemble pas à un
-    export type B/C — voir le module pour le détail de la détection."""
+    """Return `None` (never raising) if the PDF does not look like a type B/C
+    export — see the module for the details of the detection."""
     try:
-        # Un export type A authentique (police de symboles embarquée, testé
-        # sur les six fixtures de référence) ne doit jamais être également
-        # proposé comme B/C — éviter tout double résultat concurrent pour un
-        # même fichier (§4.4 : la typologie est une classification, pas un
-        # empilement de suppositions).
+        # A genuine type A export (embedded symbol font, tested on the six
+        # reference fixtures) must never also be offered as B/C — avoid any
+        # competing double result for the same file (§4.4: the typology is a
+        # classification, not a stack of guesses).
         if detect_type_a(pdf_path) is not None:
             return None
 
@@ -300,11 +284,11 @@ def detect_type_bc(pdf_path: Path) -> TypeBCResult | None:
             color_page = _select_color_page(infos)
             if color_page is None:
                 return None
-            # `_select_color_page` ne renvoie que des pages où ces trois
-            # valeurs sont déjà garanties non `None` (filtre sur
-            # `len(cellsized_rects) >= _MIN_CELLSIZED_RECTS`, qui implique un
-            # pas détecté, et `border is not None`) — assertions pour que
-            # mypy le sache aussi, jamais pour masquer un cas réel.
+            # `_select_color_page` only returns pages where these three
+            # values are already guaranteed non-`None` (filter on
+            # `len(cellsized_rects) >= _MIN_CELLSIZED_RECTS`, which implies a
+            # detected pitch, and `border is not None`) — assertions so mypy
+            # knows it too, never to hide a real case.
             assert color_page.border is not None
             assert color_page.pitch_x is not None
             assert color_page.pitch_y is not None
@@ -350,15 +334,14 @@ def detect_type_bc(pdf_path: Path) -> TypeBCResult | None:
             symbol_page_number: int | None = None
             if grid_type == "C" and symbol_page is not None:
                 symbol_page_number = symbol_page.index + 1
-                # Réutiliser telle quelle la géométrie de la page couleur
-                # quand la page de symboles est la même page (cas
-                # `winter-wreath-dmc`/`summer-flight-dmc`, §4.3) : recalculer
-                # un pas à partir d'une bordure arrondie y introduirait un
-                # écart infime mais systématique avec la grille déjà utilisée
-                # pour extraire la couleur, qui fragmente artificiellement
-                # les signatures de forme (mesuré : x4 le nombre de
-                # regroupements obtenus). Le recalage n'a de sens que pour
-                # une page réellement distincte.
+                # Reuse the colour page's geometry as is when the symbol page
+                # is the same page (`winter-wreath-dmc`/`summer-flight-dmc`
+                # case, §4.3): recomputing a pitch from a rounded border
+                # would introduce a tiny but systematic gap with the grid
+                # already used to extract the colour, which artificially
+                # fragments the shape signatures (measured: x4 the number of
+                # groups obtained). Registration only makes sense for a
+                # genuinely distinct page.
                 sym_grid = grid if symbol_page is color_page else _symbol_grid_for(
                     symbol_page, grid
                 )
@@ -366,10 +349,10 @@ def detect_type_bc(pdf_path: Path) -> TypeBCResult | None:
                     symbol_page, sym_grid, set(cell_color_id), pdf_path
                 )
                 if not any(cell_signature.values()):
-                    # Densité mesurée suffisante mais aucune forme exploitable
-                    # regroupée par case (recalage hors tolérance, par
-                    # exemple) : ne jamais prétendre une reconnaissance de
-                    # symbole qu'on n'a pas réellement — repli honnête en B.
+                    # Measured density sufficient but no usable shape grouped
+                    # per cell (registration out of tolerance, for example):
+                    # never claim a symbol recognition we do not really have
+                    # — honest fallback to B.
                     grid_type = "B"
                     warnings.append(DetectionWarning(code="type_bc.symbol_page_unusable"))
                     confidence -= 0.2
@@ -377,18 +360,16 @@ def detect_type_bc(pdf_path: Path) -> TypeBCResult | None:
                     n_clusters = len(set(cell_signature.values()))
                     n_colored = len(cell_signature)
                     if n_clusters / n_colored > _MAX_SIGNATURE_FRAGMENTATION:
-                        # Beaucoup plus de signatures distinctes que
-                        # plausible pour un catalogue de symboles réel
-                        # (observé : illustration très richement nuancée sur
-                        # `summer-flight-dmc`, où chaque case porte en plus
-                        # du symbole plusieurs fragments d'ombrage qui font
-                        # dériver sa signature) — la reconnaissance de forme
-                        # n'est pas assez fiable pour l'ensemble du fichier :
-                        # repli honnête en B plutôt qu'une « fausse » palette
-                        # de plusieurs centaines d'entrées inutilisable
-                        # (cahier des charges §4.4 : type B quand la
-                        # confiance de reconnaissance de forme est trop
-                        # basse pour l'ensemble du fichier).
+                        # Far more distinct signatures than plausible for a
+                        # real symbol catalogue (observed: very richly shaded
+                        # illustration on `summer-flight-dmc`, where each cell
+                        # carries, besides the symbol, several shading
+                        # fragments that make its signature drift) — shape
+                        # recognition is not reliable enough for the whole
+                        # file: honest fallback to B rather than an unusable
+                        # "fake" palette of several hundred entries
+                        # (specification §4.4: type B when shape recognition
+                        # confidence is too low for the whole file).
                         grid_type = "B"
                         cell_signature = {}
                         warnings.append(
@@ -425,15 +406,15 @@ def detect_type_bc(pdf_path: Path) -> TypeBCResult | None:
                 uncertain_cells=uncertain_cells,
                 warnings=warnings,
             )
-    except Exception:  # pragma: no cover - filet de sécurité, voir docstring
-        # Ne jamais lever : un PDF inattendu doit simplement ne pas être
-        # reconnu comme type B/C plutôt que faire échouer tout l'import
-        # (règle impérative « ne jamais bloquer un import »).
+    except Exception:  # pragma: no cover - safety net, see docstring
+        # Never raise: an unexpected PDF must simply not be recognised as
+        # type B/C rather than make the whole import fail (mandatory rule
+        # "never block an import").
         return None
 
 
 # --------------------------------------------------------------------------
-# Analyse structurelle par page
+# Per-page structural analysis
 # --------------------------------------------------------------------------
 
 
@@ -465,13 +446,12 @@ def _analyze_page(page: Page) -> _PageInfo:
             for r in filled_rects
             if min_w <= (r["x1"] - r["x0"]) <= max_w and min_h <= (r["bottom"] - r["top"]) <= max_h
         ]
-    # La bordure est détectée indépendamment du pas de case : une page de
-    # symboles pure (fragments de traits, pas de grands aplats de couleur)
-    # n'a pas de pas de case fiable dérivable de ses rectangles (ses
-    # rectangles remplis, quand il y en a, sont de petits fragments de
-    # trait, pas des cases), mais porte quand même le même cadre de grille
-    # que la page couleur — indispensable pour la sélectionner comme page de
-    # symboles à superposer (`_select_symbol_page`).
+    # The border is detected independently of the cell pitch: a pure symbol
+    # page (stroke fragments, no large colour fills) has no reliable cell
+    # pitch derivable from its rectangles (its filled rectangles, when there
+    # are any, are small stroke fragments, not cells), but still carries the
+    # same grid frame as the colour page — essential to select it as the
+    # symbol page to overlay (`_select_symbol_page`).
     border = _detect_border(page)
     border_is_fallback = False
     if border is None and len(cellsized_rects) >= _MIN_CELLSIZED_RECTS:
@@ -519,10 +499,10 @@ def _estimate_pitch_from_rects(filled_rects: list[Obj]) -> tuple[float, float] |
 
 
 # --------------------------------------------------------------------------
-# Détection de la bordure de grille (étendue totale, pas seulement la zone
-# brodée : une grille imprimée laisse presque toujours des cases de fond non
-# brodées, dont l'étendue des rectangles de couleur seule sous-estimerait la
-# taille réelle — voir docstring du module).
+# Grid border detection (total extent, not just the stitched area: a printed
+# grid almost always leaves unstitched background cells, whose size the
+# extent of the colour rectangles alone would underestimate — see the module
+# docstring).
 # --------------------------------------------------------------------------
 
 
@@ -551,13 +531,13 @@ def _segment_coverage(
 
 
 def _detect_border(page: Page, tol: float = 1.5) -> Bbox | None:
-    """Bordure externe du cadre de grille imprimé : soit un unique
-    rectangle non rempli mais tracé (`stroke`), soit quatre côtés de même
-    épaisseur de trait formant un rectangle fermé parmi les `lines` de la
-    page. Les deux représentations sont observées selon le fichier (voir
-    tests) — jamais supposées interchangeables sans vérification
-    géométrique (une simple co-occurrence de 2 lignes de bord de page, par
-    exemple des flèches de repère, n'est pas une bordure)."""
+    """Outer border of the printed grid frame: either a single unfilled but
+    stroked rectangle (`stroke`), or four sides of the same stroke width
+    forming a closed rectangle among the page's `lines`. Both
+    representations are observed depending on the file (see tests) — never
+    assumed interchangeable without geometric verification (a mere
+    co-occurrence of 2 page-edge lines, landmark arrows for example, is not a
+    border)."""
     page_area = page.width * page.height
     best: tuple[float, Bbox] | None = None
 
@@ -621,15 +601,15 @@ def _detect_border(page: Page, tol: float = 1.5) -> Bbox | None:
 
 
 # --------------------------------------------------------------------------
-# Sélection de la page couleur et, si nécessaire, de la page symboles
+# Selecting the colour page and, if needed, the symbol page
 # --------------------------------------------------------------------------
 
 
 def _select_color_page(infos: list[_PageInfo]) -> _PageInfo | None:
-    """La page couleur candidate : celle qui pave le plus grand nombre de
-    cases avec des rectangles remplis de la taille d'une case, hors pages
-    dominées par des images bitmap (type E, jamais une vraie grille B/C —
-    voir docstring du module)."""
+    """The candidate colour page: the one that tiles the largest number of
+    cells with filled cell-sized rectangles, excluding pages dominated by
+    bitmap images (type E, never a real B/C grid — see the module
+    docstring)."""
     candidates = [
         info
         for info in infos
@@ -643,15 +623,14 @@ def _select_color_page(infos: list[_PageInfo]) -> _PageInfo | None:
 
 
 def _page_density(info: _PageInfo) -> float:
-    """Tracés vectoriels (courbes) rapportés au nombre de cases coloriées —
-    voir les seuils `_SYMBOLS_ALREADY_PRESENT_DENSITY` /
-    `_MIN_SYMBOL_PAGE_DENSITY` en tête de module pour l'usage. Les courbes
-    seules (pas les lignes) sont le signal le plus discriminant mesuré sur
-    les quatre fixtures de référence : elles portent presque exclusivement
-    les parties arrondies des symboles, quasi absentes d'une page couleur
-    propre, alors que les lignes incluent aussi le quadrillage décimal
-    (présent en quantité comparable sur toutes les pages, coloriées ou
-    non — un signal beaucoup moins discriminant)."""
+    """Vector paths (curves) relative to the number of coloured cells — see
+    the `_SYMBOLS_ALREADY_PRESENT_DENSITY` / `_MIN_SYMBOL_PAGE_DENSITY`
+    thresholds at the top of the module for their use. Curves alone (not
+    lines) are the most discriminating signal measured on the four reference
+    fixtures: they carry almost exclusively the rounded parts of symbols,
+    nearly absent from a clean colour page, whereas lines also include the
+    decimal grid (present in comparable quantity on all pages, coloured or
+    not — a much less discriminating signal)."""
     n_cells = max(1, len(info.cellsized_rects))
     return len(info.curves) / n_cells
 
@@ -659,10 +638,10 @@ def _page_density(info: _PageInfo) -> float:
 def _select_symbol_page(
     infos: list[_PageInfo], color_page: _PageInfo
 ) -> tuple[_PageInfo | None, Literal["B", "C"], DetectionWarning | None]:
-    """Décide, par mesure et jamais par position de page supposée fixe
-    (§4.3 : cas piège `summer-flight-dmc`), si la page couleur porte déjà
-    elle-même les symboles, si une page voisine doit être superposée, ou si
-    aucun symbole exploitable n'est disponible (repli type B)."""
+    """Decide, by measurement and never by an assumed fixed page position
+    (§4.3: `summer-flight-dmc` trap case), whether the colour page itself
+    already carries the symbols, whether a neighbouring page must be
+    overlaid, or whether no usable symbol is available (type B fallback)."""
     own_density = _page_density(color_page)
     if own_density >= _SYMBOLS_ALREADY_PRESENT_DENSITY:
         return color_page, "C", None
@@ -695,7 +674,7 @@ def _select_symbol_page(
 
 
 # --------------------------------------------------------------------------
-# Géométrie de grille et extraction de la couleur par case
+# Grid geometry and per-cell colour extraction
 # --------------------------------------------------------------------------
 
 
@@ -721,9 +700,9 @@ class _GridGeometry:
 
 
 def _normalize_color(raw: Any) -> Color:
-    """`non_stroking_color` peut être un scalaire (niveau de gris), un
-    triplet RVB ou un quadruplet CMJN selon l'espace colorimétrique du PDF
-    (cahier des charges §8.4) — toujours ramené à un tuple arrondi."""
+    """`non_stroking_color` can be a scalar (grey level), an RGB triplet or a
+    CMYK quadruplet depending on the PDF's colour space (specification §8.4)
+    — always reduced to a rounded tuple."""
     if isinstance(raw, int | float):
         value = round(float(raw), 4)
         return (value, value, value)
@@ -734,20 +713,19 @@ def _normalize_color(raw: Any) -> Color:
 
 @lru_cache(maxsize=4096)
 def _cmyk_to_rgb_via_mupdf(cmyk: tuple[float, float, float, float]) -> tuple[float, float, float]:
-    """Convertit du CMJN vers du RVB via la conversion colorimétrique de
-    PyMuPDF (déjà une dépendance du projet, §7.2 du cahier des charges) au
-    lieu de la formule naïve `R=(1-C)(1-K)` recommandée en repli par la
-    spécification PDF. Mesuré (Lot 5, correctif cases incertaines) : sur les
-    grilles vectorielles DMC, une bonne partie des remplissages sont en CMJN,
-    et la formule naïve sursature nettement les teintes obtenues par mélange
-    cyan+jaune (verts en particulier) — jusqu'à ~25 points de distance Lab
-    d'écart avec la couleur réellement rendue pour une même teinte, largement
-    au-dessus de `_UNCERTAIN_COLOR_DISTANCE`, ce qui faisait basculer à tort
-    la quasi-totalité des cases d'une couleur en incertaines au rapprochement
-    DMC (confirmé en comparant les deux formules à la couleur réellement
-    rendue par PyMuPDF sur `botanical-citrus-dmc` et `cucurbit-dmc`). Mis en
-    cache : le nombre de teintes CMJN distinctes par fichier est de l'ordre
-    de la dizaine, très inférieur au nombre de cases."""
+    """Convert CMYK to RGB via PyMuPDF's colour conversion (already a project
+    dependency, specification §7.2) instead of the naive `R=(1-C)(1-K)`
+    formula recommended as a fallback by the PDF specification. Measured
+    (Lot 5, uncertain cells fix): on DMC vector grids, a good share of fills
+    are in CMYK, and the naive formula clearly oversaturates shades obtained
+    by mixing cyan+yellow (greens in particular) — up to ~25 Lab distance
+    points away from the actually rendered colour for the same shade, far
+    above `_UNCERTAIN_COLOR_DISTANCE`, which wrongly tipped almost all cells
+    of a colour into uncertain during DMC matching (confirmed by comparing
+    both formulas with the colour actually rendered by PyMuPDF on
+    `botanical-citrus-dmc` and `cucurbit-dmc`). Cached: the number of
+    distinct CMYK shades per file is around ten, far below the number of
+    cells."""
     c, m, y, k = (max(0.0, min(1.0, v)) for v in cmyk)
     samples = bytes([round(c * 255), round(m * 255), round(y * 255), round(k * 255)])
     pixmap_cmyk = pymupdf.Pixmap(pymupdf.csCMYK, 1, 1, samples, False)  # type: ignore[no-untyped-call]
@@ -757,7 +735,7 @@ def _cmyk_to_rgb_via_mupdf(cmyk: tuple[float, float, float, float]) -> tuple[flo
 
 
 def _color_to_rgb(color: Color) -> tuple[float, float, float]:
-    """Convertit une couleur normalisée (RVB, CMJN ou gris) en RVB 0-1."""
+    """Convert a normalised colour (RGB, CMYK or grey) to 0-1 RGB."""
     if len(color) == 3:
         return color[0], color[1], color[2]
     if len(color) == 4:
@@ -772,13 +750,12 @@ def _color_to_rgb(color: Color) -> tuple[float, float, float]:
 def _build_color_grid(
     color_page: _PageInfo, grid: _GridGeometry
 ) -> dict[tuple[int, int], Color]:
-    """Couleur par case, dans l'ordre de dessin du PDF (`page.rects` est déjà
-    dans l'ordre du flux de contenu) : quand plusieurs rectangles se
-    superposent exactement à la même case (observé : un aplat de fond sous
-    le remplissage réel de la case, cf. `_exclude_background_color`), le
-    dernier dessiné est visuellement celui qui compte — jamais le plus
-    petit en surface (heuristique du type A, invalide ici car les deux
-    rectangles font ici la même taille)."""
+    """Colour per cell, in the PDF's drawing order (`page.rects` is already
+    in content-stream order): when several rectangles overlap exactly on the
+    same cell (observed: a background fill under the cell's real fill, cf.
+    `_exclude_background_color`), the last one drawn is visually the one
+    that counts — never the smallest in area (type A heuristic, invalid here
+    since both rectangles are the same size)."""
     border = color_page.border
     assert border is not None
     margin_x = grid.pitch_x * 0.5
@@ -802,13 +779,13 @@ def _build_color_grid(
 def _exclude_background_color(
     cells: dict[tuple[int, int], Color], total_grid_cells: int
 ) -> tuple[dict[tuple[int, int], Color], DetectionWarning | None]:
-    """Exclut une couleur qui domine une fraction implausible de la grille
-    entière (observé : un aplat de fond neutre appliqué sous chaque case,
-    coloriée ou non, sur `summer-flight-dmc` — jamais un vrai fil à broder
-    de motif multicolore ne couvre une telle proportion). Détection par
-    fréquence, jamais par une valeur de couleur codée en dur : ne se
-    déclenche sur aucune des trois autres fixtures de référence, où aucune
-    couleur ne dépasse ~5 % des cases."""
+    """Exclude a colour that dominates an implausible fraction of the whole
+    grid (observed: a neutral background fill applied under every cell,
+    coloured or not, on `summer-flight-dmc` — no real thread of a
+    multicoloured pattern ever covers such a proportion). Detection by
+    frequency, never by a hard-coded colour value: it triggers on none of the
+    three other reference fixtures, where no colour exceeds ~5% of the
+    cells."""
     if not cells:
         return cells, None
     counts = Counter(cells.values())
@@ -824,18 +801,17 @@ def _exclude_background_color(
 
 
 # --------------------------------------------------------------------------
-# Fusion des couleurs quasi identiques (bruit d'arrondi CMJN/RVB)
+# Merging nearly identical colours (CMYK/RGB rounding noise)
 # --------------------------------------------------------------------------
 
 
 def _cluster_colors(
     cells: dict[tuple[int, int], Color]
 ) -> tuple[dict[Color, int], list[tuple[float, float, float]]]:
-    """Regroupe les couleurs brutes distinctes par proximité Lab
-    (`_COLOR_MERGE_LAB_EPSILON`) en couleurs canoniques. Renvoie la table de
-    correspondance couleur brute -> index canonique et la liste des
-    couleurs canoniques (moyenne RVB des couleurs regroupées, pondérée par
-    leur nombre de cases)."""
+    """Group the distinct raw colours by Lab proximity
+    (`_COLOR_MERGE_LAB_EPSILON`) into canonical colours. Returns the raw
+    colour -> canonical index mapping table and the list of canonical colours
+    (RGB mean of the grouped colours, weighted by their number of cells)."""
     raw_counts = Counter(cells.values())
     raw_colors = sorted(raw_counts, key=lambda c: -raw_counts[c])
     raw_rgb = {c: _color_to_rgb(c) for c in raw_colors}
@@ -845,7 +821,7 @@ def _cluster_colors(
     canonical_weight: list[int] = []
     canonical_of: dict[Color, int] = {}
 
-    for raw in raw_colors:  # du plus fréquent au moins fréquent
+    for raw in raw_colors:  # from most to least frequent
         best_index: int | None = None
         best_distance = float("inf")
         for index, rgb in enumerate(canonical_rgb):
@@ -875,21 +851,20 @@ def _cluster_colors(
 
 
 # --------------------------------------------------------------------------
-# Reconnaissance de symboles vectoriels (page symboles, superposée ou non)
+# Vector symbol recognition (symbol page, overlaid or not)
 # --------------------------------------------------------------------------
 
 
 def _symbol_grid_for(symbol_page: _PageInfo, grid: _GridGeometry) -> _GridGeometry:
-    """Géométrie de grille à utiliser pour lire les tracés de `symbol_page` :
-    même nombre de colonnes/lignes que la page couleur (jugé plus fiable,
-    dérivé des rectangles de case plutôt que des tracés), mais un pas et une
-    origine recalés sur la bordure propre de `symbol_page` plutôt que
-    réutilisés tels quels. Nécessaire en pratique : les deux pages d'un même
-    PDF ne partagent ni exactement la même origine ni exactement la même
-    échelle (écarts de quelques points mesurés sur les fixtures de
-    référence, qui s'accumulent sur la largeur de la grille sans ce
-    recalage) — c'est le « réglage fin de recalage » prévu par le cahier des
-    charges §7.2 étape 5."""
+    """Grid geometry to use for reading `symbol_page`'s paths: same number
+    of columns/rows as the colour page (deemed more reliable, derived from
+    the cell rectangles rather than the paths), but a pitch and an origin
+    re-registered on `symbol_page`'s own border rather than reused as is.
+    Needed in practice: the two pages of the same PDF share neither exactly
+    the same origin nor exactly the same scale (gaps of a few points measured
+    on the reference fixtures, which accumulate across the grid's width
+    without this registration) — this is the "fine registration adjustment"
+    planned by specification §7.2 step 5."""
     if symbol_page.border is None:
         return grid
     b = symbol_page.border
@@ -905,16 +880,15 @@ def _symbol_grid_for(symbol_page: _PageInfo, grid: _GridGeometry) -> _GridGeomet
 
 
 def _is_grid_ruling(line: Obj, grid: _GridGeometry, tol_ratio: float = 0.15) -> bool:
-    """Un trait du quadrillage décimal (ou de sa réglure mineure) est
-    aligné exactement sur une frontière de case, contrairement à un trait de
-    symbole qui se trouve à l'intérieur d'une case. Filtré uniquement pour
-    les `lines` (axe-alignées par construction) — jamais pour les courbes,
-    qui ne sont jamais utilisées pour tracer un quadrillage rectiligne.
+    """A decimal grid line (or its minor ruling) is aligned exactly on a
+    cell boundary, unlike a symbol stroke, which lies inside a cell. Filtered
+    only for `lines` (axis-aligned by construction) — never for curves, which
+    are never used to draw a rectilinear grid.
 
-    La règle elle-même vit dans `app/grid_lines.py` depuis le Lot 9 (le
-    type A en a besoin pour ses points arrière) ; l'appel ci-dessous lui
-    passe la bbox, exactement comme la version d'origine du Lot 5, et sans
-    critère de longueur — le comportement type B/C est inchangé."""
+    The rule itself lives in `app/grid_lines.py` since Lot 9 (type A needs
+    it for its backstitches); the call below passes it the bbox, exactly like
+    the original Lot 5 version, and with no length criterion — type B/C
+    behaviour is unchanged."""
     return is_grid_ruling(
         float(line["x0"]),
         float(line["top"]),
@@ -934,41 +908,37 @@ def _build_symbol_signatures(
     colored_cells: set[tuple[int, int]],
     pdf_path: Path,
 ) -> tuple[dict[tuple[int, int], int], dict[int, Bbox]]:
-    """Signature de forme par case : une empreinte issue du rendu raster
-    réel de la case (voir `_raster_fingerprint`), jamais d'un bitmap dérivé
-    des points de tracé vectoriels — permet de regrouper les cases portant
-    le même symbole sans connaître à l'avance le catalogue de symboles
-    possibles (règle impérative : jamais de liste de symboles figée en dur,
-    cf. Lot 4).
+    """Shape signature per cell: a fingerprint from the cell's real raster
+    rendering (see `_raster_fingerprint`), never from a bitmap derived from
+    vector path points — makes it possible to group the cells carrying the
+    same symbol without knowing the catalogue of possible symbols in advance
+    (mandatory rule: never a hard-coded symbol list, cf. Lot 4).
 
-    Une première version de ce module dérivait cette empreinte d'un bitmap
-    grossier (grille 6x6) construit directement à partir des quelques points
-    de tracé vectoriels de la case. Diagnostic (Lot 5, second correctif
-    « cases incertaines ») : sur `cucurbit-dmc`, ce bitmap grossier
-    *aliasait* parfois des symboles réellement différents (confirmé
-    visuellement via `render_symbol_svg` : un rond, une flèche et une croix
-    partageaient le même bitmap 6x6, faute de résolution suffisante avec
-    aussi peu de points source) — un problème d'*identité* dès le
-    regroupement exact initial, en amont de toute tolérance de fusion.
-    Utiliser directement le rendu raster (bien plus riche : ~256 pixels
-    contre ~4-6 points vectoriels par case) élimine ce risque d'aliasing à
-    la source.
+    A first version of this module derived that fingerprint from a coarse
+    bitmap (6x6 grid) built directly from the cell's few vector path points.
+    Diagnosis (Lot 5, second "uncertain cells" fix): on `cucurbit-dmc`, that
+    coarse bitmap sometimes *aliased* genuinely different symbols (confirmed
+    visually via `render_symbol_svg`: a circle, an arrow and a cross shared
+    the same 6x6 bitmap, for lack of sufficient resolution with so few source
+    points) — an *identity* problem from the initial exact grouping onwards,
+    upstream of any merge tolerance. Using the raster rendering directly (far
+    richer: ~256 pixels versus ~4-6 vector points per cell) eliminates this
+    aliasing risk at the source.
 
-    Les tracés vectoriels (rectangles/courbes/lignes hors quadrillage)
-    restent utilisés, mais seulement pour deux choses indépendantes de la
-    forme exacte : détecter *si* une case porte un symbole (case vide vs
-    case marquée) et fournir la bbox réelle affichée par l'assistant
-    (`SymbolGlyphLocation`, coordonnées PDF précises, plus fidèles qu'un
-    recadrage dérivé du rendu raster). Index spatial par case avant tout
-    traitement (comme `_build_rect_index` de `app/type_a.py`) : indispensable
-    ici aussi — `summer-flight-dmc` porte plus de 10 000 rectangles et 2 000
-    tracés par page, une comparaison naïve tracé x case serait bien trop
-    lente.
+    Vector paths (rectangles/curves/non-grid lines) are still used, but only
+    for two things independent of the exact shape: detecting *whether* a
+    cell carries a symbol (empty cell vs marked cell) and providing the real
+    bbox displayed by the wizard (`SymbolGlyphLocation`, precise PDF
+    coordinates, more faithful than a crop derived from the raster
+    rendering). Spatial index per cell before any processing (like
+    `_build_rect_index` in `app/type_a.py`): essential here too —
+    `summer-flight-dmc` carries more than 10,000 rectangles and 2,000 paths
+    per page, a naive path x cell comparison would be far too slow.
 
-    `sym_grid` est la géométrie déjà recalée sur `symbol_page` (voir
-    `_symbol_grid_for` et son site d'appel) — jamais recalculée ici, pour
-    garder un seul endroit qui décide entre réutiliser la grille couleur
-    telle quelle ou recaler sur la bordure propre de la page symboles."""
+    `sym_grid` is the geometry already re-registered on `symbol_page` (see
+    `_symbol_grid_for` and its call site) — never recomputed here, to keep a
+    single place that decides between reusing the colour grid as is or
+    re-registering on the symbol page's own border."""
     cellsized_ids = {id(r) for r in symbol_page.cellsized_rects}
 
     buckets: dict[tuple[int, int], list[Obj]] = defaultdict(list)
@@ -983,9 +953,9 @@ def _build_symbol_signatures(
             continue
         _bucket_object(line, sym_grid, buckets)
 
-    # Bbox vectorielle des cases marquées (coordonnées PDF, pour
-    # `SymbolGlyphLocation`) — sert aussi de test de présence (case vide vs
-    # marquée), indépendant de l'identité exacte de la forme.
+    # Vector bbox of the marked cells (PDF coordinates, for
+    # `SymbolGlyphLocation`) — also serves as a presence test (empty vs
+    # marked cell), independent of the shape's exact identity.
     vector_bbox: dict[tuple[int, int], Bbox] = {}
     for pos in colored_cells:
         objs = buckets.get(pos)
@@ -1026,15 +996,14 @@ def _build_symbol_signatures(
 def _render_symbol_page_gray(
     pdf_path: Path, page_number: int, sym_grid: _GridGeometry
 ) -> tuple[Image.Image, int, int]:
-    """Rend toute la page de symboles en niveaux de gris, une seule fois par
-    fichier, à une résolution où chaque case de `sym_grid` occupe exactement
-    `_RASTER_CELL_PX` x `_RASTER_CELL_PX` pixels (zoom non uniforme si le pas
-    n'est pas parfaitement carré). Rendre la page entière plutôt qu'un
-    fragment par case est indispensable pour rester dans le budget de temps
-    (cahier des charges §10) : `_merge_near_duplicate_signatures` ne compare
-    ensuite que les quelques dizaines de bitmaps *distincts* observés dans le
-    fichier, jamais chacune des cases coloriées (qui peuvent se compter en
-    milliers)."""
+    """Render the whole symbol page in greyscale, only once per file, at a
+    resolution where each cell of `sym_grid` takes exactly `_RASTER_CELL_PX`
+    x `_RASTER_CELL_PX` pixels (non-uniform zoom if the pitch is not
+    perfectly square). Rendering the whole page rather than one fragment per
+    cell is essential to stay within the time budget (specification §10):
+    `_merge_near_duplicate_signatures` then only compares the few dozen
+    *distinct* bitmaps observed in the file, never each of the coloured cells
+    (which can number in the thousands)."""
     zoom_x = _RASTER_CELL_PX / sym_grid.pitch_x
     zoom_y = _RASTER_CELL_PX / sym_grid.pitch_y
     matrix = pymupdf.Matrix(zoom_x, zoom_y)  # type: ignore[no-untyped-call]
@@ -1054,18 +1023,18 @@ def _cell_ink_grid(
     pos: tuple[int, int],
     pad: int,
 ) -> list[list[int]]:
-    """Grille d'encre binaire (0/1) pour la case `pos`, recadrée avec une
-    marge de `_RASTER_CORE_MARGIN_PX` (exclut le quadrillage imprimé, cf.
-    `_RASTER_CORE_MARGIN_PX`) et un supplément `pad` de chaque côté pour
-    permettre la recherche de décalage (`_best_shifted_jaccard_distance`).
-    Les pixels hors de l'image (case près du bord de page) valent blanc,
-    jamais noir : `Image.crop` remplirait sinon la zone hors bornes en noir,
-    ce qui ferait passer un simple bord de page pour de l'encre.
+    """Binary ink grid (0/1) for cell `pos`, cropped with a
+    `_RASTER_CORE_MARGIN_PX` margin (excludes the printed grid, cf.
+    `_RASTER_CORE_MARGIN_PX`) and an extra `pad` on each side to allow the
+    shift search (`_best_shifted_jaccard_distance`). Pixels outside the
+    image (cell near the page edge) count as white, never black:
+    `Image.crop` would otherwise fill the out-of-bounds area with black,
+    which would make a mere page edge pass for ink.
 
-    Seuil d'encre relatif à la couleur dominante *de cette case précise*
-    (`_RASTER_INK_DELTA`), jamais un seuil de luminosité absolu — voir sa
-    docstring pour la raison (page couleur+symboles combinée où le fond
-    n'est pas blanc, cas `winter-wreath-dmc`)."""
+    Ink threshold relative to the dominant colour *of that particular cell*
+    (`_RASTER_INK_DELTA`), never an absolute brightness threshold — see its
+    docstring for the reason (combined colour+symbol page where the
+    background is not white, `winter-wreath-dmc` case)."""
     row0, col0 = pos
     width, height = gray.size
     x0 = origin_px + col0 * _RASTER_CELL_PX + _RASTER_CORE_MARGIN_PX - pad
@@ -1081,9 +1050,9 @@ def _cell_ink_grid(
         for x in range(size):
             px = x0 + x
             if 0 <= px < width:
-                # Image en mode "L" (niveaux de gris) : la valeur est
-                # toujours un entier malgré le type large des stubs PIL
-                # (partagé avec les tuples RVB des autres modes).
+                # "L" mode (greyscale) image: the value is always an integer
+                # despite the broad type of PIL's stubs (shared with the RGB
+                # tuples of the other modes).
                 values[y][x] = int(pixels[px, py])  # type: ignore[arg-type]
     background = Counter(v for row in values for v in row).most_common(1)[0][0]
     return [[1 if background - v >= _RASTER_INK_DELTA else 0 for v in row] for row in values]
@@ -1092,13 +1061,13 @@ def _cell_ink_grid(
 def _raster_fingerprint(
     gray: Image.Image, origin_px: int, origin_py: int, pos: tuple[int, int]
 ) -> int:
-    """Empreinte entière (un bit par pixel d'encre) du rendu raster réel
-    d'une case, sans marge de décalage — clé de regroupement exact utilisée
-    par `_build_symbol_signatures` (deux cases dont le rendu est identique
-    au pixel près obtiennent la même empreinte). Bien plus fin que l'ancien
-    bitmap 6x6 dérivé des points de tracé (voir la docstring de
-    `_build_symbol_signatures`), donc beaucoup moins sujet à l'aliasing de
-    deux symboles réellement différents sur la même empreinte."""
+    """Integer fingerprint (one bit per ink pixel) of a cell's real raster
+    rendering, with no shift margin — the exact grouping key used by
+    `_build_symbol_signatures` (two cells whose rendering is identical to the
+    pixel get the same fingerprint). Far finer than the old 6x6 bitmap
+    derived from path points (see the `_build_symbol_signatures` docstring),
+    hence much less prone to aliasing two genuinely different symbols onto
+    the same fingerprint."""
     grid = _cell_ink_grid(gray, origin_px, origin_py, pos, 0)
     fingerprint = 0
     bit = 0
@@ -1113,12 +1082,12 @@ def _raster_fingerprint(
 def _best_shifted_jaccard_distance(
     core: list[list[int]], padded: list[list[int]], max_shift: int
 ) -> float:
-    """Distance de Jaccard entre `core` (case de référence, sans marge
-    supplémentaire) et `padded` (même case comparée, avec `max_shift` pixels
-    de marge de chaque côté), en essayant tous les petits décalages dans
-    cette marge et en gardant le meilleur (le plus petit) — absorbe le bruit
-    de sous-position d'un symbole redessiné (voir `_RASTER_SHIFT_TOLERANCE_PX`).
-    `core` et `padded` sont déjà des grilles 0/1 (`_cell_ink_grid`)."""
+    """Jaccard distance between `core` (reference cell, no extra margin) and
+    `padded` (compared cell, with a `max_shift`-pixel margin on each side),
+    trying every small shift within that margin and keeping the best
+    (smallest) — absorbs the sub-position noise of a redrawn symbol (see
+    `_RASTER_SHIFT_TOLERANCE_PX`). `core` and `padded` are already 0/1 grids
+    (`_cell_ink_grid`)."""
     h, w = len(core), len(core[0])
     best = 1.0
     for dy in range(-max_shift, max_shift + 1):
@@ -1149,21 +1118,21 @@ def _merge_near_duplicate_signatures(
     origin_px: int,
     origin_py: int,
 ) -> tuple[dict[tuple[int, int], int], dict[int, Bbox]]:
-    """Fusionne les empreintes qui représentent le même symbole redessiné à
-    un léger décalage près (bruit de sous-position), en comparant le rendu
-    raster réel des cases avec une petite tolérance de décalage — voir la
-    docstring de `_RASTER_MERGE_MAX_JACCARD` et consorts pour le diagnostic
-    complet qui a mené à ces seuils. Fusion gloutonne, de l'empreinte la plus
-    fréquente à la moins fréquente, jamais entre deux empreintes déjà
-    fréquentes l'une et l'autre (signe de deux symboles réellement distincts
-    plutôt que d'une variante bruitée d'un seul). `gray`/`origin_px`/
-    `origin_py` sont le rendu déjà produit par `_build_symbol_signatures`
-    (`_render_symbol_page_gray`) — jamais recalculés ici, un rendu de page
-    entière par fichier suffit (cahier des charges §10)."""
+    """Merge the fingerprints that represent the same symbol redrawn with a
+    slight shift (sub-position noise), comparing the cells' real raster
+    rendering with a small shift tolerance — see the docstring of
+    `_RASTER_MERGE_MAX_JACCARD` and related constants for the full diagnosis
+    that led to these thresholds. Greedy merge, from the most frequent
+    fingerprint to the least frequent, never between two fingerprints that
+    are both already frequent (a sign of two genuinely distinct symbols
+    rather than a noisy variant of one). `gray`/`origin_px`/`origin_py` are
+    the rendering already produced by `_build_symbol_signatures`
+    (`_render_symbol_page_gray`) — never recomputed here, one whole-page
+    rendering per file is enough (specification §10)."""
     counts = Counter(signatures.values())
-    # L'empreinte 0 (aucune encre détectée) n'est jamais fusionnée avec un
-    # symbole réel : un vrai symbole absent est une information en soi, pas
-    # un bruit d'un symbole présent.
+    # Fingerprint 0 (no ink detected) is never merged with a real symbol: a
+    # genuinely absent symbol is information in itself, not noise from a
+    # present symbol.
     ordered = sorted((b for b in counts if b != 0), key=lambda b: -counts[b])
     remap: dict[int, int] = {0: 0}
     if not ordered:
@@ -1222,15 +1191,15 @@ def _bucket_object(
 
 
 # --------------------------------------------------------------------------
-# Assemblage final : palette, cases, incertitudes
+# Final assembly: palette, cells, uncertainties
 # --------------------------------------------------------------------------
 
 
 def _symbol_key(index0: int) -> str:
-    """Identique à `app/type_a.py::_symbol_key` (clé courte façon « colonnes
-    de tableur ») — petite fonction pure dupliquée volontairement plutôt
-    qu'importée d'un module privé d'un autre connecteur, pour garder ce
-    module autonome."""
+    """Identical to `app/type_a.py::_symbol_key` (short key in "spreadsheet
+    column" style) — a small pure function deliberately duplicated rather
+    than imported from another connector's private module, to keep this
+    module self-contained."""
     n = index0
     letters = ""
     while True:
@@ -1289,14 +1258,13 @@ def _build_palette_and_cells(
             TypeBCPaletteEntry(
                 code=match.code,
                 name=match.name,
-                # La couleur réellement extraite du PDF fait foi pour
-                # l'affichage (§1 : « couleur exacte par case ») — bien plus
-                # fiable ici que la teinte théorique du catalogue DMC, qui ne
-                # sert qu'au rapprochement du code (`nearest_dmc`), jamais
-                # utilisée seule pour décider d'une couleur (§8.5 : le texte
-                # de légende, quand il existe, prime toujours sur la
-                # couleur — hors périmètre de ce module, qui n'a que la
-                # couleur).
+                # The colour actually extracted from the PDF is authoritative
+                # for display (§1: "exact colour per cell") — far more
+                # reliable here than the DMC catalogue's theoretical shade,
+                # which only serves to match the code (`nearest_dmc`), never
+                # used alone to decide a colour (§8.5: the legend text, when
+                # there is one, always takes priority over colour — out of
+                # scope for this module, which only has the colour).
                 rgb_hex=_rgb_hex(rgb),
                 symbol_key=_symbol_key(index - 1),
                 symbol_glyph=symbol_glyph,

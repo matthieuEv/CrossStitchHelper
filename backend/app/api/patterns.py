@@ -1,9 +1,9 @@
-"""Routes de persistance des motifs (cahier des charges §9, Lot 1 et 2).
+"""Pattern persistence routes (specification §9, Lots 1 and 2).
 
-Les motifs arrivent en base soit par le script de seed (`app/seed.py`), soit
-par l'assistant d'import (`app/api/imports.py`, Lot 2) ; ce module couvre ce
-qui s'applique une fois qu'un motif existe, quelle que soit son origine :
-lecture, synchronisation de la progression, et export `.cshp`.
+Patterns reach the database either through the seed script (`app/seed.py`)
+or through the import wizard (`app/api/imports.py`, Lot 2); this module
+covers what applies once a pattern exists, whatever its origin: reading,
+progress synchronisation, and `.cshp` export.
 """
 
 from __future__ import annotations
@@ -41,11 +41,11 @@ from app.schemas import (
     ProgressSyncResponse,
 )
 
-router = APIRouter(prefix="/patterns", tags=["motifs"])
+router = APIRouter(prefix="/patterns", tags=["patterns"])
 
-# Nombre maximal d'événements rejoués en une seule réponse de synchronisation.
-# Au-delà, un appareil resté hors-ligne très longtemps devra faire plusieurs
-# allers-retours plutôt que de recevoir une réponse arbitrairement grosse.
+# Maximum number of events replayed in a single sync response. Beyond that, a
+# device that stayed offline for a very long time will have to make several
+# round trips rather than receive an arbitrarily large response.
 MAX_REPLAYED_EVENTS = 2000
 
 
@@ -62,7 +62,7 @@ def _non_empty_cell_count(pattern: Pattern) -> int:
     return sum(1 for value in decode_uint16_layer(pattern.grid.layer_full) if value != 0)
 
 
-@router.get("", response_model=list[PatternSummary], summary="Liste des motifs")
+@router.get("", response_model=list[PatternSummary], summary="List of patterns")
 def list_patterns(session: Annotated[Session, Depends(get_session)]) -> list[PatternSummary]:
     patterns = (
         session.execute(
@@ -98,7 +98,7 @@ def list_patterns(session: Annotated[Session, Depends(get_session)]) -> list[Pat
     return summaries
 
 
-@router.get("/{pattern_id}", response_model=PatternDetail, summary="Métadonnées et palette")
+@router.get("/{pattern_id}", response_model=PatternDetail, summary="Metadata and palette")
 def get_pattern(
     pattern_id: str, session: Annotated[Session, Depends(get_session)]
 ) -> PatternDetail:
@@ -118,7 +118,7 @@ def get_pattern(
     )
 
 
-@router.get("/{pattern_id}/grid", response_model=GridOut, summary="Couches de grille")
+@router.get("/{pattern_id}/grid", response_model=GridOut, summary="Grid layers")
 def get_grid(pattern_id: str, session: Annotated[Session, Depends(get_session)]) -> GridOut:
     pattern = _get_pattern(session, pattern_id)
     grid = pattern.grid
@@ -168,7 +168,7 @@ def _progress_out(pattern: Pattern, progress: Progress) -> ProgressOut:
 
 
 @router.get(
-    "/{pattern_id}/progress", response_model=ProgressOut, summary="Bitmap de progression"
+    "/{pattern_id}/progress", response_model=ProgressOut, summary="Progress bitmap"
 )
 def get_progress(
     pattern_id: str, session: Annotated[Session, Depends(get_session)]
@@ -206,14 +206,14 @@ _LAYER_ATTR = {
 
 
 def _layer_bound(pattern: Pattern, layer: str) -> int:
-    """Nombre d'éléments adressables dans cette catégorie — 0 si le motif
-    n'en a aucun (`Grid.layer_half`/`layer_quarter` absent, ou liste
-    `backstitch_json`/`french_knots_json` vide), ce qui rejette naturellement
-    tout `index` (toujours >= 0) via la même vérification que les autres
-    catégories, sans cas particulier à écrire."""
+    """Number of addressable elements in this category — 0 if the pattern
+    has none (`Grid.layer_half`/`layer_quarter` absent, or empty
+    `backstitch_json`/`french_knots_json` list), which naturally rejects any
+    `index` (always >= 0) through the same check as the other categories,
+    with no special case to write."""
     if layer in ("full", "half", "quarter"):
         return pattern.width * pattern.height
-    assert pattern.grid is not None  # garanti par l'appelant, voir sync_progress
+    assert pattern.grid is not None  # guaranteed by the caller, see sync_progress
     field = "backstitch_json" if layer == "backstitch" else "french_knots_json"
     return len(json.loads(getattr(pattern.grid, field)))
 
@@ -221,25 +221,25 @@ def _layer_bound(pattern: Pattern, layer: str) -> int:
 @router.post(
     "/{pattern_id}/progress",
     response_model=ProgressSyncResponse,
-    summary="Application d'un lot de modifications de progression",
+    summary="Apply a batch of progress changes",
 )
 def sync_progress(
     pattern_id: str,
     payload: ProgressSyncRequest,
     session: Annotated[Session, Depends(get_session)],
 ) -> ProgressSyncResponse:
-    """Synchronisation par deltas versionnés (cahier des charges §9).
+    """Versioned-delta synchronisation (specification §9).
 
-    Cocher une case est une opération idempotente : on applique donc toujours
-    les opérations envoyées, qu'elles soient « en retard » ou non, puis on
-    signale au client les changements faits par d'autres appareils depuis sa
-    dernière version connue, pour qu'il les rejoue localement.
+    Checking a cell is an idempotent operation: the operations sent are
+    therefore always applied, whether "late" or not, then the client is told
+    about the changes made by other devices since its last known version, so
+    it can replay them locally.
 
-    Depuis le Lot 8, `ProgressOp.layer` distingue jusqu'à cinq catégories de
-    points (point entier, 1/2, 1/4, point arrière, nœud), chacune avec son
-    propre bitmap (`Progress.bitmap*`) et son propre espace d'index — jamais
-    partagé entre catégories, pour ne jamais cocher le mauvais élément par
-    confusion de couche (voir `app/models.py::Progress`).
+    Since Lot 8, `ProgressOp.layer` distinguishes up to five stitch
+    categories (full stitch, 1/2, 1/4, backstitch, knot), each with its own
+    bitmap (`Progress.bitmap*`) and its own index space — never shared
+    between categories, so the wrong element is never checked through a
+    layer mix-up (see `app/models.py::Progress`).
     """
     pattern = _get_pattern(session, pattern_id)
     progress = pattern.progress
@@ -260,9 +260,9 @@ def sync_progress(
                 bound=bound,
             )
 
-    # Calculé avant l'écriture : les événements déjà connus du client ne
-    # doivent pas lui être renvoyés, seuls ceux faits par d'autres appareils
-    # depuis sa dernière synchronisation comptent.
+    # Computed before writing: events already known to the client must not
+    # be sent back to it, only those made by other devices since its last
+    # sync count.
     missing_ops = _events_since(session, pattern_id, payload.base_version)
     conflict = len(missing_ops) > 0
 
@@ -309,12 +309,12 @@ def sync_progress(
 @router.get(
     "/{pattern_id}/activity",
     response_model=PatternActivityOut,
-    summary="Historique d'activité dérivé des événements de progression",
+    summary="Activity history derived from progress events",
 )
 def get_activity(
     pattern_id: str, session: Annotated[Session, Depends(get_session)]
 ) -> PatternActivityOut:
-    _get_pattern(session, pattern_id)  # 404 si le motif n'existe pas.
+    _get_pattern(session, pattern_id)  # 404 if the pattern does not exist.
     events = (
         session.execute(
             select(ProgressEvent)
@@ -324,10 +324,10 @@ def get_activity(
         .scalars()
         .all()
     )
-    # SQLite ne conserve pas le fuseau horaire au stockage : `event.ts` en
-    # ressort naïf bien que la colonne soit `DateTime(timezone=True)` et
-    # toujours écrite en UTC (`_utcnow`, `app/models.py`) — sans ce réattachement
-    # explicite, comparer à `datetime.now(UTC)` lève une `TypeError`.
+    # SQLite does not keep the time zone in storage: `event.ts` comes back
+    # naive even though the column is `DateTime(timezone=True)` and always
+    # written in UTC (`_utcnow`, `app/models.py`) — without this explicit
+    # re-attachment, comparing with `datetime.now(UTC)` raises a `TypeError`.
     parsed = [
         (
             event.ts if event.ts.tzinfo is not None else event.ts.replace(tzinfo=UTC),
@@ -340,7 +340,7 @@ def get_activity(
 
 @router.get(
     "/{pattern_id}/export",
-    summary="Export .cshp (format ouvert)",
+    summary=".cshp export (open format)",
     response_class=Response,
 )
 def export_pattern(

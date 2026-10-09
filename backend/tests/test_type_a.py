@@ -1,12 +1,11 @@
-"""Tests du moteur d'extraction type A (Lot 4) contre la fixture réelle
-`cafe-brasserie-charting-export` — voir `fixtures/README.md` et le skill
-`.claude/skills/verify-extraction-fixtures/`.
+"""Tests for the type A extraction engine (Lot 4) against the real
+`cafe-brasserie-charting-export` fixture — see `fixtures/README.md` and the
+`.claude/skills/verify-extraction-fixtures/` skill.
 
-Aucune valeur attendue n'est recopiée à la main ici pour les comptages par
-couleur : ils sont reparsés depuis la page 11 ("Usage Summary") du PDF
-lui-même à chaque exécution, pour ne jamais dupliquer une vérité déjà
-présente dans le fichier de référence (voir le skill précité, qui met en
-garde contre ce genre de duplication)."""
+No expected value is copied by hand here for the per-colour counts: they are
+re-parsed from page 11 ("Usage Summary") of the PDF itself on every run, so
+as never to duplicate a truth already present in the reference file (see the
+skill above, which warns against this kind of duplication)."""
 
 from __future__ import annotations
 
@@ -23,12 +22,11 @@ from PIL import Image
 
 from app.imports_engine import render_symbol_svg
 
-# `_cross_check_sections`/`_Legend` sont privés : exception assumée à la
-# règle « les tests n'utilisent que l'API publique du module ». La fixture de
-# référence ne déclenche jamais ce croisement (tout ce que sa légende annonce
-# est retrouvé), et l'appeler directement est la seule façon d'exercer
-# vraiment ses codes d'avertissement — voir
-# `test_declared_but_missing_special_stitches_are_flagged`.
+# `_cross_check_sections`/`_Legend` are private: a deliberate exception to
+# the "tests only use the module's public API" rule. The reference fixture
+# never triggers this cross-check (everything its legend declares is found),
+# and calling it directly is the only way to really exercise its warning
+# codes — see `test_declared_but_missing_special_stitches_are_flagged`.
 from app.type_a import (
     TypeAPaletteEntry,
     TypeAResult,
@@ -42,11 +40,11 @@ FIXTURE_PATH = (
     FIXTURES_ROOT / "cafe-brasserie-charting-export" / "CaffeBrasseriecoloursymbols.pdf"
 )
 
-# Les autres fixtures du dépôt (types B/C/E, cahier des charges §4.4) ne
-# sont pas du type A : `detect_type_a` doit s'effacer sans lever ni forcer
-# un résultat de mauvaise qualité (règle « ne jamais bloquer un import »,
-# `.claude/agents/pdf-extraction-specialist.md`). Ce module ne les traite
-# pas (Lots 5/7) — ce test vérifie seulement l'absence de faux positif.
+# The repository's other fixtures (types B/C/E, specification §4.4) are not
+# type A: `detect_type_a` must step aside without raising or forcing a
+# poor-quality result ("never block an import" rule,
+# `.claude/agents/pdf-extraction-specialist.md`). This module does not handle
+# them (Lots 5/7) — this test only checks the absence of false positives.
 OTHER_TYPE_FIXTURES = [
     FIXTURES_ROOT / "winter-wreath-dmc" / "PATASS117_2C_2.pdf",
     FIXTURES_ROOT / "botanical-citrus-dmc" / "agrumes_-_planche_botanique.pdf",
@@ -57,7 +55,7 @@ OTHER_TYPE_FIXTURES = [
 
 _USAGE_ROW_RE = re.compile(r"^DMC\s+([A-Za-z0-9]+)\s+(\d+)\s")
 
-# Colonnes du tableau « Usage Summary » : Type Number Full Half Quarter
+# Columns of the "Usage Summary" table: Type Number Full Half Quarter
 # Petite Back(cm) Str(cm) Spec(cm) French Bead Skein Est.
 _USAGE_FULL_ROW_RE = re.compile(
     r"^DMC\s+([A-Za-z0-9]+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)"
@@ -66,10 +64,10 @@ _USAGE_FULL_ROW_RE = re.compile(
 
 
 def _expected_full_stitch_counts() -> list[tuple[str, int]]:
-    """`(code, comptage_plein)` dans l'ordre de la page 11 du PDF, tel
-    qu'imprimé — c'est le même ordre que la section légende « Full Stitches »
-    de la page 9 (vérifié manuellement une fois, voir le rapport de tâche),
-    donc directement comparable position à position avec `result.palette`."""
+    """`(code, full_count)` in the order of the PDF's page 11, as printed —
+    the same order as the "Full Stitches" legend section on page 9 (checked
+    manually once, see the task report), so directly comparable position by
+    position with `result.palette`."""
     rows: list[tuple[str, int]] = []
     with pdfplumber.open(FIXTURE_PATH) as pdf:
         page = pdf.pages[10]  # page 11, "Usage Summary"
@@ -83,8 +81,8 @@ def _expected_full_stitch_counts() -> list[tuple[str, int]]:
 
 @dataclass
 class _UsageRow:
-    """Une ligne du tableau « Usage Summary » (page 11), cumulée par code
-    DMC — un même code peut y apparaître deux fois (DMC 3776)."""
+    """A row of the "Usage Summary" table (page 11), accumulated per DMC
+    code — the same code can appear twice there (DMC 3776)."""
 
     full: int = 0
     half: int = 0
@@ -94,14 +92,13 @@ class _UsageRow:
 
 
 def _expected_usage_by_code() -> dict[str, _UsageRow]:
-    """Vérité terrain complète de la page 11, reparsée à chaque exécution.
+    """Complete ground truth from page 11, re-parsed on every run.
 
-    **Unité de la colonne « Back(cm) » :** malgré son intitulé, elle est
-    exprimée en pouces sur ce fichier — mesuré au Lot 9, la valeur de chaque
-    code vaut exactement sa longueur en cases divisée par le compte de toile
-    déclaré (« Fabric: Aida 16 », soit 1 case = 1/16 de pouce). Les tests
-    ci-dessous font donc la conversion à partir du compte de toile lu dans le
-    PDF, jamais d'un facteur écrit en dur."""
+    **Unit of the "Back(cm)" column:** despite its heading, it is expressed
+    in inches on this file — measured in Lot 9, each code's value is exactly
+    its length in cells divided by the declared fabric count ("Fabric: Aida
+    16", i.e. 1 cell = 1/16 inch). The tests below therefore convert from the
+    fabric count read in the PDF, never from a hard-coded factor."""
     usage: dict[str, _UsageRow] = {}
     with pdfplumber.open(FIXTURE_PATH) as pdf:
         for line in pdf.pages[10].extract_text_lines():
@@ -146,10 +143,10 @@ def test_dimensions_match_declared_255x180(result: TypeAResult) -> None:
 def test_palette_has_34_dmc_colours(result: TypeAResult) -> None:
     dmc_entries = [entry for entry in result.palette if entry.code]
     assert len(dmc_entries) == 34
-    # Aucun code DMC dupliqué en tant que *clé de palette* n'est attendu ici
-    # au sens d'une fusion : DMC 3776 apparaît deux fois dans la légende
-    # (deux symboles distincts, comptages différents) et doit donc rester
-    # deux entrées séparées — voir fixtures/README.md.
+    # No DMC code duplicated as a *palette key* is expected here in the sense
+    # of a merge: DMC 3776 appears twice in the legend (two distinct symbols,
+    # different counts) and must therefore remain two separate entries — see
+    # fixtures/README.md.
     codes = [entry.code for entry in dmc_entries]
     assert codes.count("3776") == 2
 
@@ -187,14 +184,14 @@ def test_palette_entries_have_display_colour(result: TypeAResult) -> None:
     for entry in result.palette:
         assert entry.rgb_hex.startswith("#")
         assert len(entry.rgb_hex) == 7
-        # Jamais le glyphe brut de la police privée du PDF comme clé UI.
+        # Never the raw glyph of the PDF's private font as a UI key.
         assert entry.symbol_key.isascii()
         assert entry.symbol_key.isprintable()
 
 
 def test_palette_entries_carry_symbol_glyph_location(result: TypeAResult) -> None:
-    """Nécessaire pour retrouver le vrai symbole du PDF (`render_symbol_svg`)
-    plutôt qu'une lettre synthétique côté UI — voir `SymbolGlyphLocation`."""
+    """Needed to recover the PDF's real symbol (`render_symbol_svg`) rather
+    than a synthetic letter in the UI — see `SymbolGlyphLocation`."""
     dmc_entries = [entry for entry in result.palette if entry.code]
     assert dmc_entries
     for entry in dmc_entries:
@@ -206,9 +203,9 @@ def test_palette_entries_carry_symbol_glyph_location(result: TypeAResult) -> Non
 
 
 def test_render_symbol_svg_produces_a_real_legible_glyph_crop(result: TypeAResult) -> None:
-    """Bout en bout : la position capturée par `detect_type_a` doit vraiment
-    permettre de découper une image lisible du symbole — pas juste être bien
-    formée en apparence, et pas juste un carré blanc entre deux glyphes."""
+    """End to end: the position captured by `detect_type_a` must really make
+    it possible to cut out a readable image of the symbol — not just look
+    well-formed, and not just a white square between two glyphs."""
     entry = next(e for e in result.palette if e.code)
     assert entry.symbol_glyph is not None
     svg = render_symbol_svg(FIXTURE_PATH, entry.symbol_glyph.page_number, entry.symbol_glyph.bbox)
@@ -225,8 +222,8 @@ def test_render_symbol_svg_produces_a_real_legible_glyph_crop(result: TypeAResul
 
 
 def test_render_symbol_svg_differs_between_distinct_symbols(result: TypeAResult) -> None:
-    """Filet contre un bug de coordonnées qui découperait toujours la même
-    zone de la page quel que soit le glyphe demandé."""
+    """Safety net against a coordinate bug that would always cut out the
+    same area of the page whatever glyph is requested."""
     dmc_entries = [entry for entry in result.palette if entry.code]
     first, second = dmc_entries[0], dmc_entries[1]
     assert first.symbol_glyph is not None
@@ -241,24 +238,23 @@ def test_render_symbol_svg_differs_between_distinct_symbols(result: TypeAResult)
 
 
 def test_no_symbol_is_left_unmapped(result: TypeAResult) -> None:
-    """Avant le Lot 9, les points 1/2 et 1/4 de ce fichier finissaient en
-    entrées « Symbole non reconnu » (6 entrées, 4 583 cases) faute d'être lus
-    dans la légende : c'était le comportement honnête du Lot 4, pas une
-    fatalité. Maintenant que les sections « Half/Quarter Stitches » sont
-    lues, plus aucun symbole de ce fichier ne doit rester non rapproché —
-    et toute entrée non reconnue qui subsisterait devrait rester signalée
-    par son avertissement (code + paramètres, jamais un texte français figé
-    côté serveur, audit des traductions du Lot 8)."""
+    """Before Lot 9, this file's 1/2 and 1/4 stitches ended up as
+    "Unrecognised symbol" entries (6 entries, 4,583 cells) for lack of being
+    read from the legend: that was Lot 4's honest behaviour, not an
+    inevitability. Now that the "Half/Quarter Stitches" sections are read, no
+    symbol of this file should remain unmatched — and any unrecognised entry
+    that remained should stay flagged by its warning (code + parameters,
+    never French text frozen on the server, Lot 8 translation audit)."""
     unmapped = [entry for entry in result.palette if not entry.code]
     assert unmapped == []
     assert [w for w in result.warnings if w.code == "type_a.unmapped_symbols"] == []
 
 
 def test_half_and_quarter_counts_match_page_11_exactly(result: TypeAResult) -> None:
-    """Points fractionnés (Lot 9) : les couches 1/2 et 1/4 doivent porter
-    exactement les comptages annoncés par la page 11 — et sans déplacer une
-    seule case de la couche des points entiers, ce que vérifie de son côté
-    `test_full_stitch_counts_match_page_11_exactly`."""
+    """Fractional stitches (Lot 9): the 1/2 and 1/4 layers must carry
+    exactly the counts declared on page 11 — without moving a single cell of
+    the full-stitch layer, which
+    `test_full_stitch_counts_match_page_11_exactly` checks on its side."""
     expected = _expected_usage_by_code()
     half = _counts_by_code(result, "count_half")
     quarter = _counts_by_code(result, "count_quarter")
@@ -270,7 +266,7 @@ def test_half_and_quarter_counts_match_page_11_exactly(result: TypeAResult) -> N
         if half.get(code, 0) != row.half or quarter.get(code, 0) != row.quarter
     ]
     assert not mismatches, "\n".join(mismatches)
-    # Une couche non vide est bien une grille complète, comparable à `cells`.
+    # A non-empty layer is indeed a complete grid, comparable with `cells`.
     assert sum(row.half for row in expected.values()) > 0
     assert len(result.cells_half) == result.columns * result.rows
     assert len(result.cells_quarter) == result.columns * result.rows
@@ -287,16 +283,16 @@ def test_french_knots_match_page_11_exactly(result: TypeAResult) -> None:
 
 
 def test_backstitch_lengths_match_page_11_within_one_percent(result: TypeAResult) -> None:
-    """Longueurs de point arrière par couleur, converties depuis les cases
-    via le compte de toile déclaré par le PDF (voir `_expected_usage_by_code`
-    pour l'unité réelle de la colonne « Back(cm) ») — jamais un facteur de
-    conversion écrit en dur ici.
+    """Backstitch lengths per colour, converted from cells via the fabric
+    count declared by the PDF (see `_expected_usage_by_code` for the real
+    unit of the "Back(cm)" column) — never a conversion factor hard-coded
+    here.
 
-    La tolérance de 1 % est volontairement plus serrée que la longueur d'un
-    seul échantillon de légende (~4.3 cases, soit +4.5 % sur le plus court
-    des huit codes) : ce test échouerait donc si les traits d'échantillon
-    tracés hors grille sur la page 10 étaient importés comme du vrai point
-    arrière — c'est la contrepartie mesurable de
+    The 1% tolerance is deliberately tighter than the length of a single
+    legend swatch (~4.3 cells, i.e. +4.5% on the shortest of the eight
+    codes): this test would therefore fail if the swatch strokes drawn off
+    the grid on page 10 were imported as real backstitch — it is the
+    measurable counterpart of
     `test_backstitch_stays_inside_the_assembled_grid`."""
     expected = _expected_usage_by_code()
     assert result.fabric_count is not None
@@ -307,7 +303,7 @@ def test_backstitch_lengths_match_page_11_within_one_percent(result: TypeAResult
             lengths[entry.code] = lengths.get(entry.code, 0.0) + entry.backstitch_length_cells
 
     declared = {code: row.backstitch for code, row in expected.items() if row.backstitch}
-    assert declared, "la page 11 doit déclarer du point arrière"
+    assert declared, "page 11 must declare backstitch"
 
     mismatches = []
     for code, expected_length in declared.items():
@@ -316,7 +312,7 @@ def test_backstitch_lengths_match_page_11_within_one_percent(result: TypeAResult
             mismatches.append(f"{code}: attendu {expected_length}, obtenu {measured:.2f}")
     assert not mismatches, "\n".join(mismatches)
 
-    # Aucune couleur *sans* point arrière déclaré ne doit en recevoir.
+    # No colour *without* declared backstitch may receive any.
     unexpected = [
         code
         for code, length in lengths.items()
@@ -326,13 +322,13 @@ def test_backstitch_lengths_match_page_11_within_one_percent(result: TypeAResult
 
 
 def test_backstitch_stays_inside_the_assembled_grid(result: TypeAResult) -> None:
-    """Roadmap Lot 9 §3 : rien de décoratif hors grille ne doit être importé.
+    """Roadmap Lot 9 §3: nothing decorative off the grid may be imported.
 
-    Le fichier de référence en contient vraiment : la page 10 imprime, pour
-    chaque code de point arrière, un trait d'échantillon dans **exactement**
-    la même couleur que les tracés de la grille (c'est d'ailleurs ce qui
-    permet de les rapprocher). Ces traits ne font pas partie du motif et ne
-    doivent jamais devenir des segments à broder."""
+    The reference file really contains some: page 10 prints, for each
+    backstitch code, a swatch stroke in **exactly** the same colour as the
+    grid's strokes (which is precisely what makes matching them possible).
+    These strokes are not part of the pattern and must never become segments
+    to stitch."""
     assert result.backstitch
     for segment in result.backstitch:
         assert 0 <= segment.x1 <= result.columns
@@ -340,11 +336,11 @@ def test_backstitch_stays_inside_the_assembled_grid(result: TypeAResult) -> None
         assert 0 <= segment.y1 <= result.rows
         assert 0 <= segment.y2 <= result.rows
         assert (segment.x1, segment.y1) != (segment.x2, segment.y2)
-        # Convention `BackstitchSegment` : des coins de case (ou des milieux
-        # de case pour les tracés qui partent du centre), jamais des points
-        # arbitraires hérités des coordonnées PDF.
+        # `BackstitchSegment` convention: cell corners (or cell midpoints for
+        # strokes starting from the centre), never arbitrary points inherited
+        # from PDF coordinates.
         for value in (segment.x1, segment.y1, segment.x2, segment.y2):
-            assert value * 2 == int(value * 2), f"extrémité hors réseau demi-case : {value}"
+            assert value * 2 == int(value * 2), f"endpoint off the half-cell lattice: {value}"
         assert 1 <= segment.palette_index <= len(result.palette)
 
     for knot in result.french_knots:
@@ -354,12 +350,12 @@ def test_backstitch_stays_inside_the_assembled_grid(result: TypeAResult) -> None
 
 
 def test_declared_but_missing_special_stitches_are_flagged() -> None:
-    """Contrat des avertissements de croisement légende <-> extraction
-    (roadmap Lot 9 §4). La fixture de référence ne les déclenche pas (tout
-    ce que sa légende annonce est retrouvé), donc ce test passe par la
-    fonction de croisement elle-même plutôt que par `detect_type_a` : sans
-    ça, ces quatre codes d'avertissement ne seraient jamais exercés, et une
-    faute de frappe dans l'un d'eux passerait inaperçue jusqu'au frontend.
+    """Contract of the legend <-> extraction cross-check warnings (roadmap
+    Lot 9 §4). The reference fixture does not trigger them (everything its
+    legend declares is found), so this test goes through the cross-check
+    function itself rather than `detect_type_a`: without that, these four
+    warning codes would never be exercised, and a typo in one of them would
+    go unnoticed until the frontend.
     """
     entry = TypeAPaletteEntry(code="310", name="Black", symbol_key="A", rgb_hex="#050505")
     legend = _Legend(
@@ -381,12 +377,12 @@ def test_declared_but_missing_special_stitches_are_flagged() -> None:
 
 
 def test_legend_page_really_carries_decorative_strokes() -> None:
-    """Garde-fou des deux tests précédents : vérifie que le piège est réel.
+    """Guard for the two previous tests: checks that the trap is real.
 
-    La page 10 (légende, jamais une page de grille) porte bien des traits
-    tracés dans les couleurs de point arrière du motif. Sans cette
-    vérification, les tests ci-dessus pourraient passer faute de piège à
-    éviter dans le fichier plutôt que grâce au filtre d'emprise."""
+    Page 10 (legend, never a grid page) does carry strokes drawn in the
+    pattern's backstitch colours. Without this check, the tests above could
+    pass for lack of a trap to avoid in the file rather than thanks to the
+    footprint filter."""
     with pdfplumber.open(FIXTURE_PATH) as pdf:
         legend_page = pdf.pages[9]
         assert "Floss Used for Back Stitches:" in legend_page.extract_text()
@@ -396,8 +392,8 @@ def test_legend_page_really_carries_decorative_strokes() -> None:
             if len(line["stroking_color"] or ()) == 3
             and len(set(float(c) for c in line["stroking_color"])) > 1
         ]
-    # Huit codes de point arrière, chacun tracé deux fois (passe sombre puis
-    # passe claire) — mesuré au Lot 9.
+    # Eight backstitch codes, each drawn twice (dark pass then light pass) —
+    # measured in Lot 9.
     assert len(coloured) >= 8
 
 
@@ -418,8 +414,8 @@ def test_returns_none_for_non_type_a_pdf(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize("path", OTHER_TYPE_FIXTURES, ids=lambda p: p.parent.name)
 def test_returns_none_for_other_fixture_types(path: Path) -> None:
-    """Types B/C/E (grilles vectorielles ou catalogue d'images bitmap, sans
-    police de symboles embarquée) : pas de faux positif type A."""
+    """Types B/C/E (vector grids or bitmap image catalogue, no embedded
+    symbol font): no type A false positive."""
     if not path.is_file():
         pytest.skip(f"fixture manquante : {path}")
     assert detect_type_a(path) is None

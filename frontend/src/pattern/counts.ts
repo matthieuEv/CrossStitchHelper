@@ -1,25 +1,25 @@
 import type { PaletteEntry, Pattern, Progress } from "./types";
 
 export interface ColorCount extends PaletteEntry {
-  /** Index 1-based dans la palette, tel que stocké dans `Pattern.cells`. */
+  /** 1-based index into the palette, as stored in `Pattern.cells`. */
   index: number;
   total: number;
   done: number;
   remaining: number;
-  /** Part brodée de cette couleur, de 0 à 1. */
+  /** Stitched share of this colour, from 0 to 1. */
   ratio: number;
 }
 
-/** Nombre de points qu'un écheveau permet de broder (toile 14 ct, estimation). */
+/** Number of stitches one skein can cover (14-count fabric, estimate). */
 export const STITCHES_PER_SKEIN = 1800;
-/** Cadence de broderie retenue pour estimer le temps restant. */
+/** Stitching pace used to estimate the remaining time. */
 export const STITCHES_PER_HOUR = 420;
 
 /**
- * Compte les points par couleur en une seule passe sur la grille.
+ * Counts stitches per colour in a single pass over the grid.
  *
- * Appelé à chaque case cochée : reste linéaire et sans allocation par case,
- * pour ne pas devenir le goulot d'étranglement sur un motif de 45 000 cases.
+ * Called on every checked cell: stays linear and allocation-free per cell, so
+ * as not to become the bottleneck on a 45,000-cell pattern.
  */
 export function countByColor(pattern: Pattern, done: Progress): ColorCount[] {
   const totals = new Uint32Array(pattern.palette.length + 1);
@@ -51,7 +51,7 @@ export interface PatternTotals {
   total: number;
   done: number;
   remaining: number;
-  /** Progression en pourcentage entier, 0 à 100. */
+  /** Progress as an integer percentage, 0 to 100. */
   percent: number;
   skeinsRemaining: number;
   hoursRemaining: number;

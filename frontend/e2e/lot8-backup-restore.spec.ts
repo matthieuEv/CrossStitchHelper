@@ -5,20 +5,18 @@ import path from "node:path";
 import { expect, test, type APIRequestContext } from "@playwright/test";
 
 /**
- * Vérifie le critère "terminé quand" du sous-chantier "Sauvegarde/restauration
- * des données" du Lot 8 (docs/roadmap.md, cahier des charges §7.5) : depuis
- * les Réglages, exporter un fichier .json téléchargeable, le restaurer (état
- * serveur exact, y compris la progression), activer/désactiver la sauvegarde
- * automatique quotidienne, et effacer toutes les données — contre un vrai
- * backend (`app/backup.py`, `app/api/backup.py`), pas des mocks.
+ * Checks the "done when" criterion of Lot 8's "Data backup/restore"
+ * sub-project (docs/roadmap.md, specification §7.5): from Settings, export a
+ * downloadable .json file, restore it (exact server state, progress
+ * included), toggle the daily automatic backup, and clear all data — against
+ * a real backend (`app/backup.py`, `app/api/backup.py`), not mocks.
  *
- * Le dernier test est destructeur par nature (« effacer toutes les
- * données ») : il restaure immédiatement l'état capturé juste avant, pour
- * que les autres fichiers de spec de ce dépôt (qui supposent tous le motif
- * de démonstration présent) restent corrects quel que soit l'ordre
- * d'exécution des fichiers — même discipline que « vider avant de remplir »
- * dans lot1-persistence.spec.ts, adaptée à une opération qui détruit plutôt
- * que remplit.
+ * The last test is destructive by nature ("clear all data"): it immediately
+ * restores the state captured just before, so that the repository's other
+ * spec files (which all assume the demo pattern is present) stay correct
+ * whatever the order in which files run — the same "clear before filling"
+ * discipline as in lot1-persistence.spec.ts, adapted to an operation that
+ * destroys rather than fills.
  */
 
 const DEMO_PATTERN_ID = "demo-perf-255x180";
@@ -33,7 +31,7 @@ async function fetchDemoPattern(request: APIRequestContext): Promise<PatternSumm
   const response = await request.get("/api/patterns");
   const patterns = (await response.json()) as PatternSummary[];
   const demo = patterns.find((pattern) => pattern.id === DEMO_PATTERN_ID);
-  if (demo === undefined) throw new Error("Motif de démonstration introuvable en base");
+  if (demo === undefined) throw new Error("Demo pattern not found in the database");
   return demo;
 }
 
@@ -47,7 +45,7 @@ async function setStitched(
     data: { base_version: 0, ops: [{ layer: "full", index, stitched }] },
   });
   if (!response.ok()) {
-    throw new Error(`Échec de la mise à jour de progression (full#${index}) : ${response.status()}`);
+    throw new Error(`Progress update failed (full#${index}): ${response.status()}`);
   }
 }
 
@@ -73,18 +71,18 @@ function writeTempJson(name: string, data: unknown): string {
   return filePath;
 }
 
-test.describe("Lot 8 — sauvegarde/restauration des données", () => {
-  test("exporter puis restaurer ramène la progression exacte du motif de démonstration", async ({
+test.describe("Lot 8 — data backup/restore", () => {
+  test("exporting then restoring brings back the demo pattern's exact progress", async ({
     page,
     request,
   }) => {
     const pattern = await fetchDemoPattern(request);
     const snapshot = await fetchBackupDocument(request);
 
-    // Une vraie bascule observable, pas "rien n'a changé par hasard" : on
-    // inverse un point loin de tout ce que les autres specs surveillent
-    // (dernière case de la grille), puis on vérifie qu'elle est bien
-    // inversée avant de compter sur la restauration pour la ramener.
+    // A real observable toggle, not "nothing changed by chance": flip a
+    // stitch far from anything the other specs watch (the grid's last cell),
+    // then check it is indeed flipped before relying on the restore to bring
+    // it back.
     const probeIndex = pattern.cell_count - 1;
     const wasStitchedBefore = bitSet(await fetchFullBitmap(request, pattern.id), probeIndex);
     await setStitched(request, pattern.id, probeIndex, !wasStitchedBefore);
@@ -98,18 +96,18 @@ test.describe("Lot 8 — sauvegarde/restauration des données", () => {
 
     const reloaded = page.waitForEvent("load");
     page.once("dialog", (dialog) => void dialog.accept());
-    // L'input caché derrière le bouton « Restaurer une sauvegarde » accepte
-    // un fichier directement, sans passer par le sélecteur natif de l'OS
-    // (non pilotable par Playwright) — `setInputFiles` fonctionne sur un
-    // input caché, exactement le mécanisme utilisé par `SettingsScreen.tsx`.
+    // The hidden input behind the "Restaurer une sauvegarde" (Restore a
+    // backup) button accepts a file directly, without going through the OS's
+    // native picker (not drivable by Playwright) — `setInputFiles` works on a
+    // hidden input, exactly the mechanism used by `SettingsScreen.tsx`.
     await page.locator('input[type="file"]').setInputFiles(backupFile);
     await reloaded;
 
     const after = bitSet(await fetchFullBitmap(request, pattern.id), probeIndex);
-    expect(after).toBe(wasStitchedBefore); // revenu à l'état d'avant la sonde.
+    expect(after).toBe(wasStitchedBefore); // back to the state before the probe.
   });
 
-  test("le bouton d'export pointe vers un vrai téléchargement JSON", async ({ page }) => {
+  test("the export button points to a real JSON download", async ({ page }) => {
     await page.goto("/");
     await page.getByRole("button", { name: "Réglages", exact: true }).click();
 
@@ -128,7 +126,7 @@ test.describe("Lot 8 — sauvegarde/restauration des données", () => {
     expect(content.format_version).toBe(1);
   });
 
-  test("la sauvegarde automatique quotidienne se bascule depuis les Réglages", async ({
+  test("the daily automatic backup can be toggled from Settings", async ({
     page,
     request,
   }) => {
@@ -136,10 +134,10 @@ test.describe("Lot 8 — sauvegarde/restauration des données", () => {
     await page.getByRole("button", { name: "Réglages", exact: true }).click();
     const toggle = page.getByRole("switch", { name: "Sauvegarde automatique quotidienne" });
 
-    // Activée par défaut (`app/auto_backup.py::is_auto_backup_enabled`) tant
-    // qu'aucune autre spec n'a déjà basculé ce réglage serveur global — donc
-    // on part de l'état lu, pas d'un « true » supposé, et on revient
-    // toujours à cet état de départ en fin de test.
+    // Enabled by default (`app/auto_backup.py::is_auto_backup_enabled`) as
+    // long as no other spec has already toggled this global server setting —
+    // so start from the state read, not from an assumed "true", and always
+    // return to that starting state at the end of the test.
     const initiallyChecked = (await toggle.getAttribute("aria-checked")) === "true";
 
     await toggle.click();
@@ -147,19 +145,19 @@ test.describe("Lot 8 — sauvegarde/restauration des données", () => {
     const afterToggle = await request.get("/api/backup/auto");
     expect(((await afterToggle.json()) as { enabled: boolean }).enabled).toBe(!initiallyChecked);
 
-    await toggle.click(); // remis à l'état de départ pour ne pas affecter d'autres specs.
+    await toggle.click(); // back to the starting state so other specs are unaffected.
     await expect(toggle).toHaveAttribute("aria-checked", String(initiallyChecked));
   });
 
-  test("effacer toutes les données vide l'instance (puis restauration de secours)", async ({
+  test("clearing all data empties the instance (then a safety restore)", async ({
     page,
     request,
   }) => {
-    // Capturé juste avant l'effacement, pas supposé : les autres fichiers de
-    // spec de ce dépôt (imports type A/B/C/E, recettes…) peuvent avoir déjà
-    // créé d'autres motifs que la démonstration sur cette même base partagée
-    // — combien exactement dépend de l'ordre d'exécution des fichiers, donc
-    // jamais une valeur codée en dur ici.
+    // Captured just before clearing, not assumed: the repository's other spec
+    // files (type A/B/C/E imports, recipes…) may already have created patterns
+    // other than the demo on this same shared database — exactly how many
+    // depends on the order in which files run, so never a hard-coded value
+    // here.
     const before = (await fetchBackupDocument(request)) as { patterns: Array<{ id: string }> };
 
     await page.goto("/");

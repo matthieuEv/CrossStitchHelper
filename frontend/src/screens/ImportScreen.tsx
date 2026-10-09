@@ -43,7 +43,7 @@ const STEP_COUNT = 4;
 const MAX_INSET = 45;
 const DEFAULT_CROP: Crop = { left: 4, top: 4, right: 4, bottom: 4 };
 
-/** Palette de départ, purement pour ne pas ouvrir l'étape peinture à vide. */
+/** Starting palette, purely so the painting step does not open empty. */
 function nextPaletteEntry(existing: readonly ApiImportPaletteEntry[]): ApiImportPaletteEntry {
   const hues = ["#8a5b9b", "#b35b6b", "#5b8f6f", "#5b7bb3", "#b38a5b", "#5b5b5b"];
   const hex = hues[existing.length % hues.length] ?? "#5b5b5b";
@@ -64,10 +64,10 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
 
-  // Un cadrage indépendant par page — voir `import.crop.hint` et
-  // `backend/app/schemas.py::ImportConfig.crop_by_page` : une même page peut
-  // contenir la légende, une autre la grille, donc un seul cadrage imposé à
-  // toutes les pages n'aurait pas de sens.
+  // An independent crop per page — see `import.crop.hint` and
+  // `backend/app/schemas.py::ImportConfig.crop_by_page`: one page may contain
+  // the legend, another the grid, so a single crop imposed on every page
+  // would make no sense.
   const [cropByPage, setCropByPage] = useState<Record<number, Crop>>({});
   const [page, setPage] = useState(1);
   const [columns, setColumns] = useState<string>("");
@@ -90,12 +90,12 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
 
   const stageRef = useRef<HTMLDivElement>(null);
   const dragEdgeRef = useRef<Edge | null>(null);
-  /** Passe à `true` dès que l'utilisateur tape ses propres dimensions —
-   * plus aucun sondage de détection ne doit alors venir écraser sa saisie. */
+  /** Becomes `true` as soon as the user types their own dimensions — no
+   * detection poll may then overwrite their input. */
   const manualEditRef = useRef(false);
-  /** Même principe que `manualEditRef`, mais pour le compte de toile seul
-   * (Lot 9) — les deux sont indépendants : corriger les dimensions ne doit
-   * pas geler le compte de toile détecté, et inversement. */
+  /** Same principle as `manualEditRef`, but for the fabric count alone
+   * (Lot 9) — the two are independent: correcting the dimensions must not
+   * freeze the detected fabric count, and vice versa. */
   const manualFabricEditRef = useRef(false);
 
   const stepLabels = [
@@ -145,9 +145,9 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
     }
   };
 
-  // Détection automatique (Lot 4) : tourne en tâche de fond côté serveur —
-  // on sonde tant qu'elle n'est pas terminée, sans jamais écraser une
-  // saisie manuelle déjà commencée (`manualEditRef`).
+  // Automatic detection (Lot 4): runs as a background task on the server —
+  // poll until it has finished, never overwriting manual input that has
+  // already started (`manualEditRef`).
   useEffect(() => {
     if (job === null || !job.detecting) return;
     const jobId = job.id;
@@ -239,10 +239,10 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
     setStep(3);
   };
 
-  // Filtré à la plage courante : `uncertainCells` référence les dimensions
-  // au moment de la détection, périmées dès que l'utilisateur en tape
-  // d'autres à la main avant le prochain aller-retour serveur (même risque
-  // que `detectedCells`, voir `applyFillsLocal` côté peinture).
+  // Filtered to the current range: `uncertainCells` refers to the dimensions
+  // at detection time, stale as soon as the user types others by hand before
+  // the next server round trip (same risk as `detectedCells`, see
+  // `applyFillsLocal` on the painting side).
   const uncertainCellsSet = useMemo(() => {
     if (uncertainCells === null || !dimensionsValid) return null;
     const bound = columnsValue * rowsValue;
@@ -311,8 +311,8 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
         try {
           await createRecipe(job.id, recipeLabel.trim());
         } catch (error) {
-          // Une recette ratée ne doit jamais empêcher de créer le motif —
-          // c'est un confort pour la prochaine fois, pas une étape requise.
+          // A failed recipe must never prevent creating the pattern — it is a
+          // convenience for next time, not a required step.
           setRecipeError(translateApiError(t, error));
         }
       }
@@ -628,8 +628,8 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
                     style={{ width: 18, height: 18, background: entry.rgb_hex }}
                   />
                   {entry.symbol_svg !== null && entry.symbol_svg !== undefined && (
-                    // Symbole réel découpé du PDF (Lot 4) — voir `ColorList.tsx`
-                    // pour le même principe côté Suivi.
+                    // Real symbol cut out of the PDF (Lot 4) — see
+                    // `ColorList.tsx` for the same principle in Tracking.
                     <img
                       src={`data:image/svg+xml;base64,${btoa(entry.symbol_svg)}`}
                       alt=""
@@ -701,10 +701,10 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
                       aria-label={t("import.legend.color")}
                     />
                     {hasRealSymbol ? (
-                      // Symbole réel découpé du PDF (Lot 4) : la clé interne
-                      // (`symbol_key`) n'a alors plus besoin d'être visible ni
-                      // modifiable — ce symbole-ci vient du fichier, jamais
-                      // d'elle.
+                      // Real symbol cut out of the PDF (Lot 4): the internal
+                      // key (`symbol_key`) then no longer needs to be visible or
+                      // editable — this symbol comes from the file, never from
+                      // it.
                       <img
                         src={`data:image/svg+xml;base64,${btoa(entry.symbol_svg as string)}`}
                         alt=""

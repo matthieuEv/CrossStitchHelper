@@ -1,25 +1,23 @@
-"""Catalogue couleur DMC pour le rapprochement Lab (types B/C, Lot 5,
-cahier des charges §8.4-8.5).
+"""DMC colour catalogue for Lab matching (types B/C, Lot 5, specification
+§8.4-8.5).
 
-Contrairement à `app/dmc_colors.py` (type A, Lot 4), où le code DMC est
-toujours lu en texte réel dans la légende et où ce module ne sert qu'à
-proposer une couleur d'affichage, **aucun texte de légende ne fait autorité
-sur la couleur exacte de chaque case** pour les types B/C : la seule source
-est la couleur de remplissage du rectangle vectoriel sous chaque case. Il
-faut donc, ici, un vrai rapprochement par plus proche voisin perceptuel
-(conversion Lab, jamais une distance RVB brute — voir
-`.claude/agents/pdf-extraction-specialist.md`) vers une table de référence
-suffisamment large.
+Unlike `app/dmc_colors.py` (type A, Lot 4), where the DMC code is always
+read as real text in the legend and that module only serves to offer a
+display colour, **no legend text is authoritative on each cell's exact
+colour** for types B/C: the only source is the fill colour of the vector
+rectangle under each cell. A real perceptual nearest-neighbour match is
+therefore needed here (Lab conversion, never a raw RGB distance — see
+`.claude/agents/pdf-extraction-specialist.md`) against a sufficiently large
+reference table.
 
-**Origine des valeurs : table communautaire non officielle.** DMC ne publie
-aucune table RVB officielle de ses teintes de mouliné (cahier des charges
-§3.3) — les valeurs ci-dessous sont des approximations couramment reprises
-par la communauté du point de croix (chartes de conversion DMC -> RVB
-largement diffusées par des logiciels et sites communautaires). Elles sont
-suffisantes pour une **proposition de départ raisonnable**, jamais pour une
-identification garantie exacte : l'étape 7 de l'assistant d'import doit
-rester le lieu de correction, et toute correspondance de distance Lab
-élevée doit être signalée (voir `nearest_dmc`).
+**Origin of the values: unofficial community table.** DMC publishes no
+official RGB table of its stranded cotton shades (specification §3.3) — the
+values below are approximations commonly used by the cross-stitch community
+(DMC -> RGB conversion charts widely distributed by community software and
+websites). They are good enough for a **reasonable starting proposal**, never
+for a guaranteed exact identification: step 7 of the import wizard must
+remain the place for correction, and any match with a high Lab distance must
+be flagged (see `nearest_dmc`).
 """
 
 from __future__ import annotations
@@ -27,16 +25,16 @@ from __future__ import annotations
 from collections.abc import Iterable
 from dataclasses import dataclass
 
-# Table communautaire code -> (nom, RVB 0-255). Volontairement plus large que
-# `app/dmc_colors.py` (qui ne couvre que les codes déjà rencontrés en type A)
-# mais toujours partielle : un catalogue DMC complet dépasse 500 teintes et
-# reconstruire précisément chacune de mémoire serait pire qu'une table
-# raisonnablement large et honnêtement approximative. Un code non couvert ne
-# fait simplement pas partie du plus proche voisin possible — comportement
-# dégradé mais jamais silencieusement faux (le voisin le plus proche
-# disponible est toujours retourné avec sa distance, jamais masquée).
+# Community table code -> (name, RGB 0-255). Deliberately larger than
+# `app/dmc_colors.py` (which only covers codes already encountered in type A)
+# but still partial: a complete DMC catalogue exceeds 500 shades and
+# rebuilding each one precisely from memory would be worse than a reasonably
+# large and honestly approximate table. A code not covered simply cannot be
+# the nearest neighbour — degraded behaviour but never silently wrong (the
+# nearest available neighbour is always returned with its distance, never
+# hidden).
 _DMC_CATALOG: dict[str, tuple[str, tuple[int, int, int]]] = {
-    # Blancs, écrus, noirs, gris — famille neutre.
+    # Whites, ecrus, blacks, greys — neutral family.
     "blanc": ("White", (255, 255, 255)),
     "white": ("White", (255, 255, 255)),
     "b5200": ("Snow White", (255, 255, 255)),
@@ -51,7 +49,7 @@ _DMC_CATALOG: dict[str, tuple[str, tuple[int, int, int]]] = {
     "535": ("Ash Grey-VY LT", (95, 95, 91)),
     "310": ("Black", (5, 5, 5)),
     "3799": ("Pewter Grey-VY DK", (68, 68, 68)),
-    # Rouges et roses.
+    # Reds and pinks.
     "666": ("Bright Red", (227, 29, 60)),
     "321": ("Red", (199, 43, 59)),
     "304": ("Red-Medium", (176, 0, 12)),
@@ -89,7 +87,7 @@ _DMC_CATALOG: dict[str, tuple[str, tuple[int, int, int]]] = {
     "722": ("Orange Spice-Light", (245, 154, 96)),
     "970": ("Pumpkin-Light", (250, 137, 25)),
     "971": ("Pumpkin", (243, 122, 0)),
-    # Jaunes.
+    # Yellows.
     "444": ("Lemon-Dark", (255, 208, 0)),
     "445": ("Lemon-Light", (255, 243, 141)),
     "307": ("Lemon", (255, 226, 45)),
@@ -104,7 +102,7 @@ _DMC_CATALOG: dict[str, tuple[str, tuple[int, int, int]]] = {
     "3822": ("Straw-Light", (250, 220, 130)),
     "3823": ("Yellow-Ultra Pale", (255, 250, 220)),
     "834": ("Golden Olive-VY LT", (219, 199, 116)),
-    # Verts.
+    # Greens.
     "700": ("Green-Bright", (0, 122, 40)),
     "701": ("Green-Light", (48, 142, 43)),
     "702": ("Kelly Green", (63, 170, 68)),
@@ -147,7 +145,7 @@ _DMC_CATALOG: dict[str, tuple[str, tuple[int, int, int]]] = {
     "3816": ("Celadon Green", (110, 152, 121)),
     "3817": ("Celadon Green-LT", (155, 191, 168)),
     "3818": ("Emerald Green-Ultra VY DK", (0, 66, 48)),
-    # Bleus.
+    # Blues.
     "820": ("Royal Blue-VY DK", (17, 40, 118)),
     "796": ("Royal Blue-DK", (26, 58, 128)),
     "797": ("Royal Blue", (30, 77, 148)),
@@ -181,7 +179,7 @@ _DMC_CATALOG: dict[str, tuple[str, tuple[int, int, int]]] = {
     "159": ("Grey Blue-LT", (196, 207, 221)),
     "160": ("Grey Blue-Medium", (141, 160, 188)),
     "161": ("Grey Blue", (123, 147, 180)),
-    # Turquoises / verts bleutés.
+    # Turquoises / blue-greens.
     "996": ("Electric Blue-Medium", (0, 168, 220)),
     "3843": ("Electric Blue", (0, 176, 197)),
     "3846": ("Bright Turquoise-LT", (52, 198, 219)),
@@ -191,7 +189,7 @@ _DMC_CATALOG: dict[str, tuple[str, tuple[int, int, int]]] = {
     "993": ("Aquamarine-VY LT", (169, 224, 208)),
     "964": ("Sea Green-Light", (176, 226, 216)),
     "943": ("Aquamarine-Medium", (0, 148, 132)),
-    # Violets / mauves.
+    # Purples / mauves.
     "333": ("Blue Violet-VY DK", (85, 65, 122)),
     "340": ("Blue Violet-Medium", (150, 145, 197)),
     "341": ("Blue Violet-Light", (172, 174, 213)),
@@ -206,14 +204,14 @@ _DMC_CATALOG: dict[str, tuple[str, tuple[int, int, int]]] = {
     "327": ("Violet-Dark", (86, 41, 87)),
     "3837": ("Lavender-Ultra Dark", (100, 45, 105)),
     "3746": ("Blue Violet-Dark", (120, 106, 172)),
-    # Roses violacés / magentas.
+    # Purplish pinks / magentas.
     "718": ("Plum", (150, 26, 99)),
     "917": ("Plum-Medium", (161, 41, 106)),
     "915": ("Plum-Dark", (125, 5, 71)),
     "3609": ("Plum-Ultra Light", (233, 158, 210)),
     "3608": ("Plum-Very Light", (216, 124, 184)),
     "3607": ("Plum-Light", (190, 71, 140)),
-    # Bruns / beiges.
+    # Browns / beiges.
     "300": ("Mahogany-VY Dark", (123, 63, 0)),
     "301": ("Mahogany-Medium", (181, 97, 50)),
     "400": ("Mahogany-Dark", (147, 75, 25)),
@@ -268,7 +266,7 @@ _DMC_CATALOG: dict[str, tuple[str, tuple[int, int, int]]] = {
     "3856": ("Mahogany-Ultra VY LT", (250, 206, 160)),
     "976": ("Golden Brown-Medium", (204, 121, 46)),
     "977": ("Golden Brown-Light", (222, 154, 84)),
-    # Métallisés / effets (repli neutre, teinte dominante approximée).
+    # Metallics / effects (neutral fallback, approximate dominant shade).
     "e321": ("Light Effects-Red", (196, 30, 58)),
     "e301": ("Light Effects-Gold", (212, 175, 55)),
     "e168": ("Light Effects-Silver", (200, 200, 205)),
@@ -281,17 +279,17 @@ _DMC_CATALOG: dict[str, tuple[str, tuple[int, int, int]]] = {
 @dataclass(frozen=True)
 class DmcMatch:
     code: str
-    """Code tel qu'imprimé (casse d'origine de `_DMC_CATALOG`, souvent en
-    minuscule pour les codes lettrés comme `e321` — laisser tel quel plutôt
-    que de deviner une capitalisation « officielle »)."""
+    """Code as printed (original case from `_DMC_CATALOG`, often lowercase
+    for lettered codes like `e321` — left as is rather than guessing an
+    "official" capitalisation)."""
 
     name: str
     rgb_hex: str
     distance: float
-    """Distance perceptuelle Lab (CIE76) entre la couleur demandée et
-    `rgb_hex` — jamais une distance RVB brute (règle impérative du
-    `pdf-extraction-specialist`). 0 = correspondance exacte, au-delà d'une
-    dizaine d'unités l'œil perçoit une différence nette."""
+    """Lab perceptual distance (CIE76) between the requested colour and
+    `rgb_hex` — never a raw RGB distance (mandatory rule of the
+    `pdf-extraction-specialist`). 0 = exact match; beyond about ten units the
+    eye perceives a clear difference."""
 
 
 def _srgb_to_linear(channel: float) -> float:
@@ -301,9 +299,9 @@ def _srgb_to_linear(channel: float) -> float:
 
 
 def rgb_to_lab(rgb: tuple[float, float, float]) -> tuple[float, float, float]:
-    """`rgb` en composantes 0-1. Conversion sRGB -> CIE Lab (D65), utilisée
-    pour toute comparaison perceptuelle de couleur dans le moteur
-    d'extraction (jamais de distance RVB brute)."""
+    """`rgb` as 0-1 components. sRGB -> CIE Lab (D65) conversion, used for
+    every perceptual colour comparison in the extraction engine (never a raw
+    RGB distance)."""
     r, g, b = (_srgb_to_linear(c) for c in rgb)
     x = r * 0.4124 + g * 0.3576 + b * 0.1805
     y = r * 0.2126 + g * 0.7152 + b * 0.0722
@@ -323,10 +321,10 @@ def rgb_to_lab(rgb: tuple[float, float, float]) -> tuple[float, float, float]:
 
 
 def lab_distance(a: tuple[float, float, float], b: tuple[float, float, float]) -> float:
-    """Distance euclidienne en espace Lab (CIE76) — approximation simple
-    mais largement suffisante pour classer des teintes de mouliné, qui sont
-    rarement dans les zones où CIE76 diverge le plus de la perception
-    (saturation extrême)."""
+    """Euclidean distance in Lab space (CIE76) — a simple approximation but
+    largely sufficient to rank stranded cotton shades, which are rarely in
+    the regions where CIE76 diverges most from perception (extreme
+    saturation)."""
     return float(sum((x - y) ** 2 for x, y in zip(a, b, strict=True)) ** 0.5)
 
 
@@ -341,12 +339,11 @@ def rgb_hex(rgb: tuple[int, int, int]) -> str:
 
 
 def nearest_dmc(rgb: tuple[float, float, float]) -> DmcMatch:
-    """Plus proche voisin dans `_DMC_CATALOG` pour `rgb` (composantes 0-1),
-    par distance Lab. Toujours renvoie une correspondance (jamais `None` —
-    le catalogue n'est jamais vide) ; c'est à l'appelant de décider, via
-    `DmcMatch.distance`, si elle est assez fiable pour ne pas être signalée
-    à l'utilisateur (cahier des charges §8.5 : « toute correspondance
-    au-delà d'un seuil est signalée »)."""
+    """Nearest neighbour in `_DMC_CATALOG` for `rgb` (0-1 components), by Lab
+    distance. Always returns a match (never `None` — the catalogue is never
+    empty); it is up to the caller to decide, via `DmcMatch.distance`,
+    whether it is reliable enough not to be flagged to the user
+    (specification §8.5: "any match beyond a threshold is flagged")."""
     target = rgb_to_lab(rgb)
     best_code: str | None = None
     best_distance = float("inf")
@@ -355,23 +352,22 @@ def nearest_dmc(rgb: tuple[float, float, float]) -> DmcMatch:
         if distance < best_distance:
             best_distance = distance
             best_code = code
-    assert best_code is not None  # le catalogue n'est jamais vide
+    assert best_code is not None  # the catalogue is never empty
     name, rgb_int = _DMC_CATALOG[best_code]
     return DmcMatch(code=best_code, name=name, rgb_hex=rgb_hex(rgb_int), distance=best_distance)
 
 
 def nearest_dmc_among(rgb: tuple[float, float, float], codes: Iterable[str]) -> DmcMatch | None:
-    """Variante de `nearest_dmc` restreinte à `codes` (recherche du plus
-    proche voisin uniquement parmi cet ensemble, plutôt que tout le
-    catalogue) — utile quand une source externe (légende texte d'un PDF,
-    §8.3/§8.5) fait déjà autorité sur l'ensemble fermé de codes réellement
-    utilisés dans le motif : restreindre la recherche évite qu'une teinte
-    proche mais non pertinente d'ailleurs dans le catalogue ne l'emporte à
-    tort (`app/type_e.py`, Lot 7).
+    """Variant of `nearest_dmc` restricted to `codes` (nearest-neighbour
+    search only among that set, rather than the whole catalogue) — useful
+    when an external source (a PDF's text legend, §8.3/§8.5) is already
+    authoritative on the closed set of codes actually used in the pattern:
+    restricting the search prevents a close but irrelevant shade from
+    elsewhere in the catalogue from wrongly winning (`app/type_e.py`, Lot 7).
 
-    Renvoie `None` si aucun code de `codes` n'est présent dans
-    `_DMC_CATALOG` (catalogue communautaire nécessairement partiel, §3.3) —
-    jamais une correspondance inventée hors de l'ensemble demandé."""
+    Returns `None` if no code from `codes` is present in `_DMC_CATALOG`
+    (necessarily partial community catalogue, §3.3) — never a match made up
+    outside the requested set."""
     target = rgb_to_lab(rgb)
     best_code: str | None = None
     best_distance = float("inf")

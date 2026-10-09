@@ -1,4 +1,4 @@
-"""Lot 1 : modèle de données complet (patterns, palette_entries, grids, progress, progress_events)
+"""Lot 1: complete data model (patterns, palette_entries, grids, progress, progress_events)
 
 Revision ID: 0002_pattern_model
 Revises: 0001_initial

@@ -1,36 +1,33 @@
-"""Primitives géométriques partagées par les moteurs d'extraction
-vectoriels : distinguer un trait de **quadrillage imprimé** d'un trait qui
-fait réellement partie du motif (tracé de symbole type B/C, point arrière
-type A).
+"""Geometric primitives shared by the vector extraction engines: telling a
+**printed grid line** apart from a stroke that is really part of the pattern
+(type B/C symbol path, type A backstitch).
 
-Extrait de `app/type_bc.py::_is_grid_ruling` (Lot 5) au Lot 9, quand le
-type A a eu besoin de la même distinction pour ses points arrière — la
-logique est généralisée ici plutôt que dupliquée, avec deux différences
-assumées :
+Extracted from `app/type_bc.py::_is_grid_ruling` (Lot 5) in Lot 9, when
+type A needed the same distinction for its backstitches — the logic is
+generalised here rather than duplicated, with two deliberate differences:
 
-* les coordonnées sont passées explicitement (et non un objet pdfplumber),
-  parce que les deux appelants ne lisent pas la même chose : le type B/C
-  utilise la bbox (`x0`/`top`/`x1`/`bottom`), le type A les vrais points du
-  tracé (`pts`) — indispensable pour lui, car une bbox perd le sens d'une
-  diagonale (mesuré sur la fixture `cafe-brasserie-charting-export` : 36
-  des 56 diagonales de sa page 1 sont descendantes, et seraient toutes lues
-  comme montantes depuis la bbox seule) ;
-* `min_length` (facultatif) : un point arrière conventionnel part lui aussi
-  d'un coin de case, exactement comme une réglure — l'alignement sur une
-  frontière ne suffit donc pas à les séparer. Ce qui les sépare vraiment,
-  c'est la **longueur** (une réglure traverse toute la grille, un point
-  arrière fait quelques cases) et l'**orientation** (une réglure est
-  toujours strictement horizontale ou verticale, jamais diagonale — alors
-  qu'un point arrière l'est très souvent). Sans `min_length`, le
-  comportement est identique à celui du Lot 5, bit pour bit.
+* coordinates are passed explicitly (rather than a pdfplumber object),
+  because the two callers do not read the same thing: type B/C uses the bbox
+  (`x0`/`top`/`x1`/`bottom`), type A the path's real points (`pts`) —
+  essential for it, since a bbox loses a diagonal's direction (measured on
+  the `cafe-brasserie-charting-export` fixture: 36 of the 56 diagonals on its
+  page 1 are descending, and would all be read as ascending from the bbox
+  alone);
+* `min_length` (optional): a conventional backstitch also starts from a cell
+  corner, exactly like a ruling — alignment on a boundary is therefore not
+  enough to tell them apart. What really separates them is **length** (a
+  ruling crosses the whole grid, a backstitch spans a few cells) and
+  **orientation** (a ruling is always strictly horizontal or vertical, never
+  diagonal — whereas a backstitch very often is). Without `min_length`, the
+  behaviour is identical to Lot 5's, bit for bit.
 """
 
 from __future__ import annotations
 
 import math
 
-# Écart en points PDF en dessous duquel un côté est considéré comme nul
-# (trait strictement horizontal ou vertical).
+# Gap in PDF points below which a side is considered zero (strictly
+# horizontal or vertical stroke).
 _AXIS_TOLERANCE = 0.5
 
 
@@ -39,8 +36,8 @@ def line_length(x_a: float, y_a: float, x_b: float, y_b: float) -> float:
 
 
 def orientation(x_a: float, y_a: float, x_b: float, y_b: float) -> str | None:
-    """`"vertical"`, `"horizontal"`, ou `None` pour une diagonale comme pour
-    un trait dégénéré réduit à un point."""
+    """`"vertical"`, `"horizontal"`, or `None` for a diagonal as well as for a
+    degenerate stroke reduced to a point."""
     dx = abs(x_b - x_a)
     dy = abs(y_b - y_a)
     if dx < _AXIS_TOLERANCE and dy >= _AXIS_TOLERANCE:
@@ -51,14 +48,14 @@ def orientation(x_a: float, y_a: float, x_b: float, y_b: float) -> str | None:
 
 
 def is_axis_aligned(x_a: float, y_a: float, x_b: float, y_b: float) -> bool:
-    """Vrai pour un trait strictement horizontal ou vertical (jamais pour
-    une diagonale, ni pour un trait dégénéré réduit à un point)."""
+    """True for a strictly horizontal or vertical stroke (never for a
+    diagonal, nor for a degenerate stroke reduced to a point)."""
     return orientation(x_a, y_a, x_b, y_b) is not None
 
 
 def boundary_offset(value: float, origin: float, pitch: float) -> float:
-    """Distance normalisée (0 à 0.5) entre `value` et la frontière de case
-    la plus proche du réseau `origin`/`pitch`."""
+    """Normalised distance (0 to 0.5) between `value` and the nearest cell
+    boundary of the `origin`/`pitch` lattice."""
     if pitch <= 0:
         return 0.5
     offset = ((value - origin) / pitch) % 1.0
@@ -78,12 +75,12 @@ def is_grid_ruling(
     tol_ratio: float = 0.15,
     min_length: float | None = None,
 ) -> bool:
-    """Un trait du quadrillage (réglure mineure ou décimale) est **aligné
-    sur les axes**, posé **exactement sur une frontière de case** et, quand
-    `min_length` est fourni, assez long pour traverser la grille.
+    """A grid line (minor or decimal ruling) is **axis-aligned**, lies
+    **exactly on a cell boundary** and, when `min_length` is given, is long
+    enough to cross the grid.
 
-    Jamais appliqué aux courbes : aucun exporteur ne trace un quadrillage
-    rectiligne autrement qu'avec des segments.
+    Never applied to curves: no exporter draws a rectilinear grid other than
+    with line segments.
     """
     axis = orientation(x_a, y_a, x_b, y_b)
     if axis is None:

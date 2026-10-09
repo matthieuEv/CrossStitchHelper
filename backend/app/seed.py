@@ -1,14 +1,13 @@
-"""Motif de démonstration pour les tests de performance (Lot 1).
+"""Demo pattern for performance tests (Lot 1).
 
-Le roadmap (`docs/roadmap.md`, Lot 1) demande une grille de 255 × 180 cases
-injectée directement en base — le moteur d'extraction (Lots 4 à 7) n'existe
-pas encore, donc rien ne peut créer un motif réaliste de cette taille
-autrement. Le dessin lui-même n'a aucune importance : seule sa taille
-(45 900 cases, la taille de référence citée dans `CLAUDE.md`) compte, pour
-vérifier le rendu canvas et la synchronisation de progression à l'échelle
-réelle.
+The roadmap (`docs/roadmap.md`, Lot 1) calls for a 255 × 180 grid injected
+directly into the database — the extraction engine (Lots 4 to 7) did not
+exist yet, so nothing else could create a realistic pattern of that size.
+The drawing itself does not matter at all: only its size (45,900 cells, the
+reference size cited in `CLAUDE.md`) counts, to verify canvas rendering and
+progress synchronisation at real scale.
 
-Génération déterministe (graine fixe) : le même motif à chaque exécution du
+Deterministic generation (fixed seed): the same pattern on every run of the
 script.
 """
 
@@ -29,14 +28,13 @@ DEMO_PATTERN_ID = "demo-perf-255x180"
 WIDTH = 255
 HEIGHT = 180
 
-# Centre du motif (voir `_build_cells`) — les points spéciaux (Lot 8) s'y
-# regroupent en un petit motif décoratif, pour que la fonctionnalité soit
-# visible sans avoir à chercher où dans une grille de 45 900 cases.
+# Centre of the pattern (see `_build_cells`) — the special stitches (Lot 8)
+# are grouped there into a small decorative motif, so the feature is visible
+# without having to search where in a 45,900-cell grid.
 _CX, _CY = WIDTH // 2, HEIGHT // 2
 
-# Palette purement synthétique (jamais de contenu créatif réel importé,
-# conformément à CLAUDE.md — c'est un motif géométrique généré, pas une
-# œuvre transcrite).
+# Purely synthetic palette (never real imported creative content, per
+# CLAUDE.md — this is a generated geometric pattern, not a transcribed work).
 _PALETTE = [
     ("310", "Noir", "#2b2b2b", "▲"),
     ("permanent", "Blanc cassé", "#f3ede0", "·"),
@@ -61,8 +59,8 @@ def _seeded_random(seed: int) -> Iterator[float]:
 
 
 def _build_cells() -> list[int]:
-    """Dessine des anneaux concentriques + une bordure — un motif purement
-    géométrique, rapide à générer, sans dépendance de rendu de texte."""
+    """Draw concentric rings + a border — a purely geometric pattern, quick
+    to generate, with no text-rendering dependency."""
     cells = [0] * (WIDTH * HEIGHT)
     cx, cy = WIDTH / 2, HEIGHT / 2
     palette_count = len(_PALETTE)
@@ -70,9 +68,9 @@ def _build_cells() -> list[int]:
 
     for y in range(HEIGHT):
         for x in range(WIDTH):
-            # Bordure : cadre plein sur les 3 dernières cases de chaque bord.
+            # Border: solid frame over the last 3 cells of each edge.
             if x < 3 or x >= WIDTH - 3 or y < 3 or y >= HEIGHT - 3:
-                cells[y * WIDTH + x] = 1  # noir
+                cells[y * WIDTH + x] = 1  # black
                 continue
 
             dx = (x - cx) / (WIDTH / 2)
@@ -80,14 +78,14 @@ def _build_cells() -> list[int]:
             radius = math.hypot(dx, dy)
             angle = math.atan2(dy, dx)
 
-            # Anneaux + légère modulation angulaire, pour un dessin non
-            # trivialement répétitif tout en restant bon marché à calculer.
+            # Rings + slight angular modulation, for a drawing that is not
+            # trivially repetitive while staying cheap to compute.
             ring = int(radius * 14 + math.sin(angle * 6) * 1.3)
             if ring % 4 == 0:
-                continue  # case vide : laisse « respirer » le motif
+                continue  # empty cell: lets the pattern "breathe"
 
             index = 2 + (ring + int(angle * 3)) % (palette_count - 2)
-            # Un peu de grain pseudo-aléatoire pour éviter des anneaux trop nets.
+            # A little pseudo-random grain to avoid overly crisp rings.
             if next(random) < 0.04:
                 index = 2 + (index + 1) % (palette_count - 2)
             cells[y * WIDTH + x] = index
@@ -95,18 +93,18 @@ def _build_cells() -> list[int]:
     return cells
 
 
-# Index de palette (1-based, voir `_PALETTE`) réutilisés pour les points
-# spéciaux du Lot 8 — aucune nouvelle couleur : les mêmes fils qui composent
-# déjà les anneaux, pour ne pas gonfler la légende du motif de démonstration.
-_QUARTER_INDEX = 3  # 816, rouge grenat
-_HALF_INDEX = 8  # 798, bleu delft foncé
-_BACKSTITCH_INDEX = 1  # 310, noir — convention courante pour un contour
-_KNOT_INDEX = 10  # 3803, rose mauve très foncé
+# Palette indices (1-based, see `_PALETTE`) reused for the Lot 8 special
+# stitches — no new colour: the same threads that already make up the rings,
+# so as not to bloat the demo pattern's legend.
+_QUARTER_INDEX = 3  # 816, garnet red
+_HALF_INDEX = 8  # 798, dark delft blue
+_BACKSTITCH_INDEX = 1  # 310, black — common convention for an outline
+_KNOT_INDEX = 10  # 3803, very dark mauve pink
 
-# Décalages (dx, dy) depuis le centre (`_CX`, `_CY`) — un petit motif
-# décoratif purement géométrique (pas de contenu créatif réel, CLAUDE.md),
-# choisi pour que les cinq catégories de points soient toutes visibles
-# groupées au même endroit plutôt que dispersées dans les 45 900 cases.
+# Offsets (dx, dy) from the centre (`_CX`, `_CY`) — a small, purely geometric
+# decorative motif (no real creative content, CLAUDE.md), chosen so the five
+# stitch categories are all visible grouped in one place rather than
+# scattered across the 45,900 cells.
 _QUARTER_OFFSETS = [
     (-18, -5), (-16, -8), (-14, -11), (14, -11), (16, -8), (18, -5),
     (-18, 5), (-16, 8), (-14, 11), (14, 11), (16, 8), (18, 5),
@@ -120,19 +118,19 @@ _HALF_OFFSETS = [
 def _build_special_stitches(
     cell_count: int,
 ) -> tuple[list[int], list[int], list[dict[str, float | int]], list[dict[str, float | int]]]:
-    """Construit, autour du centre du motif, un petit losange en point
-    arrière entourant quelques points 1/2, 1/4 et des nœuds — de quoi
-    exercer réellement les cinq catégories de points du Lot 8 (aucun
-    connecteur d'extraction ne les produit encore, voir Lot 9 : sans ce
-    contenu synthétique, l'interface bâtie ici n'aurait jamais rien à
-    afficher tant que ce lot futur n'existe pas).
+    """Build, around the pattern's centre, a small backstitch diamond
+    surrounding a few 1/2 and 1/4 stitches and knots — enough to really
+    exercise the five stitch categories of Lot 8 (no extraction connector
+    produced them yet, see Lot 9: without this synthetic content, the
+    interface built here would never have had anything to display until that
+    future lot existed).
 
-    Renvoie ``(quarter_cells, half_cells, backstitch, french_knots)`` —
-    les deux premiers dans la même convention que `_build_cells` (une
-    valeur par case, 0 = vide), les deux derniers déjà au format JSON
-    attendu par `Grid.backstitch_json`/`french_knots_json`
-    (`app/schemas.py::BackstitchSegment`/`FrenchKnot` pour la convention de
-    coordonnées : coins de case pour l'un, centre de case pour l'autre)."""
+    Returns ``(quarter_cells, half_cells, backstitch, french_knots)`` — the
+    first two in the same convention as `_build_cells` (one value per cell,
+    0 = empty), the last two already in the JSON format expected by
+    `Grid.backstitch_json`/`french_knots_json`
+    (`app/schemas.py::BackstitchSegment`/`FrenchKnot` for the coordinate
+    convention: cell corners for one, cell centre for the other)."""
     quarter_cells = [0] * cell_count
     for dx, dy in _QUARTER_OFFSETS:
         quarter_cells[(_CY + dy) * WIDTH + (_CX + dx)] = _QUARTER_INDEX
@@ -164,11 +162,11 @@ def _build_special_stitches(
 
 
 def seed_demo_pattern(session: Session, *, force: bool = False) -> Pattern:
-    """Insère (ou remplace, si `force`) le motif de démonstration 255 × 180.
+    """Insert (or replace, if `force`) the 255 × 180 demo pattern.
 
-    Idempotent par défaut : si le motif existe déjà, il est renvoyé tel
-    quel — un ré-import ne doit jamais écraser une progression déjà cochée
-    (contrainte structurante de `CLAUDE.md`).
+    Idempotent by default: if the pattern already exists, it is returned as
+    is — a re-import must never overwrite progress already checked
+    (structural constraint from `CLAUDE.md`).
     """
     existing = session.get(Pattern, DEMO_PATTERN_ID)
     if existing is not None and not force:
@@ -208,9 +206,9 @@ def seed_demo_pattern(session: Session, *, force: bool = False) -> Pattern:
 
     for position, (code, name, hex_color, symbol) in enumerate(_PALETTE):
         index_in_grid = position + 1
-        # Longueur de point arrière en cm : purement indicative ici (fabric_count
-        # 14, 1 case ≈ 1/14 pouce ≈ 0,181 cm) — jamais consommée par un calcul,
-        # seulement affichée (§7.3).
+        # Backstitch length in cm: purely indicative here (fabric_count 14,
+        # 1 cell ≈ 1/14 inch ≈ 0.181 cm) — never consumed by a computation,
+        # only displayed (§7.3).
         length_cells = backstitch_length_by_index.get(index_in_grid)
         session.add(
             PaletteEntry(
@@ -249,11 +247,11 @@ def seed_demo_pattern(session: Session, *, force: bool = False) -> Pattern:
         )
     )
 
-    # Progression de départ : le cadre extérieur déjà brodé (points entiers),
-    # et pour chaque catégorie spéciale une partie déjà cochée — un motif ni
-    # vide ni terminé à l'ouverture, et la preuve que chaque bitmap se
-    # persiste et se recharge correctement dès le seed, pas seulement après
-    # une première synchronisation manuelle.
+    # Starting progress: the outer frame already stitched (full stitches),
+    # and for each special category a part already checked — a pattern
+    # neither empty nor finished when opened, and proof that each bitmap is
+    # persisted and reloaded correctly from the seed onwards, not only after
+    # a first manual sync.
     stitched_indices = [i for i, value in enumerate(cells) if value == 1]
     half_done = [i for i, value in enumerate(half_cells) if value != 0][:5]
     quarter_done = [i for i, value in enumerate(quarter_cells) if value != 0][:6]
@@ -279,11 +277,11 @@ def seed_demo_pattern(session: Session, *, force: bool = False) -> Pattern:
 
 
 def _partial_bitmap(done_indices: list[int], element_count: int) -> bytes:
-    """Comme `bitmap_from_indices`, mais pour un bitmap dimensionné sur un
-    nombre d'éléments (segments de point arrière, nœuds) plutôt que sur la
-    grille — `bitmap_from_indices` suppose implicitement un bitmap de la
-    taille de la grille entière, ce qui serait faux (et coûteux en octets
-    pour rien) pour ces deux catégories."""
+    """Like `bitmap_from_indices`, but for a bitmap sized on a number of
+    elements (backstitch segments, knots) rather than on the grid —
+    `bitmap_from_indices` implicitly assumes a bitmap the size of the whole
+    grid, which would be wrong (and a waste of bytes) for these two
+    categories."""
     bitmap = bytearray(bitmap_byte_length(element_count))
     for index in done_indices:
         set_bit(bitmap, index, True)
