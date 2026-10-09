@@ -12,7 +12,7 @@ One run = one issue, carried to exactly one of these stopping points:
 - **a question posted on the issue** (unclear, not reproducible, out of scope, or too big to start without a plan) → label `needs-info`, stop;
 - **a PR opened (or updated) and linked to the issue** → stop and wait for the user's review.
 
-Never chain into a second issue, never merge a PR, never close an issue by hand.
+Never chain into a second issue, never merge a PR, never close an issue by hand. Whatever the stopping point, apply the §8 clean-up first (issue instance down, temporary worktree removed); if the run stops before any commit, also delete the empty local branch it created.
 
 ## 0. Ground rules
 
@@ -68,9 +68,12 @@ When resuming an *Answered* issue: remove `needs-info` only once the answer actu
 
 ## 4. Set up the branch and the app
 
-- Working tree must be clean (`git status --porcelain` empty); if not, stop and tell the user — never stash or discard their work.
-- `git fetch origin`, then create the branch from `origin/main`: `fix/N-short-slug` for `bug`/`fix`, `feat/N-short-slug` for `feature`, `docs/N-short-slug` for `doc`. (*Interrupted*: check out the existing branch instead.)
-- In a fresh worktree, the local toolchain for tests is missing: `npm ci` in `frontend/`, and in `backend/` `python3.12 -m venv .venv && .venv/bin/pip install -e ".[dev]"`.
+- **Work in a dedicated worktree, `../CSH-issue-N`, never in the user's checkout.** Their checkout may hold uncommitted work and is where they review; leave it untouched (no stash, no branch switch). The worktree is temporary: it is removed at the end of every run (§8), so the branch is never left occupied while the user reviews.
+- `git fetch origin`, then:
+  - *New* / *Answered*: `git worktree add -b <branch> ../CSH-issue-N origin/main`, with `<branch>` = `fix/N-short-slug` for `bug`/`fix`, `feat/N-short-slug` for `feature`, `docs/N-short-slug` for `doc`;
+  - *Interrupted* or a review round (§9): `git worktree add --detach ../CSH-issue-N origin/<branch>`, and push with `git push origin HEAD:<branch>`. Detached on purpose: the user may have that branch checked out (`gh pr checkout`) in their own checkout, and git refuses to check out one branch in two places.
+  - If `../CSH-issue-N` already exists (leftover of a crashed run): if `git -C ../CSH-issue-N status --porcelain` shows only untracked build output and its commits are on `origin`, remove it as in §8; otherwise stop and tell the user what is in it.
+- Run every following command from the worktree. Its toolchain for tests is missing: `npm ci` in `frontend/`, and in `backend/` `python3.12 -m venv .venv && .venv/bin/pip install -e ".[dev]"`.
 - **The app always runs through Docker Compose** (the user's requirement), as a separate throw-away instance built from the checked-out branch:
 
   ```bash
@@ -131,14 +134,22 @@ Stop, and end the run with a report to the user **in French** (the user's requir
 - **Vérifié** — the scenario replayed before and after, at which widths, the tests added, the CI commands run.
 - **Pas couvert** — what was left out or could not be checked (at least: no physical iPhone/iPad).
 
-Close the preview tab and stop the issue instance (`docker compose -p csh-issue -f docker-compose.yml -f .claude/compose.issue.yml down`) — never the user's own.
+Before that report, clean up so the user can review the fix right away (`gh pr checkout <pr>` in their own checkout):
+
+1. Close the preview tab and stop the issue instance (`docker compose -p csh-issue -f docker-compose.yml -f .claude/compose.issue.yml down`, from the worktree) — never the user's own.
+2. Check that nothing would be lost: `git -C ../CSH-issue-N status --porcelain` lists only untracked build output (`node_modules`, `.venv`…), and `git -C ../CSH-issue-N log origin/<branch>..HEAD` is empty (everything pushed). If not, push or report — never delete unpushed work.
+3. `git worktree remove ../CSH-issue-N` (`--force` only once step 2 has shown that the only leftovers are untracked build output), then `git worktree prune`.
+
+Say in the report that the copy was removed and that `gh pr checkout <pr>` (or `git pull` if the branch is already checked out) shows the fix.
 
 ## 9. Resuming after review
 
-- Check out the PR branch, `git pull`.
+A review round starts either from review comments on the PR, or from the user asking for a change on an issue or PR in the conversation — both are handled the same way, the latter counting as a trusted change request.
+
+- Re-open a temporary worktree on the PR branch, detached (§4) — never check out the branch in the user's checkout, where they may be reviewing it.
 - Read every review and inline comment from a trusted voice that has no marker reply yet. Each one is either a change request (do it), a question (answer it), or unclear (ask — in the review thread, marker first).
 - Apply the changes as new commits (no force-push of history the user already reviewed), re-run §7 and the §8 browser check for what changed.
 - Reply to each handled thread (marker first) with what changed and in which commit; push.
 - If a review comment widens the scope beyond the issue, propose a separate issue in the reply instead of growing the PR.
 
-Stop and report in French as in §8, centred on this review round: each review comment, what was changed for it and how, and any comment answered or questioned rather than applied.
+Clean up exactly as in §8 (instance down, worktree removed), then stop and report in French as in §8 — telling the user to `git pull` on the branch to see the new commits — centred on this review round: each review comment, what was changed for it and how, and any comment answered or questioned rather than applied.
