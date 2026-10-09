@@ -19,16 +19,28 @@ export interface LibraryEntry {
 
 interface LibraryScreenProps {
   entries: readonly LibraryEntry[];
+  /** The library is still loading: `entries` is not the real list yet. */
+  loading?: boolean;
   wide: boolean;
   onOpen: (patternId: string) => void;
   onImport: () => void;
 }
 
-export function LibraryScreen({ entries, wide, onOpen, onImport }: LibraryScreenProps) {
+export function LibraryScreen({
+  entries,
+  loading = false,
+  wide,
+  onOpen,
+  onImport,
+}: LibraryScreenProps) {
   const t = useT();
   const relative = useRelativeTime();
 
-  const cards = entries.map((entry) => {
+  // While loading, nothing is listed rather than the patterns at hand (the
+  // demo fallback): showing them, then replacing them with the real list a
+  // moment later, looks like patterns being deleted (issue #48).
+  const shown = loading ? [] : entries;
+  const cards = shown.map((entry) => {
     const totals = summarise(countByColor(entry.pattern, entry.progress));
     return { entry, totals };
   });
@@ -50,7 +62,8 @@ export function LibraryScreen({ entries, wide, onOpen, onImport }: LibraryScreen
         <div>
           <h2 style={{ margin: "0 0 2px" }}>{t("library.title")}</h2>
           <div className="text-muted" style={{ fontSize: 13 }}>
-            {t("library.summary", { count: entries.length, active: inProgress })}
+            {/* A non-breaking space keeps the header's height while loading. */}
+            {loading ? "\u00a0" : t("library.summary", { count: shown.length, active: inProgress })}
           </div>
         </div>
         <button type="button" className="btn btn-secondary" style={{ minHeight: 44, padding: "0 16px" }}>
