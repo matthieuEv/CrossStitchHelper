@@ -493,7 +493,7 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
 
             <div
               ref={stageRef}
-              className="crop-stage"
+              className="crop-stage edit-area"
               onPointerMove={onPointerMove}
               onPointerUp={endDrag}
               onPointerLeave={endDrag}
