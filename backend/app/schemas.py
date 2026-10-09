@@ -553,3 +553,13 @@ class BackupRestoreSummary(BaseModel):
 
 class AutoBackupSettings(BaseModel):
     enabled: bool
+
+
+class ThreadShadeOut(BaseModel):
+    """A shade of a thread colour chart (`GET /api/threads/dmc`). Colours
+    come from an unofficial community table — a reasonable starting point,
+    never an exact identification (see `app/dmc_catalog.py`)."""
+
+    code: str
+    name: str
+    rgb_hex: str
