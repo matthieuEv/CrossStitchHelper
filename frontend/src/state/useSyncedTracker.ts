@@ -12,10 +12,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { syncProgress } from "../lib/api";
 import { cacheProgress, clearPendingOps, enqueueOps, getPendingOps } from "../lib/db";
+import { loadView, saveView } from "../lib/viewMemory";
 import { emptySpecialProgress, type Pattern, type Progress, type SpecialProgress } from "../pattern/types";
 import { useTracker, type CellChange, type Tracker } from "./useTracker";
 
 const FLUSH_DEBOUNCE_MS = 1200;
+/** A pan fires one view change per frame: no need to write each of them. */
+const VIEW_SAVE_DEBOUNCE_MS = 300;
 
 export type SyncState = "synced" | "pending" | "syncing" | "offline";
 
@@ -63,8 +66,34 @@ export function useSyncedTracker(
     [patternId, scheduleFlush],
   );
 
-  const tracker = useTracker(pattern, initialProgress, initialSpecial, onChange);
+  // Read once, on mount: afterwards the tracker owns the view.
+  const [initialView] = useState(() => loadView(patternId));
+  const tracker = useTracker(pattern, initialProgress, initialSpecial, onChange, initialView);
   trackerRef.current = tracker;
+
+  // Remembers the view (zoom and position) so a reload reopens the pattern
+  // at the same spot. Debounced during a gesture, and written right away when
+  // the page goes away (reload, tab closed) so the last move is never lost.
+  const { cell, x0, y0 } = tracker.view;
+  const latestViewRef = useRef(tracker.view);
+  latestViewRef.current = tracker.view;
+  useEffect(() => {
+    const timer = window.setTimeout(
+      () => saveView(patternId, latestViewRef.current),
+      VIEW_SAVE_DEBOUNCE_MS,
+    );
+    return () => window.clearTimeout(timer);
+  }, [patternId, cell, x0, y0]);
+  useEffect(() => {
+    const saveNow = (): void => saveView(patternId, latestViewRef.current);
+    window.addEventListener("pagehide", saveNow);
+    return () => {
+      window.removeEventListener("pagehide", saveNow);
+      // Leaving the pattern (library, another pattern) within the debounce
+      // delay must not lose the last move either.
+      saveNow();
+    };
+  }, [patternId]);
 
   const flush = useCallback(async () => {
     if (flushingRef.current) return;
