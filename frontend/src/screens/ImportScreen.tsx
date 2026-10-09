@@ -664,12 +664,6 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
               />
             )}
 
-            {uncertainCellsSet !== null && (
-              <p className="text-muted" style={{ fontSize: 12, margin: 0 }}>
-                {t("import.paint.uncertainHint", { count: uncertainCellsSet.size })}
-              </p>
-            )}
-
             <div
               style={{
                 display: "grid",
