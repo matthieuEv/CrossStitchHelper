@@ -254,9 +254,13 @@ export function useTracker(
         return;
       }
       const index = position.y * pattern.width + position.x;
+      const colour = pattern.cells[index] ?? 0;
       // An empty pattern cell cannot be stitched: checking it would make no
       // sense and would skew the counters.
-      if ((pattern.cells[index] ?? 0) === 0) return;
+      if (colour === 0) return;
+      // With an active colour filter, only that colour can be checked — the
+      // same rule as `fillSelection` below: the dimmed cells are out of play.
+      if (highlight !== 0 && colour !== highlight) return;
 
       snapshot();
       const current = doneRef.current;
@@ -265,7 +269,7 @@ export function useTracker(
       setVersion((value) => value + 1);
       onChangeRef.current?.([{ layer: "full", index, stitched: next }]);
     },
-    [pattern, snapshot],
+    [pattern, highlight, snapshot],
   );
 
   /** Like `toggleCell`, for the 1/2 and 1/4 layers — a cell with no stitch in
@@ -282,7 +286,10 @@ export function useTracker(
       }
       const index = position.y * pattern.width + position.x;
       const sourceCells = layer === "half" ? pattern.cellsHalf : pattern.cellsQuarter;
-      if ((sourceCells[index] ?? 0) === 0) return;
+      const colour = sourceCells[index] ?? 0;
+      if (colour === 0) return;
+      // Same colour filter rule as `toggleCell`.
+      if (highlight !== 0 && colour !== highlight) return;
 
       snapshot();
       const current = doneRef.current;
@@ -292,7 +299,7 @@ export function useTracker(
       setVersion((value) => value + 1);
       onChangeRef.current?.([{ layer, index, stitched: next }]);
     },
-    [pattern, snapshot],
+    [pattern, highlight, snapshot],
   );
 
   /** Checks/unchecks a backstitch segment or a knot, by index into
@@ -330,15 +337,17 @@ export function useTracker(
       // apart with a finger.
       if (cell < SYMBOL_MIN_CELL) return;
       const tolerance = Math.min(SPECIAL_TAP_TOLERANCE_MAX_CELLS, SPECIAL_TAP_TOLERANCE_PX / cell);
+      // With an active colour filter, only elements of that colour are
+      // candidates (same rule as `toggleCell`).
       if (activeLayer === "backstitch") {
-        const index = nearestBackstitchIndex(pattern.backstitch, point.gx, point.gy, tolerance);
+        const index = nearestBackstitchIndex(pattern.backstitch, point.gx, point.gy, tolerance, highlight);
         if (index !== null) toggleElementLayer("backstitch", index);
       } else {
-        const index = nearestKnotIndex(pattern.frenchKnots, point.gx, point.gy, tolerance);
+        const index = nearestKnotIndex(pattern.frenchKnots, point.gx, point.gy, tolerance, highlight);
         if (index !== null) toggleElementLayer("knot", index);
       }
     },
-    [activeLayer, cell, pattern, toggleCell, toggleGridLayer, toggleElementLayer],
+    [activeLayer, cell, highlight, pattern, toggleCell, toggleGridLayer, toggleElementLayer],
   );
 
   const fillSelection = useCallback(

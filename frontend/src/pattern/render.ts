@@ -401,6 +401,9 @@ export function drawGrid(canvas: HTMLCanvasElement, options: DrawGridOptions): b
       const isDone = specialDone !== null && specialDone[i] === 1;
       if (isDone && options.hideDone === true) continue;
 
+      // Dimmed under a colour filter like every other stitch category: only
+      // the filtered colour can be checked (`useTracker.ts::toggleAtPoint`).
+      g.globalAlpha = highlight !== 0 && highlight !== segment.paletteIndex ? 0.14 : 1;
       g.strokeStyle = isDone ? mix(entry.hex, theme.ground, 0.62) : mix(entry.hex, theme.ink, 0.2);
       g.lineWidth = Math.max(1.4, cell * 0.14);
       g.beginPath();
@@ -408,6 +411,7 @@ export function drawGrid(canvas: HTMLCanvasElement, options: DrawGridOptions): b
       g.lineTo((segment.x2 - x0) * cell, (segment.y2 - y0) * cell);
       g.stroke();
     }
+    g.globalAlpha = 1;
   }
 
   if (pattern.frenchKnots.length > 0) {
@@ -426,11 +430,13 @@ export function drawGrid(canvas: HTMLCanvasElement, options: DrawGridOptions): b
       const px = (knot.x - x0) * cell;
       const py = (knot.y - y0) * cell;
       const radius = Math.max(1.6, cell * 0.24);
+      g.globalAlpha = highlight !== 0 && highlight !== knot.paletteIndex ? 0.14 : 1;
       g.fillStyle = isDone ? mix(entry.hex, theme.ground, 0.62) : mix(entry.hex, theme.ink, 0.12);
       g.beginPath();
       g.arc(px, py, radius, 0, Math.PI * 2);
       g.fill();
     }
+    g.globalAlpha = 1;
   }
 
   if (options.gridlines !== false && cell >= GRIDLINE_MIN_CELL) {

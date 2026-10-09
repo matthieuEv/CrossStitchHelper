@@ -35,19 +35,23 @@ function distanceToSegment(
 /**
  * Index (into `segments`) of the segment closest to `(gx, gy)` (same cell
  * corner coordinates as `BackstitchSegment`), within `maxDistance` cells —
- * `null` if nothing is close enough.
+ * `null` if nothing is close enough. With `onlyPaletteIndex` (1-based, 0 =
+ * any colour), segments of other colours are ignored, so a nearer segment of
+ * a filtered-out colour never hides the one of the filtered colour.
  */
 export function nearestBackstitchIndex(
   segments: readonly BackstitchSegment[],
   gx: number,
   gy: number,
   maxDistance: number,
+  onlyPaletteIndex = 0,
 ): number | null {
   let best: number | null = null;
   let bestDistance = maxDistance;
   for (let i = 0; i < segments.length; i++) {
     const segment = segments[i];
     if (segment === undefined) continue;
+    if (onlyPaletteIndex !== 0 && segment.paletteIndex !== onlyPaletteIndex) continue;
     const distance = distanceToSegment(gx, gy, segment.x1, segment.y1, segment.x2, segment.y2);
     if (distance <= bestDistance) {
       bestDistance = distance;
@@ -60,19 +64,22 @@ export function nearestBackstitchIndex(
 /**
  * Index (into `knots`) of the knot closest to `(gx, gy)` (same cell centre
  * coordinates as `FrenchKnot`), within `maxDistance` cells — `null` if
- * nothing is close enough.
+ * nothing is close enough. `onlyPaletteIndex`: same as for
+ * `nearestBackstitchIndex`.
  */
 export function nearestKnotIndex(
   knots: readonly FrenchKnot[],
   gx: number,
   gy: number,
   maxDistance: number,
+  onlyPaletteIndex = 0,
 ): number | null {
   let best: number | null = null;
   let bestDistance = maxDistance;
   for (let i = 0; i < knots.length; i++) {
     const knot = knots[i];
     if (knot === undefined) continue;
+    if (onlyPaletteIndex !== 0 && knot.paletteIndex !== onlyPaletteIndex) continue;
     const distance = Math.hypot(gx - knot.x, gy - knot.y);
     if (distance <= bestDistance) {
       bestDistance = distance;
