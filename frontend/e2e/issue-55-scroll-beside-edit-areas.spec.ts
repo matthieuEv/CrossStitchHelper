@@ -42,9 +42,10 @@ async function pageScrollTop(area: Locator, reset?: number): Promise<number> {
 
 /**
  * Where a finger put down at (x, y) lands, and whether a vertical swipe from
- * there scrolls the page: no element between that point and the first
- * scrollable ancestor forbids vertical panning (`touch-action`), and that
- * ancestor really has something to scroll.
+ * there scrolls the page: no element between that point and its scrolling
+ * container (`overflow-y: auto`) forbids vertical panning (`touch-action`).
+ * Whether that container currently overflows is left out: it depends on the
+ * rest of the step's layout, not on the strip.
  */
 async function touchAt(
   area: Locator,
@@ -63,9 +64,7 @@ async function touchAt(
         if (action !== "auto" && action !== "manipulation" && !action.includes("pan-y")) {
           pansVertically = false;
         }
-        if (["auto", "scroll"].includes(style.overflowY) && node.scrollHeight > node.clientHeight) {
-          break;
-        }
+        if (["auto", "scroll"].includes(style.overflowY)) break;
         node = node.parentElement;
       }
       return { inArea: element.contains(hit), scrollsPage: pansVertically && node !== null };
