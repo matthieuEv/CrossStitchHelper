@@ -3,19 +3,67 @@ name: Release
 on:
   push:
     tags: ["v*.*.*"]
+  # Manual run from the Actions tab (or `gh workflow run`): builds the head of
+  # the selected branch and creates the tag only once the image is published.
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to publish, e.g. v2.0.0-beta.1. A pre-release (with a `-`) never becomes `latest`."
+        required: true
+        type: string
 
 permissions:
   contents: write
   packages: write
 
 jobs:
+  version:
+    name: Resolve version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.resolve.outputs.version }}
+      prerelease: ${{ steps.resolve.outputs.prerelease }}
+    steps:
+      - name: Validate the version
+        id: resolve
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ inputs.version || github.ref_name }}
+        run: |
+          if ! [[ "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z]+(\.[0-9A-Za-z]+)*)?$ ]]; then
+            echo "::error::'$VERSION' is not a SemVer tag (expected v1.2.3 or v1.2.3-beta.1)"
+            exit 1
+          fi
+          prerelease=false
+          [[ "$VERSION" == *-* ]] && prerelease=true
+
+          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
+            # Never overwrite an image testers or users already pulled.
+            if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$VERSION" --silent 2>/dev/null; then
+              echo "::error::Tag $VERSION already exists"
+              exit 1
+            fi
+            # Only main may publish a final version, which becomes `latest`.
+            if [[ "$prerelease" == false && "$GITHUB_REF_NAME" != main ]]; then
+              echo "::error::A final version can only be published from main (got $GITHUB_REF_NAME)"
+              exit 1
+            fi
+          fi
+
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "prerelease=$prerelease" >> "$GITHUB_OUTPUT"
+
   ci:
     name: CI
+    needs: [version]
     uses: ./.github/workflows/ci.yml
 
   docker:
     name: Build and publish Docker image
-    needs: [ci]
+    needs: [version, ci]
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+      PRERELEASE: ${{ needs.version.outputs.prerelease }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -33,9 +81,18 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Compute image name
+      - name: Compute image name and tags
         id: image
-        run: echo "name=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+        run: |
+          name="ghcr.io/${GITHUB_REPOSITORY,,}"
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+          if [[ "$PRERELEASE" == true ]]; then
+            echo "tags=$name:$VERSION" >> "$GITHUB_OUTPUT"
+            echo "tag_list=\`$VERSION\`" >> "$GITHUB_OUTPUT"
+          else
+            echo "tags=$name:$VERSION,$name:latest" >> "$GITHUB_OUTPUT"
+            echo "tag_list=\`$VERSION\`, \`latest\`" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Build and push
         uses: docker/build-push-action@v7
@@ -44,28 +101,34 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: true
           build-args: |
-            VERSION=${{ github.ref_name }}
-          tags: |
-            ${{ steps.image.outputs.name }}:${{ github.ref_name }}
-            ${{ steps.image.outputs.name }}:latest
+            VERSION=${{ env.VERSION }}
+          tags: ${{ steps.image.outputs.tags }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
       - name: Create the GitHub Release
         uses: softprops/action-gh-release@v3
         with:
+          # On a manual run the tag does not exist yet: it is created here, on
+          # the commit that was built, only once the image is published.
+          tag_name: ${{ env.VERSION }}
+          target_commitish: ${{ github.sha }}
+          prerelease: ${{ env.PRERELEASE == 'true' }}
+          make_latest: ${{ env.PRERELEASE == 'true' && 'false' || 'true' }}
           generate_release_notes: true
           body: |
+            ${{ env.PRERELEASE == 'true' && '> **Pre-release for testers.** Not published as `latest`: existing instances following `latest` are unaffected.' || '' }}
+
             ## Docker image
 
             | | |
             |---|---|
             | Image | `${{ steps.image.outputs.name }}` |
-            | Tags | `${{ github.ref_name }}`, `latest` |
+            | Tags | ${{ steps.image.outputs.tag_list }} |
             | Platforms | `linux/amd64`, `linux/arm64` (Raspberry Pi, Apple Silicon, ARM servers) |
 
             ```bash
-            docker pull ${{ steps.image.outputs.name }}:${{ github.ref_name }}
+            docker pull ${{ steps.image.outputs.name }}:${{ env.VERSION }}
             ```
 
             ## New install
@@ -75,7 +138,7 @@ jobs:
             ```yaml
             services:
               crossstitchhelper:
-                image: ${{ steps.image.outputs.name }}:${{ github.ref_name }}
+                image: ${{ steps.image.outputs.name }}:${{ env.VERSION }}
                 container_name: crossstitchhelper
                 restart: unless-stopped
                 ports:
@@ -93,8 +156,8 @@ jobs:
             docker compose up -d
             ```
 
-            Your data lives in the `./data` volume, never in the image, and database migrations run automatically on startup. `GET /api/health` reports the running version (`${{ github.ref_name }}`).
+            Your data lives in the `./data` volume, never in the image, and database migrations run automatically on startup. `GET /api/health` reports the running version (`${{ env.VERSION }}`).
 
-            Full documentation: [README](${{ github.server_url }}/${{ github.repository }}/blob/${{ github.ref_name }}/README.md).
+            Full documentation: [README](${{ github.server_url }}/${{ github.repository }}/blob/${{ env.VERSION }}/README.md).
 
             ---
