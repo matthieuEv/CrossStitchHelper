@@ -117,47 +117,8 @@ jobs:
           make_latest: ${{ env.PRERELEASE == 'true' && 'false' || 'true' }}
           generate_release_notes: true
           body: |
-            ${{ env.PRERELEASE == 'true' && '> **Pre-release for testers.** Not published as `latest`: existing instances following `latest` are unaffected.' || '' }}
-
-            ## Docker image
-
-            | | |
-            |---|---|
-            | Image | `${{ steps.image.outputs.name }}` |
-            | Tags | ${{ steps.image.outputs.tag_list }} |
-            | Platforms | `linux/amd64`, `linux/arm64` (Raspberry Pi, Apple Silicon, ARM servers) |
+            CrossStitchHelper ${{ github.ref_name }} is available.
 
             ```bash
-            docker pull ${{ steps.image.outputs.name }}:${{ env.VERSION }}
+            docker pull ${{ steps.image.outputs.name }}:${{ github.ref_name }}
             ```
-
-            ## New install
-
-            Create a `docker-compose.yml`, then run `docker compose up -d` and open `http://<server-address>:8765`:
-
-            ```yaml
-            services:
-              crossstitchhelper:
-                image: ${{ steps.image.outputs.name }}:${{ env.VERSION }}
-                container_name: crossstitchhelper
-                restart: unless-stopped
-                ports:
-                  - "8765:8000"
-                volumes:
-                  - ./data:/data
-            ```
-
-            ## Updating an existing instance
-
-            Back up first (Settings → Data in the app, or a copy of the `./data` directory), then:
-
-            ```bash
-            docker compose pull
-            docker compose up -d
-            ```
-
-            Your data lives in the `./data` volume, never in the image, and database migrations run automatically on startup. `GET /api/health` reports the running version (`${{ env.VERSION }}`).
-
-            Full documentation: [README](${{ github.server_url }}/${{ github.repository }}/blob/${{ env.VERSION }}/README.md).
-
-            ---
