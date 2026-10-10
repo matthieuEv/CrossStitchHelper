@@ -7,9 +7,13 @@ import { expect, test, type Browser, type Locator, type Page } from "@playwright
  * right, where a vertical swipe scrolls the page, while a swipe on the area
  * itself still belongs to the area.
  *
- * The swipes are real touch scroll gestures (Chromium's
- * `Input.synthesizeScrollGesture`), which honour `touch-action` like a finger
- * does — a mouse wheel would not tell the two apart.
+ * What a finger does is read from the browser's own rules rather than from a
+ * synthesised gesture: the element it lands on (hit testing), and whether
+ * `touch-action` lets a vertical swipe from there reach the scrolling pane.
+ * Chromium's synthesised touch gestures (`Input.synthesizeScrollGesture`)
+ * scroll on macOS but not on CI's headless Linux, where they left the page
+ * still with the strip measured free — a test that passed or failed with the
+ * platform, not with the fix. A mouse wheel would not tell the two apart.
  */
 
 // Smallest valid PNG (1×1 pixel): the dropped file's content does not matter
@@ -17,19 +21,8 @@ import { expect, test, type Browser, type Locator, type Page } from "@playwright
 const TINY_PNG_BASE64 =
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=";
 
-
-/** Vertical touch swipe (upwards: scrolls the page down) starting at (x, y). */
-async function swipeUp(page: Page, x: number, y: number): Promise<void> {
-  const client = await page.context().newCDPSession(page);
-  await client.send("Input.synthesizeScrollGesture", {
-    x,
-    y,
-    yDistance: -150,
-    gestureSourceType: "touch",
-    speed: 600,
-  });
-  await client.detach();
-}
+/** A thumb-wide strip: Apple's minimum touch target. */
+const STRIP = 44;
 
 /**
  * Scroll position of the area's scrolling ancestor (the wizard's content
@@ -48,27 +41,63 @@ async function pageScrollTop(area: Locator, reset?: number): Promise<number> {
 }
 
 /**
- * A swipe on the area does not scroll the page; one in the strip on its right
- * — 30 px from the edge of the screen, on the area itself before the fix —
- * does.
+ * Where a finger put down at (x, y) lands, and whether a vertical swipe from
+ * there scrolls the page: no element between that point and the first
+ * scrollable ancestor forbids vertical panning (`touch-action`), and that
+ * ancestor really has something to scroll.
+ */
+async function touchAt(
+  area: Locator,
+  x: number,
+  y: number,
+): Promise<{ inArea: boolean; scrollsPage: boolean }> {
+  return area.evaluate(
+    (element, [px, py]) => {
+      const hit = document.elementFromPoint(px, py);
+      if (hit === null) throw new Error(`Nothing at (${px}, ${py})`);
+      let pansVertically = true;
+      let node: Element | null = hit;
+      while (node !== null) {
+        const style = getComputedStyle(node);
+        const action = style.touchAction;
+        if (action !== "auto" && action !== "manipulation" && !action.includes("pan-y")) {
+          pansVertically = false;
+        }
+        if (["auto", "scroll"].includes(style.overflowY) && node.scrollHeight > node.clientHeight) {
+          break;
+        }
+        node = node.parentElement;
+      }
+      return { inArea: element.contains(hit), scrollsPage: pansVertically && node !== null };
+    },
+    [x, y] as const,
+  );
+}
+
+/**
+ * A finger on the area belongs to the area; a strip at least a thumb wide is
+ * left free on its right, inside the screen, where a swipe scrolls the page.
+ * Before the fix the area stretched to 20 px from the edge of the screen.
  */
 async function expectScrollGutter(page: Page, area: Locator): Promise<void> {
   await pageScrollTop(area, 0);
   // Let the step settle first: focusing a newly added field may still nudge
-  // the scroll position by a few pixels, with no gesture involved.
+  // the scroll position by a few pixels.
   await page.waitForTimeout(600);
-  const baseline = await pageScrollTop(area);
 
   const box = await area.boundingBox();
   if (box === null) throw new Error("The editing area has no bounding box");
   const viewportWidth = page.viewportSize()?.width ?? 375;
   const y = box.y + Math.min(box.height / 2, 60);
 
-  await swipeUp(page, box.x + box.width / 2, y);
-  expect(await pageScrollTop(area)).toBe(baseline);
+  expect(await touchAt(area, box.x + box.width / 2, y)).toEqual({
+    inArea: true,
+    scrollsPage: false,
+  });
 
-  await swipeUp(page, viewportWidth - 30, y);
-  await expect.poll(() => pageScrollTop(area)).toBeGreaterThan(baseline);
+  const right = box.x + box.width;
+  expect(right + STRIP).toBeLessThanOrEqual(viewportWidth);
+  expect(await touchAt(area, right + STRIP / 2, y)).toEqual({ inArea: false, scrollsPage: true });
 }
 
 /**
