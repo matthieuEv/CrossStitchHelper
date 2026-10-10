@@ -117,8 +117,8 @@ jobs:
           make_latest: ${{ env.PRERELEASE == 'true' && 'false' || 'true' }}
           generate_release_notes: true
           body: |
-            CrossStitchHelper ${{ github.ref_name }} is available.
+            CrossStitchHelper ${{ env.VERSION }} is available.
 
             ```bash
-            docker pull ${{ steps.image.outputs.name }}:${{ github.ref_name }}
+            docker pull ${{ steps.image.outputs.name }}:${{ env.VERSION }}
             ```
