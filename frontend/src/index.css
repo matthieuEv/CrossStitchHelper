@@ -546,6 +546,26 @@ button.badge {
   padding-bottom: env(safe-area-inset-bottom);
 }
 
+/* Same sheet, over the whole window (Library pattern actions) — centred as a
+   dialog when there is room, where a full-width bottom sheet looks lost. */
+.drawer-backdrop.is-fixed { position: fixed; z-index: 30; }
+@media (min-width: 768px) {
+  .drawer-backdrop.is-fixed { align-items: center; justify-content: center; }
+  .drawer-backdrop.is-fixed .drawer { max-width: 420px; border-radius: 28px; }
+}
+
+/* — library — */
+/* A long-press on a card opens its actions: no native callout or text
+   selection on iOS meanwhile. */
+.library-card { -webkit-touch-callout: none; user-select: none; -webkit-user-select: none; }
+.library-card-more {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  background: var(--color-bg);
+  box-shadow: var(--shadow-sm);
+}
+
 /* — import wizard — */
 .dropzone {
   border: 2px dashed var(--color-divider);
