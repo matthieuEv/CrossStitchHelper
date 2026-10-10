@@ -73,7 +73,7 @@ test("a type E PDF (reused image catalogue) pre-fills the wizard with real colou
   // Clean file (specification, Lot 7 "done when"): no cell should be
   // flagged uncertain here — the exact count is enough to identify the 20
   // colours unambiguously on this file.
-  await expect(page.getByText(/case\(s\) marquée\(s\) d'un repère/)).toHaveCount(0);
+  await expect(page.getByText(/case\(s\) marquée\(s\) de ce repère/)).toHaveCount(0);
 
   await page.getByRole("button", { name: "Continuer", exact: true }).click();
 
