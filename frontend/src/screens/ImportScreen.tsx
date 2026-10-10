@@ -23,6 +23,8 @@ import {
   importPagePreviewUrl,
   patchImportConfig,
   type ApiImportConfigPatch,
+  fetchDmcShades,
+  type ApiThreadShade,
   translateApiError,
   translateDetectionWarning,
   type ApiImportConfig,
@@ -68,6 +70,9 @@ function paletteForApi(palette: readonly PaletteRow[]): ApiImportPaletteEntry[] 
   return palette.map(({ pdf_symbol_svg: _original, ...entry }) => entry);
 }
 
+/** `<datalist>` of the DMC chart's codes, shared by every code field. */
+const DMC_CODES_LIST_ID = "import-dmc-codes";
+
 export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
   const t = useT();
   const wide = useWideLayout();
@@ -88,6 +93,24 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
   const [palette, setPalette] = useState<PaletteRow[]>([]);
   // Row whose symbol field has just replaced a PDF symbol: focused right away.
   const [focusSymbolIndex, setFocusSymbolIndex] = useState<number | null>(null);
+  // DMC colour chart (issue #39), keyed by lower-case code: typing a known
+  // code fills in its colour and name. Loaded once; without it (server
+  // unreachable), codes are simply typed as before.
+  const [dmcShades, setDmcShades] = useState<ReadonlyMap<string, ApiThreadShade>>(new Map());
+  useEffect(() => {
+    const controller = new AbortController();
+    fetchDmcShades(controller.signal)
+      .then((shades) =>
+        setDmcShades(new Map(shades.map((shade) => [shade.code.toLowerCase(), shade]))),
+      )
+      .catch(() => {
+        // Best effort: the chart only saves typing.
+      });
+    return () => controller.abort();
+  }, []);
+  // Code of the row being edited, as it was when the field got the focus:
+  // the chart only fills in a row whose code really changed.
+  const codeAtFocusRef = useRef<string | null>(null);
   const [fills, setFills] = useState<ApiImportFillZone[]>([]);
   const [detectedCells, setDetectedCells] = useState<number[] | null>(null);
   const [uncertainCells, setUncertainCells] = useState<number[] | null>(null);
@@ -319,6 +342,26 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
 
   const commitPaletteEdits = (): void => {
     if (job !== null) void saveConfig(job.id, { palette: paletteForApi(palette) });
+  };
+
+  // Leaving a code field after changing it to a code of the DMC chart fills
+  // in that shade's colour and name (issue #39) — on blur rather than on
+  // every keystroke, so the codes passed through while typing ("38" on the
+  // way to "3820") never overwrite anything. Both stay editable afterwards.
+  const commitCodeEdit = (index: number): void => {
+    const entry = palette[index];
+    const shade = entry === undefined ? undefined : dmcShades.get(entry.code.trim().toLowerCase());
+    const changed = entry !== undefined && entry.code !== codeAtFocusRef.current;
+    codeAtFocusRef.current = null;
+    if (shade === undefined || !changed) {
+      commitPaletteEdits();
+      return;
+    }
+    const next = palette.map((row, i) =>
+      i === index ? { ...row, rgb_hex: shade.rgb_hex, name: shade.name } : row,
+    );
+    setPalette(next);
+    if (job !== null) void saveConfig(job.id, { palette: paletteForApi(next) });
   };
 
   const removePaletteEntry = (index: number): void => {
@@ -663,6 +706,14 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
 
         {step === 3 && (
           <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+            {/* Suggestions for the code fields (DMC chart, issue #39). */}
+            <datalist id={DMC_CODES_LIST_ID}>
+              {[...dmcShades.values()].map((shade) => (
+                <option key={shade.code} value={shade.code}>
+                  {shade.name}
+                </option>
+              ))}
+            </datalist>
             <div className="text-muted" style={{ fontSize: 13 }}>
               {t("import.paint.hint")}
             </div>
@@ -812,9 +863,14 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
                       className="input"
                       style={{ width: 90 }}
                       placeholder={t("import.legend.code")}
+                      aria-label={t("import.legend.code")}
+                      list={dmcShades.size > 0 ? DMC_CODES_LIST_ID : undefined}
                       value={entry.code}
+                      onFocus={() => {
+                        codeAtFocusRef.current = entry.code;
+                      }}
                       onChange={(event) => updatePaletteEntry(index, { code: event.target.value })}
-                      onBlur={commitPaletteEdits}
+                      onBlur={() => commitCodeEdit(index)}
                     />
                     <input
                       className="input"

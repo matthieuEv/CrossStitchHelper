@@ -338,6 +338,13 @@ def rgb_hex(rgb: tuple[int, int, int]) -> str:
     return f"#{r:02x}{g:02x}{b:02x}"
 
 
+def catalog_entries() -> list[tuple[str, str, str]]:
+    """Every shade of the catalogue as `(code, name, rgb_hex)`, in catalogue
+    order — served as is to the import wizard (`app/api/threads.py`) so
+    typing a code there can fill in its colour and name (issue #39)."""
+    return [(code, name, rgb_hex(rgb)) for code, (name, rgb) in _DMC_CATALOG.items()]
+
+
 def nearest_dmc(rgb: tuple[float, float, float]) -> DmcMatch:
     """Nearest neighbour in `_DMC_CATALOG` for `rgb` (0-1 components), by Lab
     distance. Always returns a match (never `None` — the catalogue is never
