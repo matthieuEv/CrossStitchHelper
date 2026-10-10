@@ -143,7 +143,7 @@ export function ImportGridPainter({
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
       <div
-        className="track-canvas-wrap"
+        className="track-canvas-wrap edit-area"
         style={{ height: 320, borderRadius: 18, overflow: "hidden" }}
       >
         <canvas
