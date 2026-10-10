@@ -7,7 +7,10 @@
 # ---------------------------------------------------------------------------
 # 1. Frontend build
 # ---------------------------------------------------------------------------
-FROM node:26-alpine AS frontend
+# Pinned to the build host's platform: the output (static JS/CSS) does not
+# depend on the target architecture, so a multi-arch release builds it once,
+# natively, instead of once per platform under QEMU emulation.
+FROM --platform=$BUILDPLATFORM node:26-alpine AS frontend
 
 WORKDIR /build
 COPY frontend/package.json frontend/package-lock.json* ./

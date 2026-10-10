@@ -5,7 +5,8 @@ on:
     tags: ["v*.*.*"]
 
 permissions:
-  contents: read
+  # `contents: write` is needed to create the GitHub Release.
+  contents: write
   packages: write
 
 jobs:
@@ -19,6 +20,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+
+      # arm64 matters for self-hosting: Raspberry Pi, Apple Silicon, ARM VPS.
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v4
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
@@ -38,9 +43,32 @@ jobs:
         uses: docker/build-push-action@v7
         with:
           context: .
+          platforms: linux/amd64,linux/arm64
           push: true
           build-args: |
             VERSION=${{ github.ref_name }}
           tags: |
             ${{ steps.image.outputs.name }}:${{ github.ref_name }}
             ${{ steps.image.outputs.name }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  release:
+    name: GitHub Release
+    # Only once the image is published, so a Release never points to a
+    # version that cannot be pulled.
+    needs: [docker]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create the Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          image="ghcr.io/${GITHUB_REPOSITORY,,}:${TAG}"
+          gh release create "$TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --verify-tag \
+            --title "$TAG" \
+            --generate-notes \
+            --notes "Docker image (linux/amd64, linux/arm64): \`docker pull ${image}\`"
