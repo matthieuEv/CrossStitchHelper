@@ -71,7 +71,8 @@ export const fr = {
     "Choisissez une couleur, puis dessinez une zone sur la grille pour la peindre.",
   "import.paint.filled": "{filled} / {total} cases peintes",
   "import.paint.uncertainHint":
-    "{count} case(s) marquée(s) d'un repère ⚠ : détection automatique incertaine, à vérifier en priorité.",
+    "{count} case(s) marquée(s) de ce repère : détection automatique incertaine, à vérifier en priorité.",
+  "import.paint.uncertainNext": "Voir la suivante",
   "import.paint.tool.paint": "Peindre",
   "import.paint.tool.pan": "Déplacer",
   "import.paint.eraser": "Gomme",

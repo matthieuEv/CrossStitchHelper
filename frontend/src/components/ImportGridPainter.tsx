@@ -39,6 +39,21 @@ export function ImportGridPainter({
   const [tool, setTool] = useState<"paint" | "pan">("paint");
   const { pattern, view, cursor, selection } = painter;
 
+  // "Show next": centres the uncertain cells one after the other, in reading
+  // order (row by row), wrapping around after the last one.
+  const lastShownRef = useRef(-1);
+  const showNextUncertain = (): void => {
+    const canvas = canvasRef.current;
+    if (canvas === null || uncertainCells === null || uncertainCells.size === 0) return;
+    const sorted = [...uncertainCells].sort((a, b) => a - b);
+    const next = sorted.find((index) => index > lastShownRef.current) ?? sorted[0];
+    if (next === undefined) return;
+    lastShownRef.current = next;
+    const x = next % pattern.width;
+    const box = canvas.getBoundingClientRect();
+    painter.focusCell(x, (next - x) / pattern.width, box.width, box.height);
+  };
+
   // See TrackScreen.tsx: forces a re-render once a real symbol (Lot 4)
   // finishes decoding asynchronously.
   const [symbolImageTick, setSymbolImageTick] = useState(0);
@@ -202,6 +217,24 @@ export function ImportGridPainter({
       <div className="text-muted" style={{ fontSize: 12 }}>
         {t("import.paint.filled", { filled: painter.filledCount, total: painter.cellCount })}
       </div>
+      {uncertainCells !== null && uncertainCells.size > 0 && (
+        <div
+          style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", fontSize: 12 }}
+        >
+          <span className="uncertain-sample" aria-hidden="true" />
+          <span className="text-muted" style={{ flex: "1 1 180px" }}>
+            {t("import.paint.uncertainHint", { count: uncertainCells.size })}
+          </span>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            style={{ minHeight: 36, padding: "0 14px", fontSize: 13 }}
+            onClick={showNextUncertain}
+          >
+            {t("import.paint.uncertainNext")}
+          </button>
+        </div>
+      )}
     </div>
   );
 }

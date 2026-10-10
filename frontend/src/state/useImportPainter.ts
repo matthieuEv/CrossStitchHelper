@@ -29,6 +29,10 @@ export interface CellPosition {
   y: number;
 }
 
+/** Zoom level `focusCell` brings the view to, at least: a cell large enough
+ * to see its colour, symbol and marker at a glance. */
+const FOCUS_MIN_CELL = 20;
+
 export interface ImportPainter {
   pattern: Pattern;
   filledCount: number;
@@ -36,6 +40,9 @@ export interface ImportPainter {
 
   view: GridView;
   setOffset: (x0: number, y0: number) => void;
+  /** Centres a cell in a canvas of `viewWidth` × `viewHeight` CSS pixels,
+   * zooming in first if needed so the cell is clearly readable. */
+  focusCell: (x: number, y: number, viewWidth: number, viewHeight: number) => void;
   zoomIn: () => void;
   zoomOut: () => void;
   /** Like `useTracker.zoomTo`: zooms to `nextCell` keeping the pattern point
@@ -114,6 +121,15 @@ export function useImportPainter(
     [columns, rows],
   );
 
+  const focusCell = useCallback(
+    (x: number, y: number, viewWidth: number, viewHeight: number) => {
+      const nextCell = Math.min(MAX_CELL, Math.max(cell, FOCUS_MIN_CELL));
+      setCell(nextCell);
+      setOffset(x + 0.5 - viewWidth / (2 * nextCell), y + 0.5 - viewHeight / (2 * nextCell));
+    },
+    [cell, setOffset],
+  );
+
   const zoomIn = useCallback(
     () => setCell((value) => Math.min(MAX_CELL, Math.round(value * 1.45))),
     [],
@@ -169,6 +185,7 @@ export function useImportPainter(
     cellCount: columns * rows,
     view,
     setOffset,
+    focusCell,
     zoomIn,
     zoomOut,
     zoomTo,
