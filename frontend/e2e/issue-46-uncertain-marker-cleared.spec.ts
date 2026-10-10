@@ -10,22 +10,23 @@ import { expect, test, type Page } from "@playwright/test";
  * detection result alone, ignoring the areas painted by hand.
  */
 
-/** Type C fixture whose detection flags a few dozen uncertain cells — see
- * `lot5-extraction-type-bc.spec.ts`. */
-const BOTANICAL_CITRUS_PATH = fileURLToPath(
-  new URL(
-    "../../fixtures/botanical-citrus-dmc/agrumes_-_planche_botanique.pdf",
-    import.meta.url,
-  ),
+/** Type C fixture whose detection flags uncertain cells. Measured: 611 on
+ * main, still 38 once the PDF legend drives the palette (issue #44), whereas
+ * botanical-citrus-dmc drops to none. */
+const WINTER_WREATH_PATH = fileURLToPath(
+  new URL("../../fixtures/winter-wreath-dmc/PATASS117_2C_2.pdf", import.meta.url),
 );
 
 const DETECTION_TIMEOUT = 90_000;
+/** The brush's uncertainty hint, matched on its count part only: its wording
+ *  is not what this test is about. */
+const UNCERTAIN_HINT = /case\(s\) marquée\(s\)/;
 /** `useImportPainter`'s initial zoom and offset, in px per cell and cells. */
 const CELL = 16;
 const START_OFFSET = -2;
 
 async function uncertainHintCount(page: Page): Promise<number> {
-  const text = await page.getByText(/case\(s\) marquée\(s\) d'un repère/).textContent();
+  const text = await page.getByText(UNCERTAIN_HINT).textContent();
   const match = /(\d+) case/.exec(text ?? "");
   if (match === null) throw new Error(`unexpected hint text: ${text}`);
   return Number(match[1]);
@@ -44,7 +45,7 @@ test("painting over an uncertain cell removes it from the uncertainty marker cou
   const created = page.waitForResponse(
     (response) => response.url().endsWith("/api/imports") && response.request().method() === "POST",
   );
-  await page.locator('input[type="file"][accept*="pdf"]').setInputFiles(BOTANICAL_CITRUS_PATH);
+  await page.locator('input[type="file"][accept*="pdf"]').setInputFiles(WINTER_WREATH_PATH);
   const jobId = ((await (await created).json()) as { id: string }).id;
 
   await expect(page.getByText(/Détection automatique : type C/)).toBeVisible({
@@ -58,7 +59,7 @@ test("painting over an uncertain cell removes it from the uncertainty marker cou
   expect(uncertain.length).toBeGreaterThan(0);
 
   await page.getByRole("button", { name: "Continuer", exact: true }).click();
-  await expect(page.getByText(/case\(s\) marquée\(s\) d'un repère/)).toBeVisible();
+  await expect(page.getByText(UNCERTAIN_HINT)).toBeVisible();
   const before = await uncertainHintCount(page);
   expect(before).toBe(uncertain.length);
 
