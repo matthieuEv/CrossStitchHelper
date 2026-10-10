@@ -70,6 +70,7 @@ export const fr = {
   "import.paint.tool.paint": "Peindre",
   "import.paint.tool.pan": "Déplacer",
   "import.paint.eraser": "Gomme",
+  "import.paint.undo": "Annuler la dernière zone",
   "import.recap.incomplete":
     "Configuration incomplète : dimensions et palette sont nécessaires avant de continuer.",
   "import.recap.name": "Nom du motif",
