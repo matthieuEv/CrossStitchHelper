@@ -3,12 +3,16 @@ name: Release
 on:
   push:
     tags: ["v*.*.*"]
-  # Manual run from the Actions tab (or `gh workflow run`): builds the head of
-  # the selected branch and creates the tag only once the image is published.
-  workflow_dispatch:
+  # Called by integration.yml to publish a pre-release of an assembled commit:
+  # the tag does not exist yet and is created once the image is published.
+  workflow_call:
     inputs:
       version:
-        description: "Version to publish, e.g. v2.0.0-beta.1. A pre-release (with a `-`) only publishes its image: no `latest`, no GitHub Release."
+        description: Pre-release version, e.g. v2.0.0-beta.1.
+        required: true
+        type: string
+      ref:
+        description: SHA of the commit to build and tag.
         required: true
         type: string
 
@@ -29,6 +33,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ inputs.version || github.ref_name }}
+          REF: ${{ inputs.ref }}
         run: |
           if ! [[ "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z]+(\.[0-9A-Za-z]+)*)?$ ]]; then
             echo "::error::'$VERSION' is not a SemVer tag (expected v1.2.3 or v1.2.3-beta.1)"
@@ -37,15 +42,16 @@ jobs:
           prerelease=false
           [[ "$VERSION" == *-* ]] && prerelease=true
 
-          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
-            # Never overwrite an image testers or users already pulled.
-            if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$VERSION" --silent 2>/dev/null; then
-              echo "::error::Tag $VERSION already exists"
+          if [[ -n "$REF" ]]; then
+            # A final version, which becomes `latest`, is only ever published
+            # by pushing its tag.
+            if [[ "$prerelease" == false ]]; then
+              echo "::error::'$VERSION' is a final version: publish it by pushing its tag, not from an integration build"
               exit 1
             fi
-            # Only main may publish a final version, which becomes `latest`.
-            if [[ "$prerelease" == false && "$GITHUB_REF_NAME" != main ]]; then
-              echo "::error::A final version can only be published from main (got $GITHUB_REF_NAME)"
+            # Never overwrite an image testers already pulled.
+            if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$VERSION" --silent 2>/dev/null; then
+              echo "::error::Tag $VERSION already exists"
               exit 1
             fi
           fi
@@ -57,6 +63,8 @@ jobs:
     name: CI
     needs: [version]
     uses: ./.github/workflows/ci.yml
+    with:
+      ref: ${{ inputs.ref }}
 
   docker:
     name: Build and publish Docker image
@@ -64,9 +72,12 @@ jobs:
     env:
       VERSION: ${{ needs.version.outputs.version }}
       PRERELEASE: ${{ needs.version.outputs.prerelease }}
+      REF: ${{ inputs.ref }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v4
@@ -105,13 +116,13 @@ jobs:
           cache-to: type=gha,mode=max
 
       # A pre-release only gets its image and its tag, never a GitHub Release.
-      # On a manual run the tag is created here, once the image is published,
-      # so it always points to the commit that was built.
+      # When called by integration.yml the tag is created here, once the image
+      # is published, so it always points to the commit that was built.
       - name: Tag the pre-release
-        if: env.PRERELEASE == 'true' && github.event_name == 'workflow_dispatch'
+        if: env.REF != ''
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh api "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/$VERSION" -f sha="$GITHUB_SHA" --silent
+        run: gh api "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/$VERSION" -f sha="$REF" --silent
 
       - name: Summary
         if: env.PRERELEASE == 'true'
@@ -119,7 +130,7 @@ jobs:
           {
             echo "## Pre-release \`$VERSION\`"
             echo
-            echo "Built from \`$GITHUB_REF_NAME\` at \`$GITHUB_SHA\`."
+            echo "Built from \`${REF:-$GITHUB_SHA}\`."
             echo
             echo '```bash'
             echo "docker pull ${{ steps.image.outputs.name }}:$VERSION"
@@ -130,10 +141,6 @@ jobs:
         if: env.PRERELEASE != 'true'
         uses: softprops/action-gh-release@v3
         with:
-          # On a manual run (only allowed from main for a final version) the
-          # tag does not exist yet: it is created here, on the commit built.
-          tag_name: ${{ env.VERSION }}
-          target_commitish: ${{ github.sha }}
           generate_release_notes: true
           body: |
             CrossStitchHelper ${{ env.VERSION }} is available.
