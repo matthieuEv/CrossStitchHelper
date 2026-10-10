@@ -45,6 +45,13 @@ export const en: Record<TranslationKey, string> = {
   "import.detection.recipeApplied":
     "Cropping pre-filled from the \"{label}\" recipe (this file was already recognised).",
   "import.crop.page": "Page {page} / {total}",
+  "import.crop.help.title": "Does the frame have to be perfect?",
+  "import.crop.help.loose":
+    "No. The frame only marks where the grid is in the file; the number of columns and rows entered below is what defines the cells you will then paint by hand. A frame slightly too wide or too tight changes nothing in the pattern created.",
+  "import.crop.help.seam":
+    "A misalignment inside the image (for example two scanned pages stuck together, with a band cutting across the grid) is not a problem either. Count the columns and rows with the numbers printed along the edges of the grid rather than by counting squares: a seam can repeat or hide a column.",
+  "import.crop.help.impossible":
+    "No frame can follow the grid exactly when the image is distorted: a photo taken at an angle, a curved or creased page, an image too blurry to tell the cells apart. A pattern spread over several files is imported one file at a time. In all these cases you can still paint the pattern by hand, using the preview of the file below as a guide.",
   "import.crop.prevPage": "Previous page",
   "import.crop.nextPage": "Next page",
   "import.crop.columns": "Columns",

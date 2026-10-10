@@ -70,6 +70,7 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
   // would make no sense.
   const [cropByPage, setCropByPage] = useState<Record<number, Crop>>({});
   const [page, setPage] = useState(1);
+  const [cropHelpOpen, setCropHelpOpen] = useState(false);
   const [columns, setColumns] = useState<string>("");
   const [rows, setRows] = useState<string>("");
   const [palette, setPalette] = useState<ApiImportPaletteEntry[]>([]);
@@ -420,6 +421,28 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
                   ? t("import.crop.hintDetected")
                   : t("import.crop.hint")}
             </div>
+
+            {/* What an imprecise frame or a misaligned image changes, and when
+                no frame can fit the grid (issue #54) — manual path only: a file
+                recognised automatically does not depend on the frame. */}
+            {!job.detecting && detectedCells === null && (
+              <details
+                className="crop-help"
+                open={cropHelpOpen}
+                onToggle={(event) => setCropHelpOpen(event.currentTarget.open)}
+              >
+                <summary>{t("import.crop.help.title")}</summary>
+                {/* Rendered only once opened: closed, the step stays as short
+                    as before, and its words never mix with the step's own. */}
+                {cropHelpOpen && (
+                  <>
+                    <p>{t("import.crop.help.loose")}</p>
+                    <p>{t("import.crop.help.seam")}</p>
+                    <p>{t("import.crop.help.impossible")}</p>
+                  </>
+                )}
+              </details>
+            )}
 
             {job.applied_recipe !== null && (
               <div
