@@ -49,7 +49,7 @@ Official DMC chart ("Cucurbitacées / Cucurbit"), 4 pages, 100% vector.
 - Page 1 (colour): 1922 rectangles, only 31 vector paths
 - Page 2 (symbols): 886 rectangles, 1072 vector paths
 - Clean colour/symbol split, smaller pattern (13.2 × 9.8 cm)
-- Legend on page 4, 18 DMC colours (6 swatches in the legend not used in the pattern — check the filtering down to colours actually used)
+- Legend on page 4, 18 DMC colours (Blanc, 746, 3865, 3078, 677, 743, 644, 738, 742, 3782, 741, 703, 970, 562, 947, 561, 900, 500). **Measured in issue #44: all 18 are used in the pattern** (each of the 18 grid fill colours is exactly one legend swatch's fill) — the "6 swatches not used" first written here was not confirmed. The filtering of unused legend colours still exists in `backend/app/type_bc.py`, it just removes nothing on this file.
 
 ## `summer-flight-dmc/vol_de_te.pdf` — type C, variant where an overlay is not guaranteed
 
@@ -59,7 +59,8 @@ Official DMC chart ("Summer Flight / Envolée estivale"), 5 pages, 100% vector. 
 - Page 1: 10224 rectangles **and 2220 vector paths** — unlike the other DMC fixtures, the colour page already contains an amount of paths comparable to a full-fledged symbol page
 - Page 2: 7960 rectangles, 1730 vector paths — also dense, probably a black-and-white duplicate rather than an essential source of symbols
 - **This case must make any connector fail that would blindly assume "page 1 = colour only, page 2 = symbols only"** — the extraction engine must measure path density per page before deciding whether to overlay two pages or extract everything from a single one
-- Legend on pages 4–5, 12 DMC colours + French knots
+- Legend on pages 4–5, 12 DMC colours (blanc, 07, 08, 09, 352, 3854, 3820, 19, 3822, 3823, 11, 369) + French knots
+- **Measured in issue #44:** every coloured cell of page 1 is drawn as a 6.059 pt fill followed by a thin *outline frame* (either a darkened shade of the cell colour — two nested squares of opposite orientation in one path — or a neutral grey frame drawn as a polygon plus an inner 5.734 pt square). Those frames must never be read as fills: their inner squares make a size-based pitch estimate return 5.734 pt (90 × 90 grid) instead of the real **85 × 85** grid at 6.059 pt, and "last drawn wins" then replaces the real colour of hundreds of cells with the frame's darkened shade (the "shaded illustration" once assumed for this file was that artefact). Read correctly, the grid uses exactly the 12 legend colours, and the symbols already drawn on page 1 are reliable enough for type C from that page alone (page 2 is never overlaid).
 
 ## `river-and-mountains-laserarts/RiverAndMountains-CS.pdf` — type E
 

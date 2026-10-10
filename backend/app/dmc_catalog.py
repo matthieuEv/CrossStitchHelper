@@ -3,12 +3,13 @@
 
 Unlike `app/dmc_colors.py` (type A, Lot 4), where the DMC code is always
 read as real text in the legend and that module only serves to offer a
-display colour, **no legend text is authoritative on each cell's exact
-colour** for types B/C: the only source is the fill colour of the vector
-rectangle under each cell. A real perceptual nearest-neighbour match is
-therefore needed here (Lab conversion, never a raw RGB distance — see
-`.claude/agents/pdf-extraction-specialist.md`) against a sufficiently large
-reference table.
+display colour, a type B/C file may carry no machine-readable legend: the
+only source is then the fill colour of the vector rectangle under each cell,
+and a real perceptual nearest-neighbour match is needed (Lab conversion,
+never a raw RGB distance — see `.claude/agents/pdf-extraction-specialist.md`)
+against a sufficiently large reference table. When the PDF does carry a text
+legend (the four DMC fixtures, issue #44), `app/type_bc.py` takes the codes
+from it and only uses this table for the thread names (`dmc_name`).
 
 **Origin of the values: unofficial community table.** DMC publishes no
 official RGB table of its stranded cotton shades (specification §3.3) — the
@@ -362,6 +363,16 @@ def nearest_dmc(rgb: tuple[float, float, float]) -> DmcMatch:
     assert best_code is not None  # the catalogue is never empty
     name, rgb_int = _DMC_CATALOG[best_code]
     return DmcMatch(code=best_code, name=name, rgb_hex=rgb_hex(rgb_int), distance=best_distance)
+
+
+def dmc_name(code: str) -> str | None:
+    """Name of `code` in the community catalogue (case-insensitive lookup,
+    `"E321"` finds `"e321"`), or `None` if the code is not covered — never a
+    name made up for a code the catalogue does not know (§3.3: necessarily
+    partial table). Used when an authoritative source (a PDF's text legend,
+    §8.5) gives the code but not the thread's name."""
+    entry = _DMC_CATALOG.get(code.lower())
+    return entry[0] if entry is not None else None
 
 
 def nearest_dmc_among(rgb: tuple[float, float, float], codes: Iterable[str]) -> DmcMatch | None:
