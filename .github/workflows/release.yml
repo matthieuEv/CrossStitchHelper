@@ -55,4 +55,46 @@ jobs:
         uses: softprops/action-gh-release@v3
         with:
           generate_release_notes: true
-          body: "Docker image (linux/amd64, linux/arm64): `docker pull ${{ steps.image.outputs.name }}:${{ github.ref_name }}`"
+          body: |
+            ## Docker image
+
+            | | |
+            |---|---|
+            | Image | `${{ steps.image.outputs.name }}` |
+            | Tags | `${{ github.ref_name }}`, `latest` |
+            | Platforms | `linux/amd64`, `linux/arm64` (Raspberry Pi, Apple Silicon, ARM servers) |
+
+            ```bash
+            docker pull ${{ steps.image.outputs.name }}:${{ github.ref_name }}
+            ```
+
+            ## New install
+
+            Create a `docker-compose.yml`, then run `docker compose up -d` and open `http://<server-address>:8765`:
+
+            ```yaml
+            services:
+              crossstitchhelper:
+                image: ${{ steps.image.outputs.name }}:${{ github.ref_name }}
+                container_name: crossstitchhelper
+                restart: unless-stopped
+                ports:
+                  - "8765:8000"
+                volumes:
+                  - ./data:/data
+            ```
+
+            ## Updating an existing instance
+
+            Back up first (Settings → Data in the app, or a copy of the `./data` directory), then:
+
+            ```bash
+            docker compose pull
+            docker compose up -d
+            ```
+
+            Your data lives in the `./data` volume, never in the image, and database migrations run automatically on startup. `GET /api/health` reports the running version (`${{ github.ref_name }}`).
+
+            Full documentation: [README](${{ github.server_url }}/${{ github.repository }}/blob/${{ github.ref_name }}/README.md).
+
+            ---
