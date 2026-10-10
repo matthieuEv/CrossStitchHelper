@@ -636,6 +636,15 @@ button.badge {
   border-width: 0 9px 9px 0;
   border-color: transparent var(--color-accent) transparent transparent;
 }
+/* Cropping guidance (issue #54): a native disclosure, closed by default. */
+.crop-help {
+  font-size: 13px;
+  padding: 10px 14px;
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--color-text) 4%, transparent);
+}
+.crop-help summary { cursor: pointer; font-weight: 600; min-height: 28px; display: flex; align-items: center; }
+.crop-help p { margin: 8px 0 0; color: color-mix(in srgb, var(--color-text) 75%, transparent); }
 
 .crop-handle { position: absolute; display: grid; place-items: center; touch-action: none; }
 
