@@ -7,7 +7,7 @@
 # ---------------------------------------------------------------------------
 # 1. Frontend build
 # ---------------------------------------------------------------------------
-FROM node:26-alpine AS frontend
+FROM --platform=$BUILDPLATFORM node:26-alpine AS frontend
 
 WORKDIR /build
 COPY frontend/package.json frontend/package-lock.json* ./

@@ -3,22 +3,84 @@ name: Release
 on:
   push:
     tags: ["v*.*.*"]
+  # Called by integration.yml to publish a pre-release of an assembled commit:
+  # the tag does not exist yet and is created once the image is published.
+  workflow_call:
+    inputs:
+      version:
+        description: Pre-release version, e.g. v2.0.0-beta.1.
+        required: true
+        type: string
+      ref:
+        description: SHA of the commit to build and tag.
+        required: true
+        type: string
 
 permissions:
-  contents: read
+  contents: write
   packages: write
 
 jobs:
+  version:
+    name: Resolve version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.resolve.outputs.version }}
+      prerelease: ${{ steps.resolve.outputs.prerelease }}
+    steps:
+      - name: Validate the version
+        id: resolve
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ inputs.version || github.ref_name }}
+          REF: ${{ inputs.ref }}
+        run: |
+          if ! [[ "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z]+(\.[0-9A-Za-z]+)*)?$ ]]; then
+            echo "::error::'$VERSION' is not a SemVer tag (expected v1.2.3 or v1.2.3-beta.1)"
+            exit 1
+          fi
+          prerelease=false
+          [[ "$VERSION" == *-* ]] && prerelease=true
+
+          if [[ -n "$REF" ]]; then
+            # A final version, which becomes `latest`, is only ever published
+            # by pushing its tag.
+            if [[ "$prerelease" == false ]]; then
+              echo "::error::'$VERSION' is a final version: publish it by pushing its tag, not from an integration build"
+              exit 1
+            fi
+            # Never overwrite an image testers already pulled.
+            if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$VERSION" --silent 2>/dev/null; then
+              echo "::error::Tag $VERSION already exists"
+              exit 1
+            fi
+          fi
+
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "prerelease=$prerelease" >> "$GITHUB_OUTPUT"
+
   ci:
     name: CI
+    needs: [version]
     uses: ./.github/workflows/ci.yml
+    with:
+      ref: ${{ inputs.ref }}
 
   docker:
     name: Build and publish Docker image
-    needs: [ci]
+    needs: [version, ci]
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+      PRERELEASE: ${{ needs.version.outputs.prerelease }}
+      REF: ${{ inputs.ref }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v4
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
@@ -30,17 +92,59 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Compute image name
+      - name: Compute image name and tags
         id: image
-        run: echo "name=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+        run: |
+          name="ghcr.io/${GITHUB_REPOSITORY,,}"
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+          if [[ "$PRERELEASE" == true ]]; then
+            echo "tags=$name:$VERSION" >> "$GITHUB_OUTPUT"
+          else
+            echo "tags=$name:$VERSION,$name:latest" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Build and push
         uses: docker/build-push-action@v7
         with:
           context: .
+          platforms: linux/amd64,linux/arm64
           push: true
           build-args: |
-            VERSION=${{ github.ref_name }}
-          tags: |
-            ${{ steps.image.outputs.name }}:${{ github.ref_name }}
-            ${{ steps.image.outputs.name }}:latest
+            VERSION=${{ env.VERSION }}
+          tags: ${{ steps.image.outputs.tags }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # A pre-release only gets its image and its tag, never a GitHub Release.
+      # When called by integration.yml the tag is created here, once the image
+      # is published, so it always points to the commit that was built.
+      - name: Tag the pre-release
+        if: env.REF != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh api "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/$VERSION" -f sha="$REF" --silent
+
+      - name: Summary
+        if: env.PRERELEASE == 'true'
+        run: |
+          {
+            echo "## Pre-release \`$VERSION\`"
+            echo
+            echo "Built from \`${REF:-$GITHUB_SHA}\`."
+            echo
+            echo '```bash'
+            echo "docker pull ${{ steps.image.outputs.name }}:$VERSION"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Create the GitHub Release
+        if: env.PRERELEASE != 'true'
+        uses: softprops/action-gh-release@v3
+        with:
+          generate_release_notes: true
+          body: |
+            CrossStitchHelper ${{ env.VERSION }} is available.
+
+            ```bash
+            docker pull ${{ steps.image.outputs.name }}:${{ env.VERSION }}
+            ```
