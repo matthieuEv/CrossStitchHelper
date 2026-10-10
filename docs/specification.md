@@ -338,6 +338,8 @@ This library stays strictly local. Community sharing had been considered as an o
 | POST | `/api/imports/{id}/commit` | Create the final pattern |
 | GET | `/api/patterns` | List of patterns |
 | GET | `/api/patterns/{id}` | Metadata and palette |
+| DELETE | `/api/patterns/{id}` | Delete a pattern with its palette, grid, progress and activity log |
+| POST | `/api/patterns/{id}/duplicate` | Copy a pattern (palette and grid) under a new name, with empty progress |
 | GET | `/api/patterns/{id}/grid` | Grid layers (compact blob) |
 | GET | `/api/patterns/{id}/progress` | Progress bitmap and version |
 | POST | `/api/patterns/{id}/progress` | Apply a batch of changes (with version for conflict detection) |

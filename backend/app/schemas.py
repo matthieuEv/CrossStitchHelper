@@ -41,6 +41,16 @@ class PaletteEntryOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class PatternDuplicateIn(BaseModel):
+    """Name of the copy — chosen (and translated) by the client."""
+
+    name: str = Field(min_length=1, max_length=200)
+
+
+class PatternDuplicateOut(BaseModel):
+    id: str
+
+
 class PatternSummary(BaseModel):
     """What a library thumbnail needs (§7.1)."""
 

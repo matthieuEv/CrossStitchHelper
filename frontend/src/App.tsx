@@ -4,7 +4,8 @@ import { AppShell } from "./components/AppShell";
 import { createDemoPattern, createDemoProgress } from "./demo/lavender";
 import { createDemoVariants } from "./demo/variants";
 import { useT } from "./i18n";
-import { useServerHealth } from "./lib/api";
+import { deletePattern, duplicatePattern, useServerHealth } from "./lib/api";
+import { forgetCachedPattern } from "./lib/db";
 import { useWideLayout } from "./lib/hooks";
 import { useRouter } from "./lib/router";
 import { emptySpecialProgress } from "./pattern/types";
@@ -116,6 +117,19 @@ export function App() {
           wide={wide}
           onOpen={openPattern}
           onImport={() => navigate("import")}
+          // Only on patterns that really live on the server: neither the
+          // built-in demo nor a library read from the offline cache.
+          {...(library.source === "server" && {
+            onDuplicate: async (patternId: string, name: string) => {
+              await duplicatePattern(patternId, name);
+              await library.refresh();
+            },
+            onDelete: async (patternId: string) => {
+              await deletePattern(patternId);
+              await forgetCachedPattern(patternId);
+              await library.refresh();
+            },
+          })}
         />
       )}
 

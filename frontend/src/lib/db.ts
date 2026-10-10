@@ -119,6 +119,17 @@ export async function clearPendingOps(ids: readonly number[]): Promise<void> {
   await db.pendingOps.bulkDelete(ids as number[]);
 }
 
+/** Forgets one pattern on this device: cached grid, progress and any
+ * operation still queued for it — a deleted pattern must not come back from
+ * the offline cache (issue #52). */
+export async function forgetCachedPattern(patternId: string): Promise<void> {
+  await Promise.all([
+    db.patterns.delete(patternId),
+    db.progress.delete(patternId),
+    db.pendingOps.where("patternId").equals(patternId).delete(),
+  ]);
+}
+
 /**
  * Empties the whole offline cache (Lot 8, `SettingsScreen.tsx` — restoring a
  * backup). After a server restore, the patterns/progress cached here refer
