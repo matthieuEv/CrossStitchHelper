@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Version to publish, e.g. v2.0.0-beta.1. A pre-release (with a `-`) never becomes `latest`."
+        description: "Version to publish, e.g. v2.0.0-beta.1. A pre-release (with a `-`) only publishes its image: no `latest`, no GitHub Release."
         required: true
         type: string
 
@@ -88,10 +88,8 @@ jobs:
           echo "name=$name" >> "$GITHUB_OUTPUT"
           if [[ "$PRERELEASE" == true ]]; then
             echo "tags=$name:$VERSION" >> "$GITHUB_OUTPUT"
-            echo "tag_list=\`$VERSION\`" >> "$GITHUB_OUTPUT"
           else
             echo "tags=$name:$VERSION,$name:latest" >> "$GITHUB_OUTPUT"
-            echo "tag_list=\`$VERSION\`, \`latest\`" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Build and push
@@ -106,15 +104,36 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      # A pre-release only gets its image and its tag, never a GitHub Release.
+      # On a manual run the tag is created here, once the image is published,
+      # so it always points to the commit that was built.
+      - name: Tag the pre-release
+        if: env.PRERELEASE == 'true' && github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh api "repos/$GITHUB_REPOSITORY/git/refs" -f ref="refs/tags/$VERSION" -f sha="$GITHUB_SHA" --silent
+
+      - name: Summary
+        if: env.PRERELEASE == 'true'
+        run: |
+          {
+            echo "## Pre-release \`$VERSION\`"
+            echo
+            echo "Built from \`$GITHUB_REF_NAME\` at \`$GITHUB_SHA\`."
+            echo
+            echo '```bash'
+            echo "docker pull ${{ steps.image.outputs.name }}:$VERSION"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Create the GitHub Release
+        if: env.PRERELEASE != 'true'
         uses: softprops/action-gh-release@v3
         with:
-          # On a manual run the tag does not exist yet: it is created here, on
-          # the commit that was built, only once the image is published.
+          # On a manual run (only allowed from main for a final version) the
+          # tag does not exist yet: it is created here, on the commit built.
           tag_name: ${{ env.VERSION }}
           target_commitish: ${{ github.sha }}
-          prerelease: ${{ env.PRERELEASE == 'true' }}
-          make_latest: ${{ env.PRERELEASE == 'true' && 'false' || 'true' }}
           generate_release_notes: true
           body: |
             CrossStitchHelper ${{ env.VERSION }} is available.
