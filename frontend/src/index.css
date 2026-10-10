@@ -562,6 +562,39 @@ button.badge {
   background: var(--color-neutral-300);
   touch-action: none;
 }
+/* Small drop-down menu anchored under its button (Library "Sort"). */
+.menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 20;
+  min-width: 210px;
+  display: flex;
+  flex-direction: column;
+  padding: 6px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-divider);
+  border-radius: 18px;
+}
+.menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 0 12px;
+  font: inherit;
+  font-size: 15px;
+  text-align: left;
+  color: var(--color-text);
+  background: transparent;
+  border: 0;
+  border-radius: 12px;
+  cursor: pointer;
+}
+.menu-item:hover { background: color-mix(in srgb, var(--color-text) 7%, transparent); }
+.menu-item[aria-checked="true"] { color: var(--color-accent); font-weight: 600; }
+.menu-item[aria-checked="true"]::after { content: "✓"; margin-left: auto; }
+
 .crop-handle { position: absolute; display: grid; place-items: center; touch-action: none; }
 
 /* Import wizard editing areas (Cropping stage, Palette painting canvas) take
