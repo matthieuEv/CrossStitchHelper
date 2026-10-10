@@ -1,7 +1,15 @@
+import { useEffect, useRef, useState } from "react";
+
 import { PatternThumbnail } from "../components/PatternThumbnail";
 import { PlusIcon } from "../components/Icons";
 import { useT } from "../i18n";
-import { useRelativeTime } from "../lib/format";
+import { useCompareText, useRelativeTime } from "../lib/format";
+import {
+  LIBRARY_SORTS,
+  readStoredLibrarySort,
+  storeLibrarySort,
+  type LibrarySort,
+} from "../lib/librarySort";
 import { summarise, countByColor } from "../pattern/counts";
 import type { Pattern, Progress, SpecialProgress } from "../pattern/types";
 
@@ -27,10 +35,48 @@ interface LibraryScreenProps {
 export function LibraryScreen({ entries, wide, onOpen, onImport }: LibraryScreenProps) {
   const t = useT();
   const relative = useRelativeTime();
+  const compareText = useCompareText();
+  const [sort, setSort] = useState<LibrarySort>(readStoredLibrarySort);
+  const [sortMenuOpen, setSortMenuOpen] = useState(false);
+  const sortMenuRef = useRef<HTMLDivElement>(null);
+
+  // The menu closes on a tap anywhere else, or with Escape.
+  useEffect(() => {
+    if (!sortMenuOpen) return;
+    const onPointerDown = (event: PointerEvent): void => {
+      if (!sortMenuRef.current?.contains(event.target as Node)) setSortMenuOpen(false);
+    };
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === "Escape") setSortMenuOpen(false);
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [sortMenuOpen]);
+
+  const chooseSort = (next: LibrarySort): void => {
+    setSort(next);
+    storeLibrarySort(next);
+    setSortMenuOpen(false);
+  };
 
   const cards = entries.map((entry) => {
     const totals = summarise(countByColor(entry.pattern, entry.progress));
     return { entry, totals };
+  });
+  // Ties always fall back to recent activity, then name: the order never
+  // depends on the order the server happened to list the patterns in.
+  const byRecent = (a: (typeof cards)[number], b: (typeof cards)[number]): number =>
+    a.entry.hoursAgo - b.entry.hoursAgo;
+  const byName = (a: (typeof cards)[number], b: (typeof cards)[number]): number =>
+    compareText(a.entry.pattern.name, b.entry.pattern.name);
+  cards.sort((a, b) => {
+    if (sort === "name") return byName(a, b) || byRecent(a, b);
+    if (sort === "progress") return b.totals.percent - a.totals.percent || byRecent(a, b) || byName(a, b);
+    return byRecent(a, b) || byName(a, b);
   });
   const inProgress = cards.filter(
     (card) => card.totals.percent > 0 && card.totals.percent < 100,
@@ -53,9 +99,34 @@ export function LibraryScreen({ entries, wide, onOpen, onImport }: LibraryScreen
             {t("library.summary", { count: entries.length, active: inProgress })}
           </div>
         </div>
-        <button type="button" className="btn btn-secondary" style={{ minHeight: 44, padding: "0 16px" }}>
-          {t("library.sort")}
-        </button>
+        <div ref={sortMenuRef} style={{ position: "relative" }}>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            style={{ minHeight: 44, padding: "0 16px" }}
+            aria-haspopup="menu"
+            aria-expanded={sortMenuOpen}
+            onClick={() => setSortMenuOpen((open) => !open)}
+          >
+            {t("library.sort")}
+          </button>
+          {sortMenuOpen && (
+            <div role="menu" aria-label={t("library.sort")} className="menu elev-md">
+              {LIBRARY_SORTS.map((option) => (
+                <button
+                  key={option}
+                  type="button"
+                  role="menuitemradio"
+                  aria-checked={sort === option}
+                  className="menu-item"
+                  onClick={() => chooseSort(option)}
+                >
+                  {t(`library.sort.${option}`)}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
       {!wide && (
