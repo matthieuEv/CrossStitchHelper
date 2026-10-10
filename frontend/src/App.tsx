@@ -113,6 +113,7 @@ export function App() {
       {screen === "library" && (
         <LibraryScreen
           entries={entries}
+          loading={library.source === "loading"}
           wide={wide}
           onOpen={openPattern}
           onImport={() => navigate("import")}
