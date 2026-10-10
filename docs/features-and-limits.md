@@ -11,7 +11,7 @@
 - Load a PDF (or an existing image — scan, screenshot) of a cross-stitch chart and turn it into a pattern the app understands and displays, via a multi-step wizard that automatically proposes a complete configuration.
 - **Automatically recognise each cell's colour and symbol**, whatever the style of the original file: export from charting software, a chart drawn for publication (like official DMC charts), a pattern spread over two separate grids (one for colours, one for symbols), a pattern spread over several pages to stitch back together, or a grid made of small reused images (closed catalogue of colour+symbol icons, third-party publishers).
 - Automatically reuse the configuration of an already validated import when a new file comes from the same source (same publisher, same software) — import becomes almost instant for someone who regularly buys from the same seller.
-- **Always keep the ability to correct by hand** what the wizard proposed: re-crop the area, adjust the number of cells, fix a colour or a symbol, complete the legend. Even when finished, the application remains an assistant that proposes and can be corrected, not a black box you have to take at its word.
+- **Always keep the ability to correct by hand** what the wizard proposed: re-crop the area, adjust the number of cells, fix a colour or a symbol, complete the legend. The imported file stays visible next to the proposed grid, page by page and zoomable, to check one against the other. Even when finished, the application remains an assistant that proposes and can be corrected, not a black box you have to take at its word.
 
 ### Track your stitching
 

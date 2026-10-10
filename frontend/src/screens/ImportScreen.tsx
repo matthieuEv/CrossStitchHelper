@@ -9,6 +9,7 @@ import {
 } from "react";
 
 import { ImportGridPainter } from "../components/ImportGridPainter";
+import { SourcePreview } from "../components/SourcePreview";
 import { BackIcon, UploadIcon } from "../components/Icons";
 import { PatternThumbnail } from "../components/PatternThumbnail";
 import { useT } from "../i18n";
@@ -88,6 +89,8 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
   // would make no sense.
   const [cropByPage, setCropByPage] = useState<Record<number, Crop>>({});
   const [page, setPage] = useState(1);
+  /** Phone layout only: the imported file is shown on demand (issue #40). */
+  const [showSource, setShowSource] = useState(false);
   const [columns, setColumns] = useState<string>("");
   const [rows, setRows] = useState<string>("");
   const [palette, setPalette] = useState<PaletteRow[]>([]);
@@ -765,17 +768,43 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
               </button>
             </div>
 
-            {palette.length === 0 ? (
-              <p className="text-muted" style={{ fontSize: 13 }}>
-                {t("import.palette.empty")}
-              </p>
-            ) : (
-              <ImportGridPainter
-                painter={painter}
-                activeIndex={activeIndex}
-                uncertainCells={uncertainCellsSet}
-              />
-            )}
+            {/* The generated grid, and the imported file next to it to check
+                it against (issue #40): side by side when there is room, on
+                demand below the grid on a phone. */}
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: wide && job !== null ? "minmax(0, 1fr) minmax(0, 1fr)" : "minmax(0, 1fr)",
+                gap: 16,
+                alignItems: "start",
+              }}
+            >
+              {palette.length === 0 ? (
+                <p className="text-muted" style={{ fontSize: 13 }}>
+                  {t("import.palette.empty")}
+                </p>
+              ) : (
+                <ImportGridPainter
+                  painter={painter}
+                  activeIndex={activeIndex}
+                  uncertainCells={uncertainCellsSet}
+                />
+              )}
+              {job !== null && !wide && (
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  style={{ minHeight: 44, justifySelf: "start", padding: "0 16px" }}
+                  aria-expanded={showSource}
+                  onClick={() => setShowSource((shown) => !shown)}
+                >
+                  {t(showSource ? "import.source.hide" : "import.source.show")}
+                </button>
+              )}
+              {job !== null && (wide || showSource) && (
+                <SourcePreview jobId={job.id} pageCount={job.page_count} initialPage={page} />
+              )}
+            </div>
 
             <div
               style={{
