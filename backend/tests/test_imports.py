@@ -585,13 +585,23 @@ _BOTANICAL_CITRUS_FIXTURE = (
 )
 
 
-def _upload_real_type_bc_pdf(client: TestClient) -> dict[str, Any]:
-    if not _BOTANICAL_CITRUS_FIXTURE.is_file():
-        pytest.skip(f"fixture manquante : {_BOTANICAL_CITRUS_FIXTURE}")
-    with _BOTANICAL_CITRUS_FIXTURE.open("rb") as handle:
+_WINTER_WREATH_FIXTURE = (
+    Path(__file__).resolve().parents[2]
+    / "fixtures"
+    / "winter-wreath-dmc"
+    / "PATASS117_2C_2.pdf"
+)
+
+
+def _upload_real_type_bc_pdf(
+    client: TestClient, fixture: Path = _BOTANICAL_CITRUS_FIXTURE
+) -> dict[str, Any]:
+    if not fixture.is_file():
+        pytest.skip(f"fixture manquante : {fixture}")
+    with fixture.open("rb") as handle:
         response = client.post(
             "/api/imports",
-            files={"file": ("agrumes_-_planche_botanique.pdf", handle, "application/pdf")},
+            files={"file": (fixture.name, handle, "application/pdf")},
         )
     assert response.status_code == 200
     result: dict[str, Any] = response.json()
@@ -623,13 +633,39 @@ def test_create_import_of_real_type_bc_pdf_prefills_config_from_detection(
     # real symbol cut out of the PDF, exactly like type A (Lot 4).
     assert any(entry["symbol_svg"] is not None for entry in config["palette"])
 
-    # Explicit flagging of uncertain cells (roadmap Lot 5, "done when"): never
-    # a wrong cell left without any indication in the API.
-    assert config["uncertain_cells"]
-    assert all(0 <= idx < len(config["detected_cells"]) for idx in config["uncertain_cells"])
+    # Issue #44: codes come from the PDF's legend (17 codes, all used), one
+    # entry per code.
+    codes = [entry["code"] for entry in config["palette"]]
+    assert len(codes) == len(set(codes)) == 17
+    assert {"Blanc", "3818", "3819", "733", "10"} <= set(codes)
+
+    # `botanical-citrus-dmc` has no uncertain cell since issue #44 (every grid
+    # colour is exactly its legend swatch) — stored as `None`, like any empty
+    # detected layer (`_run_auto_detection`); flagging itself is checked on
+    # `winter-wreath-dmc` below.
+    assert config["uncertain_cells"] is None
 
     assert job["preview"] is not None
     assert job["preview"]["filled_count"] > 0
+
+
+def test_real_type_bc_uncertain_cells_reach_the_import_config(client: TestClient) -> None:
+    """Explicit flagging of uncertain cells (roadmap Lot 5, "done when"):
+    never a wrong cell left without any indication in the API — checked on
+    `winter-wreath-dmc`, whose cells crossed by a backstitch line remain
+    flagged after issue #44's merge of symbol variants."""
+    job = _wait_for_detection(
+        client, _upload_real_type_bc_pdf(client, _WINTER_WREATH_FIXTURE)["id"], timeout=30.0
+    )
+    config = job["config"]
+    assert config["uncertain_cells"]
+    assert all(0 <= idx < len(config["detected_cells"]) for idx in config["uncertain_cells"])
+    announced = [
+        w["params"]["count"]
+        for w in job["detection"]["warnings"]
+        if w["code"] == "type_bc.uncertain_cells"
+    ]
+    assert announced == [len(config["uncertain_cells"])]
 
 
 def test_real_type_bc_pattern_survives_commit_with_its_uncertain_cells_config(
