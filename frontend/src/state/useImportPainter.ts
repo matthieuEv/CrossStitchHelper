@@ -66,6 +66,11 @@ export interface ImportPainter {
 
   /** Paints (or, with `paletteIndex = 0`, erases) the current selection. */
   paint: (paletteIndex: number) => void;
+  /** Removes the last painted area (issue #37) — painted areas are applied in
+   * order on top of the detected grid, so dropping the last one restores the
+   * grid exactly as it was before it, however many levels back. */
+  undo: () => void;
+  canUndo: boolean;
 }
 
 export function useImportPainter(
@@ -177,6 +182,10 @@ export function useImportPainter(
     [selection, columns, rows, fills, onFillsChange],
   );
 
+  const undo = useCallback(() => {
+    if (fills.length > 0) onFillsChange(fills.slice(0, -1));
+  }, [fills, onFillsChange]);
+
   const view: GridView = { cell, x0: offset.x0, y0: offset.y0 };
 
   return {
@@ -194,5 +203,7 @@ export function useImportPainter(
     selection,
     setSelection,
     paint,
+    undo,
+    canUndo: fills.length > 0,
   };
 }
