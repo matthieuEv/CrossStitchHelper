@@ -11,9 +11,11 @@ import { expect, test, type Locator, type Page } from "@playwright/test";
  * grid).
  */
 
-/** Type C fixture with an overlay: detection flags a few dozen cells. */
+/** Type C fixture whose detection flags uncertain cells. Measured: 611 on
+ * main, still 38 once the PDF legend drives the palette (issue #44), whereas
+ * botanical-citrus-dmc drops to none. */
 const FIXTURE_PATH = fileURLToPath(
-  new URL("../../fixtures/botanical-citrus-dmc/agrumes_-_planche_botanique.pdf", import.meta.url),
+  new URL("../../fixtures/winter-wreath-dmc/PATASS117_2C_2.pdf", import.meta.url),
 );
 const DETECTION_TIMEOUT = 120_000;
 
