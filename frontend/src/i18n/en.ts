@@ -52,6 +52,8 @@ export const en: Record<TranslationKey, string> = {
   "import.legend.code": "Code",
   "import.legend.name": "Thread name",
   "import.legend.symbol": "Sym.",
+  "import.legend.replaceSymbol": "Replace the PDF symbol with one of your choice",
+  "import.legend.restoreSymbol": "Restore the PDF symbol",
   "import.legend.color": "Colour",
   "import.palette.title": "Palette",
   "import.palette.add": "Add a colour",

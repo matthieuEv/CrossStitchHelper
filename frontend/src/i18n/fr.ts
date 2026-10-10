@@ -57,6 +57,8 @@ export const fr = {
   "import.legend.code": "Code",
   "import.legend.name": "Nom du fil",
   "import.legend.symbol": "Sym.",
+  "import.legend.replaceSymbol": "Remplacer le symbole du PDF par un symbole au choix",
+  "import.legend.restoreSymbol": "Reprendre le symbole du PDF",
   "import.legend.color": "Couleur",
   "import.palette.title": "Palette",
   "import.palette.add": "Ajouter une couleur",
