@@ -4,6 +4,7 @@ import { useT } from "../i18n";
 import { useTheme } from "../lib/theme";
 import { drawGrid, drawOverlay, onSymbolImageLoaded, readGridTheme } from "../pattern/render";
 import type { CellPosition, ImportPainter } from "../state/useImportPainter";
+import { UndoIcon } from "./Icons";
 
 interface ImportGridPainterProps {
   painter: ImportPainter;
@@ -178,6 +179,17 @@ export function ImportGridPainter({
             onClick={() => setTool("pan")}
           >
             ✥
+          </button>
+          <button
+            type="button"
+            className="btn btn-secondary btn-icon"
+            aria-label={t("import.paint.undo")}
+            title={t("import.paint.undo")}
+            onClick={painter.undo}
+            disabled={!painter.canUndo}
+            style={{ opacity: painter.canUndo ? 1 : 0.4 }}
+          >
+            <UndoIcon />
           </button>
         </div>
         <div style={{ display: "flex", gap: 6 }}>
