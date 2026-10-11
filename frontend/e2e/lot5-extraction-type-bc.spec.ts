@@ -79,7 +79,7 @@ test("a type C PDF with an overlay pre-fills the wizard with real symbols and fl
   // Visual marker of uncertain cells on the brush itself (Lot 5,
   // `pattern/render.ts`): the hint text must appear under the canvas, with a
   // non-zero count — consistent with the banner above.
-  await expect(page.getByText(/case\(s\) marquée\(s\) d'un repère/)).toBeVisible();
+  await expect(page.getByText(/case\(s\) marquée\(s\) de ce repère/)).toBeVisible();
 
   await page.getByRole("button", { name: "Continuer", exact: true }).click();
 

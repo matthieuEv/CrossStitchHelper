@@ -65,7 +65,8 @@ export const en: Record<TranslationKey, string> = {
   "import.paint.hint": "Pick a colour, then drag over the grid to paint an area.",
   "import.paint.filled": "{filled} / {total} cells painted",
   "import.paint.uncertainHint":
-    "{count} cell(s) marked with a ⚠: automatic detection was unsure, check these first.",
+    "{count} cell(s) marked like this: automatic detection was unsure, check these first.",
+  "import.paint.uncertainNext": "Show next",
   "import.paint.tool.paint": "Paint",
   "import.paint.tool.pan": "Move",
   "import.paint.eraser": "Eraser",
