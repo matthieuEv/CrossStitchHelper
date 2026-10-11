@@ -181,12 +181,16 @@ export interface CellChange {
  * (never a whole array): that is what lets a caller (server sync, Lot 1) send
  * precise deltas without having to compare two 45 KB copies on every checked
  * cell.
+ *
+ * `initialView` reopens the view where it was left (zoom and position, see
+ * `lib/viewMemory.ts`); without it, the default starting position below.
  */
 export function useTracker(
   pattern: Pattern,
   initialProgress: Progress,
   initialSpecial: SpecialProgress = emptySpecialProgress(pattern),
   onChange?: (changes: CellChange[]) => void,
+  initialView?: GridView | null,
 ): Tracker {
   const doneRef = useRef<TrackerState>({
     full: initialProgress,
@@ -204,14 +208,23 @@ export function useTracker(
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
 
-  const [cell, setCell] = useState(16);
-  // Starting position designed for a large pattern (move away from the
-  // corner so the view does not stick to the edge); without the same clamping
-  // as `setOffset` below, a small pattern painted by hand (Lot 2) would open
-  // on an entirely empty view, outside its grid.
+  const [cell, setCell] = useState(() =>
+    Math.max(MIN_CELL, Math.min(MAX_CELL, initialView?.cell ?? 16)),
+  );
+  // Default starting position designed for a large pattern (move away from
+  // the corner so the view does not stick to the edge); without the same
+  // clamping as `setOffset` below, a small pattern painted by hand (Lot 2)
+  // would open on an entirely empty view, outside its grid — and a remembered
+  // view goes through the same clamping, never trusted blindly.
   const [offset, setOffsetState] = useState(() => ({
-    x0: Math.max(-panMargin(pattern.width), Math.min(pattern.width - panMargin(pattern.width), 30)),
-    y0: Math.max(-panMargin(pattern.height), Math.min(pattern.height - panMargin(pattern.height), 24)),
+    x0: Math.max(
+      -panMargin(pattern.width),
+      Math.min(pattern.width - panMargin(pattern.width), initialView?.x0 ?? 30),
+    ),
+    y0: Math.max(
+      -panMargin(pattern.height),
+      Math.min(pattern.height - panMargin(pattern.height), initialView?.y0 ?? 24),
+    ),
   }));
   const [tool, setTool] = useState<Tool>("stitch");
   const [activeLayer, setActiveLayer] = useState<StitchLayer>("full");
@@ -254,9 +267,13 @@ export function useTracker(
         return;
       }
       const index = position.y * pattern.width + position.x;
+      const colour = pattern.cells[index] ?? 0;
       // An empty pattern cell cannot be stitched: checking it would make no
       // sense and would skew the counters.
-      if ((pattern.cells[index] ?? 0) === 0) return;
+      if (colour === 0) return;
+      // With an active colour filter, only that colour can be checked — the
+      // same rule as `fillSelection` below: the dimmed cells are out of play.
+      if (highlight !== 0 && colour !== highlight) return;
 
       snapshot();
       const current = doneRef.current;
@@ -265,7 +282,7 @@ export function useTracker(
       setVersion((value) => value + 1);
       onChangeRef.current?.([{ layer: "full", index, stitched: next }]);
     },
-    [pattern, snapshot],
+    [pattern, highlight, snapshot],
   );
 
   /** Like `toggleCell`, for the 1/2 and 1/4 layers — a cell with no stitch in
@@ -282,7 +299,10 @@ export function useTracker(
       }
       const index = position.y * pattern.width + position.x;
       const sourceCells = layer === "half" ? pattern.cellsHalf : pattern.cellsQuarter;
-      if ((sourceCells[index] ?? 0) === 0) return;
+      const colour = sourceCells[index] ?? 0;
+      if (colour === 0) return;
+      // Same colour filter rule as `toggleCell`.
+      if (highlight !== 0 && colour !== highlight) return;
 
       snapshot();
       const current = doneRef.current;
@@ -292,7 +312,7 @@ export function useTracker(
       setVersion((value) => value + 1);
       onChangeRef.current?.([{ layer, index, stitched: next }]);
     },
-    [pattern, snapshot],
+    [pattern, highlight, snapshot],
   );
 
   /** Checks/unchecks a backstitch segment or a knot, by index into
@@ -330,15 +350,17 @@ export function useTracker(
       // apart with a finger.
       if (cell < SYMBOL_MIN_CELL) return;
       const tolerance = Math.min(SPECIAL_TAP_TOLERANCE_MAX_CELLS, SPECIAL_TAP_TOLERANCE_PX / cell);
+      // With an active colour filter, only elements of that colour are
+      // candidates (same rule as `toggleCell`).
       if (activeLayer === "backstitch") {
-        const index = nearestBackstitchIndex(pattern.backstitch, point.gx, point.gy, tolerance);
+        const index = nearestBackstitchIndex(pattern.backstitch, point.gx, point.gy, tolerance, highlight);
         if (index !== null) toggleElementLayer("backstitch", index);
       } else {
-        const index = nearestKnotIndex(pattern.frenchKnots, point.gx, point.gy, tolerance);
+        const index = nearestKnotIndex(pattern.frenchKnots, point.gx, point.gy, tolerance, highlight);
         if (index !== null) toggleElementLayer("knot", index);
       }
     },
-    [activeLayer, cell, pattern, toggleCell, toggleGridLayer, toggleElementLayer],
+    [activeLayer, cell, highlight, pattern, toggleCell, toggleGridLayer, toggleElementLayer],
   );
 
   const fillSelection = useCallback(

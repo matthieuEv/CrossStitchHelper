@@ -4,7 +4,13 @@ import { PatternThumbnail } from "../components/PatternThumbnail";
 import { CloseIcon, PlusIcon } from "../components/Icons";
 import { useT } from "../i18n";
 import { translateApiError } from "../lib/api";
-import { useRelativeTime } from "../lib/format";
+import { useCompareText, useRelativeTime } from "../lib/format";
+import {
+  LIBRARY_SORTS,
+  readStoredLibrarySort,
+  storeLibrarySort,
+  type LibrarySort,
+} from "../lib/librarySort";
 import { summarise, countByColor } from "../pattern/counts";
 import type { Pattern, Progress, SpecialProgress } from "../pattern/types";
 
@@ -22,6 +28,8 @@ export interface LibraryEntry {
 
 interface LibraryScreenProps {
   entries: readonly LibraryEntry[];
+  /** The library is still loading: `entries` is not the real list yet. */
+  loading?: boolean;
   wide: boolean;
   onOpen: (patternId: string) => void;
   onImport: () => void;
@@ -41,6 +49,7 @@ const LONG_PRESS_SLOP_PX = 10;
 
 export function LibraryScreen({
   entries,
+  loading = false,
   wide,
   onOpen,
   onImport,
@@ -112,10 +121,52 @@ export function LibraryScreen({
     }
   };
   const relative = useRelativeTime();
+  const compareText = useCompareText();
+  const [sort, setSort] = useState<LibrarySort>(readStoredLibrarySort);
+  const [sortMenuOpen, setSortMenuOpen] = useState(false);
+  const sortMenuRef = useRef<HTMLDivElement>(null);
 
-  const cards = entries.map((entry) => {
+  // The menu closes on a tap anywhere else, or with Escape.
+  useEffect(() => {
+    if (!sortMenuOpen) return;
+    const onPointerDown = (event: PointerEvent): void => {
+      if (!sortMenuRef.current?.contains(event.target as Node)) setSortMenuOpen(false);
+    };
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === "Escape") setSortMenuOpen(false);
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [sortMenuOpen]);
+
+  const chooseSort = (next: LibrarySort): void => {
+    setSort(next);
+    storeLibrarySort(next);
+    setSortMenuOpen(false);
+  };
+
+  // While loading, nothing is listed rather than the patterns at hand (the
+  // demo fallback): showing them, then replacing them with the real list a
+  // moment later, looks like patterns being deleted (issue #48).
+  const shown = loading ? [] : entries;
+  const cards = shown.map((entry) => {
     const totals = summarise(countByColor(entry.pattern, entry.progress));
     return { entry, totals };
+  });
+  // Ties always fall back to recent activity, then name: the order never
+  // depends on the order the server happened to list the patterns in.
+  const byRecent = (a: (typeof cards)[number], b: (typeof cards)[number]): number =>
+    a.entry.hoursAgo - b.entry.hoursAgo;
+  const byName = (a: (typeof cards)[number], b: (typeof cards)[number]): number =>
+    compareText(a.entry.pattern.name, b.entry.pattern.name);
+  cards.sort((a, b) => {
+    if (sort === "name") return byName(a, b) || byRecent(a, b);
+    if (sort === "progress") return b.totals.percent - a.totals.percent || byRecent(a, b) || byName(a, b);
+    return byRecent(a, b) || byName(a, b);
   });
   const inProgress = cards.filter(
     (card) => card.totals.percent > 0 && card.totals.percent < 100,
@@ -135,12 +186,38 @@ export function LibraryScreen({
         <div>
           <h2 style={{ margin: "0 0 2px" }}>{t("library.title")}</h2>
           <div className="text-muted" style={{ fontSize: 13 }}>
-            {t("library.summary", { count: entries.length, active: inProgress })}
+            {/* A non-breaking space keeps the header's height while loading. */}
+            {loading ? "\u00a0" : t("library.summary", { count: shown.length, active: inProgress })}
           </div>
         </div>
-        <button type="button" className="btn btn-secondary" style={{ minHeight: 44, padding: "0 16px" }}>
-          {t("library.sort")}
-        </button>
+        <div ref={sortMenuRef} style={{ position: "relative" }}>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            style={{ minHeight: 44, padding: "0 16px" }}
+            aria-haspopup="menu"
+            aria-expanded={sortMenuOpen}
+            onClick={() => setSortMenuOpen((open) => !open)}
+          >
+            {t("library.sort")}
+          </button>
+          {sortMenuOpen && (
+            <div role="menu" aria-label={t("library.sort")} className="menu elev-md">
+              {LIBRARY_SORTS.map((option) => (
+                <button
+                  key={option}
+                  type="button"
+                  role="menuitemradio"
+                  aria-checked={sort === option}
+                  className="menu-item"
+                  onClick={() => chooseSort(option)}
+                >
+                  {t(`library.sort.${option}`)}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
       {!wide && (

@@ -7,7 +7,7 @@
 # ---------------------------------------------------------------------------
 # 1. Frontend build
 # ---------------------------------------------------------------------------
-FROM node:26-alpine AS frontend
+FROM --platform=$BUILDPLATFORM node:26-alpine AS frontend
 
 WORKDIR /build
 COPY frontend/package.json frontend/package-lock.json* ./
@@ -49,11 +49,17 @@ subprocess.check_call([sys.executable, '-m', 'pip', 'install', '--no-cache-dir',
 COPY backend/ /app/
 COPY --from=frontend /build/dist /app/frontend-dist
 
-# The application runs unprivileged; the data volume belongs to it.
-RUN useradd --system --uid 10001 --home /app csh \
+# The application runs unprivileged. The container still starts as root: the
+# entrypoint first makes the data directory writable (whoever owns it on the
+# host), then drops to an unprivileged uid — see docker-entrypoint.sh.
+# The code stays root's and only readable: the uid chosen at startup is not
+# necessarily `csh`, and the application never writes to it anyway.
+RUN groupadd --system --gid 10001 csh \
+    && useradd --system --uid 10001 --gid csh --home /app csh \
+    && chmod -R a+rX /app \
     && mkdir -p /data \
-    && chown -R csh:csh /app /data
-USER csh
+    && chown csh:csh /data
+COPY --chmod=755 docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 
 VOLUME ["/data"]
 EXPOSE 8000
@@ -62,4 +68,5 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
     CMD python -c "import urllib.request, sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=4).status == 200 else 1)"
 
+ENTRYPOINT ["docker-entrypoint.sh"]
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
