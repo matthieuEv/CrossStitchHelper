@@ -84,7 +84,7 @@ jobs:
       - name: Seed the demo pattern
         # The e2e tests (Lot 1) need at least one pattern in the database to
         # verify progress persistence.
-        run: docker exec csh python scripts/seed_demo_pattern.py
+        run: docker exec --user csh csh python scripts/seed_demo_pattern.py
       - uses: actions/setup-node@v7
         with:
           node-version: "22"
