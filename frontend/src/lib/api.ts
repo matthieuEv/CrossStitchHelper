@@ -252,6 +252,16 @@ export function fetchPatterns(signal?: AbortSignal): Promise<ApiPatternSummary[]
   return request<ApiPatternSummary[]>("/patterns", withSignal(signal));
 }
 
+/** Deletes a pattern and everything that belongs to it (issue #52). */
+export function deletePattern(id: string): Promise<void> {
+  return deleteRequest(`/patterns/${encodeURIComponent(id)}`);
+}
+
+/** Copies a pattern under `name`, with empty progress (issue #52). */
+export function duplicatePattern(id: string, name: string): Promise<{ id: string }> {
+  return postJson<{ id: string }>(`/patterns/${encodeURIComponent(id)}/duplicate`, { name });
+}
+
 export function fetchPatternDetail(id: string, signal?: AbortSignal): Promise<ApiPatternDetail> {
   return request<ApiPatternDetail>(`/patterns/${id}`, withSignal(signal));
 }
