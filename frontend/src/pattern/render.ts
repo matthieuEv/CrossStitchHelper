@@ -233,6 +233,65 @@ function fillQuarterTriangle(
   g.fill();
 }
 
+/**
+ * Markers of the cells flagged uncertain by automatic detection, each given
+ * by the top-left corner `(px, py)` of a cell of `cell` pixels. Accent colour
+ * with a halo in the canvas ground colour, so they stand out on any thread
+ * colour — including the oranges and browns close to the accent itself.
+ *
+ * - Zoomed out (small cells): a square larger than the cell, centred on it —
+ *   a cell of a pixel or two must still show where to look.
+ * - Zoomed in: a ring around the cell plus a solid corner triangle, leaving
+ *   the cell's colour and symbol readable.
+ *
+ * Two passes — every halo first, then every accent shape — so neighbouring
+ * flagged cells merge into one solid shape with a single outline, rather than
+ * each halo cutting through the marker next to it.
+ */
+export function drawUncertainMarkers(
+  g: CanvasRenderingContext2D,
+  positions: ReadonlyArray<readonly [number, number]>,
+  cell: number,
+  accent: string,
+  halo: string,
+  ink: string,
+): void {
+  g.save();
+  if (cell < 10) {
+    // Light halo inside a thin ink outline: stands out on the bare fabric of
+    // an overview as well as on any thread colour.
+    const size = Math.max(9, cell * 1.6);
+    const offset = cell / 2 - size / 2;
+    g.fillStyle = ink;
+    for (const [px, py] of positions) g.fillRect(px + offset - 2.5, py + offset - 2.5, size + 5, size + 5);
+    g.fillStyle = halo;
+    for (const [px, py] of positions) g.fillRect(px + offset - 1.5, py + offset - 1.5, size + 3, size + 3);
+    g.fillStyle = accent;
+    for (const [px, py] of positions) g.fillRect(px + offset, py + offset, size, size);
+    g.restore();
+    return;
+  }
+  const line = Math.max(2, cell * 0.1);
+  const inset = line / 2;
+  const triangle = cell * 0.42;
+  g.lineWidth = line + 2;
+  g.strokeStyle = halo;
+  for (const [px, py] of positions) g.strokeRect(px + inset, py + inset, cell - line, cell - line);
+  g.lineWidth = line;
+  g.strokeStyle = accent;
+  g.fillStyle = accent;
+  for (const [px, py] of positions) {
+    g.strokeRect(px + inset, py + inset, cell - line, cell - line);
+    g.beginPath();
+    g.moveTo(px + cell - triangle, py);
+    g.lineTo(px + cell, py);
+    g.lineTo(px + cell, py + triangle);
+    g.closePath();
+    g.fill();
+  }
+  g.restore();
+}
+
 export function drawGrid(canvas: HTMLCanvasElement, options: DrawGridOptions): boolean {
   const prepared = prepareCanvas(canvas);
   if (prepared === null) return false;
@@ -312,20 +371,6 @@ export function drawGrid(canvas: HTMLCanvasElement, options: DrawGridOptions): b
             }
             g.globalAlpha = 1;
 
-            if (!isDone && cell >= 6 && options.uncertainCells?.has(index) === true) {
-              // Small solid triangle in the corner — an uncertainty marker
-              // must stay visible even on a tiny cell, unlike the symbol
-              // (`withSymbols`), which becomes unreadable below
-              // `SYMBOL_MIN_CELL` and disappears entirely at that zoom.
-              const size = Math.max(4, cell * 0.36);
-              g.fillStyle = options.uncertainColor ?? theme.ink;
-              g.beginPath();
-              g.moveTo(px + cell - size, py);
-              g.lineTo(px + cell, py);
-              g.lineTo(px + cell, py + size);
-              g.closePath();
-              g.fill();
-            }
           }
         }
       }
@@ -473,6 +518,34 @@ export function drawGrid(canvas: HTMLCanvasElement, options: DrawGridOptions): b
       g.lineTo(viewWidth, py);
     }
     g.stroke();
+  }
+
+  // Uncertainty markers (import wizard only), drawn last — after every cell,
+  // stitch and grid line — so a marker larger than its cell is never painted
+  // over by the next cell, and grid lines never cut through it. They must be
+  // findable at any zoom (issue #45): a marker drawn only from a few pixels
+  // per cell, as before, simply did not exist on the overview of a large
+  // grid — where the user starts.
+  const uncertain = options.uncertainCells;
+  if (uncertain !== null && uncertain !== undefined && uncertain.size > 0) {
+    const positions: Array<[number, number]> = [];
+    for (const index of uncertain) {
+      const x = index % pattern.width;
+      const y = (index - x) / pattern.width;
+      if (x < firstColumn - 1 || x > firstColumn + columns || y < firstRow - 1 || y > firstRow + rows) {
+        continue;
+      }
+      if (done !== null && done[index] === 1) continue;
+      positions.push([(x - x0) * cell, (y - y0) * cell]);
+    }
+    drawUncertainMarkers(
+      g,
+      positions,
+      cell,
+      options.uncertainColor ?? theme.ink,
+      theme.ground,
+      theme.ink,
+    );
   }
 
   return true;
