@@ -60,6 +60,13 @@ export const fr = {
   "import.detection.recipeApplied":
     "Cadrage pré-rempli depuis la recette « {label} » (fichier déjà reconnu).",
   "import.crop.page": "Page {page} / {total}",
+  "import.crop.help.title": "Le cadrage doit-il être parfait ?",
+  "import.crop.help.loose":
+    "Non. Le cadre sert à repérer la grille sur le fichier ; ce sont le nombre de colonnes et de lignes indiqué ci-dessous qui définissent les cases que vous peindrez ensuite à la main. Un cadre un peu trop large ou trop serré ne change rien au motif créé.",
+  "import.crop.help.seam":
+    "Un décalage à l'intérieur de l'image (par exemple deux pages scannées puis recollées, avec une bande qui coupe la grille) n'est pas gênant non plus. Comptez alors les colonnes et les lignes avec les numéros inscrits sur les bords de la grille plutôt qu'en comptant les carreaux : une jointure peut répéter ou cacher une colonne.",
+  "import.crop.help.impossible":
+    "Le cadre ne peut pas suivre exactement la grille quand l'image est déformée : photo prise de biais, page courbée ou froissée, image trop floue pour distinguer les cases. Un motif réparti sur plusieurs fichiers s'importe fichier par fichier. Dans tous ces cas, vous pouvez quand même peindre le motif à la main, en vous aidant de l'aperçu du fichier ci-dessous.",
   "import.crop.prevPage": "Page précédente",
   "import.crop.nextPage": "Page suivante",
   "import.crop.columns": "Colonnes",
