@@ -563,6 +563,15 @@ button.badge {
   touch-action: none;
 }
 .crop-handle { position: absolute; display: grid; place-items: center; touch-action: none; }
+
+/* Import wizard editing areas (Cropping stage, Palette painting canvas) take
+   every touch for themselves (`touch-action: none`): stretched to the edge of
+   the content, they leave no room for a finger to scroll the page — measured
+   at 20 px on an iPad in landscape, where the wizard does scroll. A strip is
+   kept free on their right, wide enough for a thumb, where a vertical swipe
+   scrolls the page. At every width: an iPad (wide layout) needs it as much as
+   a phone. */
+.edit-area { margin-right: 44px; }
 .crop-handle > span { border-radius: 999px; background: var(--color-accent); box-shadow: var(--shadow-sm); display: block; }
 
 .crop-stage-loading {
