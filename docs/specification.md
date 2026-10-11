@@ -344,6 +344,7 @@ This library stays strictly local. Community sharing had been considered as an o
 | GET | `/api/patterns/{id}/stats` | Computed statistics |
 | GET | `/api/patterns/{id}/export` | `.cshp` export |
 | GET/POST/DELETE | `/api/recipes` | Recipe library |
+| GET | `/api/threads/dmc` | DMC colour chart (code, name, approximate colour) — fills in a palette entry from a typed code in the import wizard |
 
 Progress synchronisation works with **versioned deltas**: the client sends the changed cells along with the version it knows; on divergence, the server returns the missing operations and the client replays them. Checking a cell is an idempotent operation, which makes conflicts trivial to resolve. Since Lot 8, each operation also carries a stitch category (`layer`: full, 1/2, 1/4, backstitch, knot) — a single version index for the whole pattern, but an index space specific to each category (never shared, see §6.2).
 
