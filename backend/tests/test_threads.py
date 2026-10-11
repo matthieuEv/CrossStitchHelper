@@ -27,3 +27,16 @@ def test_dmc_chart_codes_are_unique_and_colours_valid(client: TestClient) -> Non
     for shade in shades:
         assert len(shade["rgb_hex"]) == 7 and shade["rgb_hex"].startswith("#")
         int(shade["rgb_hex"][1:], 16)
+
+
+def test_dmc_chart_is_served_in_chart_order(client: TestClient) -> None:
+    """The wizard lists the codes in the order served: named whites first,
+    then numbers ascending, then Light Effects — not the catalogue's hue
+    grouping (issue #39 review)."""
+    codes = [shade["code"].lower() for shade in client.get("/api/threads/dmc").json()]
+    assert codes[:4] == ["blanc", "white", "b5200", "ecru"]
+    numbered = [int(code) for code in codes if code.isdigit()]
+    assert numbered == sorted(numbered)
+    light_effects = [code for code in codes if code.startswith("e") and code[1:].isdigit()]
+    assert codes[-len(light_effects):] == sorted(light_effects, key=lambda code: int(code[1:]))
+    assert codes.index("304") < codes.index("310") < codes.index("816") < codes.index("3820")
