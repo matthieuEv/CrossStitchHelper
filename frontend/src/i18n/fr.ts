@@ -77,6 +77,12 @@ export const fr = {
   "import.paint.tool.pan": "Déplacer",
   "import.paint.eraser": "Gomme",
   "import.paint.undo": "Annuler la dernière zone",
+  "import.source.title": "Fichier d'origine",
+  "import.source.show": "Voir le fichier d'origine",
+  "import.source.hide": "Masquer le fichier d'origine",
+  "import.source.alt": "Page {page} du fichier importé",
+  "import.source.zoomIn": "Zoomer sur le fichier d'origine",
+  "import.source.zoomOut": "Dézoomer le fichier d'origine",
   "import.recap.incomplete":
     "Configuration incomplète : dimensions et palette sont nécessaires avant de continuer.",
   "import.recap.name": "Nom du motif",
