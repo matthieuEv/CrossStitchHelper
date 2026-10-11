@@ -13,6 +13,7 @@ import { BackIcon, UploadIcon } from "../components/Icons";
 import { PatternThumbnail } from "../components/PatternThumbnail";
 import { useT } from "../i18n";
 import { useWideLayout } from "../lib/hooks";
+import { unresolvedUncertainCells } from "../lib/importFills";
 import {
   commitImport,
   createImport,
@@ -242,13 +243,13 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
   // Filtered to the current range: `uncertainCells` refers to the dimensions
   // at detection time, stale as soon as the user types others by hand before
   // the next server round trip (same risk as `detectedCells`, see
-  // `applyFillsLocal` on the painting side).
+  // `applyFillsLocal` on the painting side). Cells already painted over by
+  // hand are dropped too: a manual correction resolves the doubt (#46).
   const uncertainCellsSet = useMemo(() => {
     if (uncertainCells === null || !dimensionsValid) return null;
-    const bound = columnsValue * rowsValue;
-    const filtered = uncertainCells.filter((index) => index >= 0 && index < bound);
+    const filtered = unresolvedUncertainCells(columnsValue, rowsValue, uncertainCells, fills);
     return filtered.length > 0 ? new Set(filtered) : null;
-  }, [uncertainCells, dimensionsValid, columnsValue, rowsValue]);
+  }, [uncertainCells, dimensionsValid, columnsValue, rowsValue, fills]);
 
   const painter = useImportPainter(
     dimensionsValid ? columnsValue : 0,
