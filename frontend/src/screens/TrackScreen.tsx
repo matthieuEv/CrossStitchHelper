@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+  type ReactElement,
+} from "react";
 
 import { ColorList } from "../components/ColorList";
 import {
@@ -17,6 +24,7 @@ import {
   UndoIcon,
 } from "../components/Icons";
 import { useT } from "../i18n";
+import type { TranslationKey } from "../i18n/fr";
 import { useElementSize } from "../lib/hooks";
 import { useNumberFormat } from "../lib/format";
 import { useTheme } from "../lib/theme";
@@ -44,6 +52,43 @@ interface TrackScreenProps {
   onBack: () => void;
 }
 
+/**
+ * Key of the Tracking toolbars (issue #50): each icon with its name and what
+ * it does — the toolbars show icons only, and a touch screen has no hover
+ * tooltip to reveal their names. Same icons and names as the toolbars.
+ */
+const TOOL_HELP: ReadonlyArray<{
+  title: TranslationKey;
+  items: ReadonlyArray<{
+    Icon: (props: { size?: number }) => ReactElement;
+    label: TranslationKey;
+    description: TranslationKey;
+  }>;
+}> = [
+  {
+    title: "track.help.toolsTitle",
+    items: [
+      { Icon: MinusIcon, label: "track.zoomOut", description: "track.help.zoomOut" },
+      { Icon: PlusIcon, label: "track.zoomIn", description: "track.help.zoomIn" },
+      { Icon: UndoIcon, label: "track.undo", description: "track.help.undo" },
+      { Icon: EyeOffIcon, label: "track.hideDone", description: "track.help.hideDone" },
+      { Icon: StitchIcon, label: "track.tool.stitch", description: "track.help.stitch" },
+      { Icon: PanIcon, label: "track.tool.pan", description: "track.help.pan" },
+      { Icon: SelectIcon, label: "track.tool.select", description: "track.help.select" },
+    ],
+  },
+  {
+    title: "track.help.layersTitle",
+    items: [
+      { Icon: StitchIcon, label: "track.layer.full", description: "track.help.full" },
+      { Icon: HalfStitchIcon, label: "track.layer.half", description: "track.help.half" },
+      { Icon: QuarterStitchIcon, label: "track.layer.quarter", description: "track.help.quarter" },
+      { Icon: BackstitchIcon, label: "track.layer.backstitch", description: "track.help.backstitch" },
+      { Icon: FrenchKnotIcon, label: "track.layer.knot", description: "track.help.knot" },
+    ],
+  },
+];
+
 export function TrackScreen({ tracker, wide, onBack }: TrackScreenProps) {
   const t = useT();
   const formatNumber = useNumberFormat();
@@ -52,6 +97,8 @@ export function TrackScreen({ tracker, wide, onBack }: TrackScreenProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [wrapRef, size] = useElementSize<HTMLDivElement>();
   const [drawerOpen, setDrawerOpen] = useState(false);
+  /** Key of the toolbar icons (issue #50) — the icons alone carry no text. */
+  const [helpOpen, setHelpOpen] = useState(false);
 
   const dragRef = useRef<{
     active: boolean;
@@ -451,6 +498,14 @@ export function TrackScreen({ tracker, wide, onBack }: TrackScreenProps) {
 
           <div className="track-badges">
             <span className="badge text-muted num">{zoomLabel}</span>
+            <button
+              type="button"
+              className="badge"
+              aria-haspopup="dialog"
+              onClick={() => setHelpOpen(true)}
+            >
+              <span aria-hidden="true">?</span> {t("track.help.open")}
+            </button>
 
             {selection !== null && (
               <>
@@ -606,6 +661,75 @@ export function TrackScreen({ tracker, wide, onBack }: TrackScreenProps) {
             </div>
           )}
         </div>
+
+        {helpOpen && (
+          <div className="drawer-backdrop" role="presentation" onClick={() => setHelpOpen(false)}>
+            <div
+              className="drawer"
+              role="dialog"
+              aria-modal="true"
+              aria-label={t("track.help.title")}
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div
+                style={{
+                  flex: "none",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  padding: "14px 18px 8px",
+                }}
+              >
+                <div style={{ fontFamily: "var(--font-heading)", fontSize: 18 }}>
+                  {t("track.help.title")}
+                </div>
+                <button
+                  type="button"
+                  className="btn btn-icon btn-secondary"
+                  onClick={() => setHelpOpen(false)}
+                  aria-label={t("track.close")}
+                >
+                  <CloseIcon size={18} />
+                </button>
+              </div>
+              <div style={{ flex: 1, minHeight: 0, overflow: "auto", padding: "0 18px 20px" }}>
+                {TOOL_HELP.map((section) => (
+                  <section key={section.title} style={{ marginBottom: 14 }}>
+                    <h3 style={{ fontSize: 13, margin: "10px 0 6px" }} className="text-muted">
+                      {t(section.title)}
+                    </h3>
+                    <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "grid", gap: 10 }}>
+                      {section.items.map(({ Icon, label, description }) => (
+                        <li key={label} style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
+                          <span
+                            aria-hidden="true"
+                            style={{
+                              flex: "none",
+                              width: 36,
+                              height: 36,
+                              display: "grid",
+                              placeItems: "center",
+                              borderRadius: 12,
+                              background: "var(--color-surface)",
+                            }}
+                          >
+                            <Icon size={18} />
+                          </span>
+                          <span style={{ minWidth: 0 }}>
+                            <strong style={{ display: "block", fontSize: 14 }}>{t(label)}</strong>
+                            <span className="text-muted" style={{ fontSize: 13 }}>
+                              {t(description)}
+                            </span>
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </section>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
 
         {!wide && drawerOpen && (
           <div
