@@ -17,6 +17,12 @@ behave the same despite what a quick look at the specification might
 suggest: only the real measurement on the file is authoritative, never a
 fixed-structure assumption, cf. `CLAUDE.md`).
 
+Codes come from the PDF's own text legend whenever one is found and matches
+the grid's colours (issue #44, specification §8.5 — `_parse_legend`,
+`_build_palette_and_cells_from_legend`): one palette entry per legend code
+actually used. The community catalogue (`app/dmc_catalog.py`) is only the
+fallback when no usable legend exists.
+
 Pure module: no FastAPI/SQLAlchemy dependency. The `detect_type_bc` entry
 point never raises — it returns `None` if the PDF does not look like a type
 B/C (including when it is actually a type A, or a type E based on reused
@@ -24,9 +30,10 @@ bitmap images like `river-and-mountains-laserarts`, specification §4.3)."""
 
 from __future__ import annotations
 
+import re
 import statistics
 from collections import Counter, defaultdict
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Literal
@@ -36,7 +43,7 @@ import pymupdf
 from pdfplumber.page import Page
 from PIL import Image
 
-from app.dmc_catalog import lab_distance, nearest_dmc, rgb_to_lab
+from app.dmc_catalog import dmc_name, lab_distance, nearest_dmc, rgb_to_lab
 from app.grid_lines import is_grid_ruling
 
 # `app.schemas` only depends on Pydantic — importing it here does not break
@@ -68,6 +75,11 @@ _CELL_SIZE_MAX_RATIO = 1.35
 # square, never a text table).
 _PITCH_RATIO_MIN = 0.5
 _PITCH_RATIO_MAX = 2.0
+# Relative disagreement between the size-based pitch and the position-based
+# cell step beyond which the step wins (`_refine_color_page_pitch`). Measured
+# agreement on the clean DMC fixtures: < 0.03%; measured disagreement on
+# `summer-flight-dmc`: 5.4% — a wide margin on both sides.
+_PITCH_STEP_TOLERANCE = 0.02
 # A genuine type B/C file observed (§4.1, §4.3) is 100% vector — no bitmap
 # image on its grid pages. `river-and-mountains-laserarts` (type E,
 # catalogue of reused icons) also carries a dressing of background rectangles
@@ -90,7 +102,7 @@ _MIN_SYMBOL_PAGE_DENSITY = 0.15
 # A single fill cannot reasonably cover such a huge fraction of a
 # multicoloured grid: beyond it, it is a background layer (alternating
 # shading, page background fill) rather than a real thread to stitch — see
-# `_exclude_background_color`.
+# `_resolve_cell_colors`.
 _BACKGROUND_DOMINANCE_RATIO = 0.3
 # Merging nearly identical colours (CMYK/RGB rounding noise) into a single
 # palette entry — well below the smallest perceptible gap observed between
@@ -99,6 +111,35 @@ _COLOR_MERGE_LAB_EPSILON = 2.5
 # Beyond this Lab distance, the nearest DMC match is deemed doubtful and
 # flagged (specification §8.5).
 _UNCERTAIN_COLOR_DISTANCE = 12.0
+# Text legend (issue #44, `_parse_legend`). A legend code: digits (`3345`,
+# `07`), a lettered DMC code (`E321`, `B5200`) or a named white/ecru.
+_LEGEND_CODE_PATTERN = re.compile(r"^(?:[A-Za-z]?\d{1,4}|blanc|white|ecru|écru)$", re.IGNORECASE)
+# Swatch shape: a filled square (measured 7.1 x 7.1 pt on the four DMC
+# fixtures, for 8 pt text), its side relative to the code's text height.
+_LEGEND_SWATCH_ASPECT_MIN = 0.75
+_LEGEND_SWATCH_ASPECT_MAX = 1.33
+_LEGEND_SWATCH_MIN_SIDE_RATIO = 0.4
+_LEGEND_SWATCH_MAX_SIDE_RATIO = 4.0
+# Maximum gap between the swatch and its code, relative to the code's text
+# height (measured: 21-33 pt for 8 pt text, i.e. 2.6-4.1).
+_LEGEND_MAX_GAP_RATIO = 6.0
+# Lab distance up to which a grid colour is deemed to be exactly its legend
+# swatch's colour. Measured on the four DMC fixtures: 60 of the 61 grid
+# colours are within 1.1 of their swatch (most at 0.00 — same CMYK values),
+# the closest pair of swatches with different codes is 5.5 apart
+# (`winter-wreath-dmc` 3345/3346): 2.5 stays below half that gap. Beyond it,
+# the colour is still assigned to its nearest swatch but every cell is
+# flagged (measured once: `summer-flight-dmc`'s 07 cells, 5.8 from their
+# swatch, the next code 25 away).
+_LEGEND_MATCH_DISTANCE = 2.5
+# A second legend code whose swatch is less than this much farther than the
+# best one makes the match ambiguous (flagged, never silently decided).
+# Below the smallest measured gap between two swatches (5.5), so an exact
+# match is never ambiguous on its own.
+_LEGEND_AMBIGUITY_MARGIN = 3.0
+# Fraction of coloured cells that must find their exact swatch in the parsed
+# legend for that legend to be trusted (`_legend_is_consistent`).
+_LEGEND_MIN_COVERAGE = 0.5
 # Lot 5 "uncertain cells" fix (continued): a first avenue (loosening a
 # bit-difference threshold on the old coarse 6x6 bitmap, built from each
 # cell's few vector path points, from 3 to 4-6) was abandoned after visual
@@ -284,6 +325,10 @@ def detect_type_bc(pdf_path: Path) -> TypeBCResult | None:
             color_page = _select_color_page(infos)
             if color_page is None:
                 return None
+            refined = _refine_color_page_pitch(color_page)
+            if refined is not color_page:
+                infos[color_page.index] = refined
+                color_page = refined
             # `_select_color_page` only returns pages where these three
             # values are already guaranteed non-`None` (filter on
             # `len(cellsized_rects) >= _MIN_CELLSIZED_RECTS`, which implies a
@@ -314,9 +359,8 @@ def detect_type_bc(pdf_path: Path) -> TypeBCResult | None:
                 warnings.append(DetectionWarning(code="type_bc.border_inferred"))
                 confidence -= 0.15
 
-            raw_cell_colors = _build_color_grid(color_page, grid)
-            raw_cell_colors, background_warning = _exclude_background_color(
-                raw_cell_colors, grid.columns * grid.rows
+            raw_cell_colors, background_warning = _resolve_cell_colors(
+                _build_color_stacks(color_page, grid), grid.columns * grid.rows
             )
             if background_warning is not None:
                 warnings.append(background_warning)
@@ -331,6 +375,7 @@ def detect_type_bc(pdf_path: Path) -> TypeBCResult | None:
 
             cell_signature: dict[tuple[int, int], int] = {}
             representative_bbox: dict[int, Bbox] = {}
+            cell_symbol_bbox: dict[tuple[int, int], Bbox] = {}
             symbol_page_number: int | None = None
             if grid_type == "C" and symbol_page is not None:
                 symbol_page_number = symbol_page.index + 1
@@ -345,9 +390,11 @@ def detect_type_bc(pdf_path: Path) -> TypeBCResult | None:
                 sym_grid = grid if symbol_page is color_page else _symbol_grid_for(
                     symbol_page, grid
                 )
-                cell_signature, representative_bbox = _build_symbol_signatures(
-                    symbol_page, sym_grid, set(cell_color_id), pdf_path
-                )
+                (
+                    cell_signature,
+                    representative_bbox,
+                    cell_symbol_bbox,
+                ) = _build_symbol_signatures(symbol_page, sym_grid, set(cell_color_id), pdf_path)
                 if not any(cell_signature.values()):
                     # Measured density sufficient but no usable shape grouped
                     # per cell (registration out of tolerance, for example):
@@ -383,12 +430,16 @@ def detect_type_bc(pdf_path: Path) -> TypeBCResult | None:
                 uncertain_cells,
                 palette_warnings,
                 palette_penalty,
-            ) = _build_palette_and_cells(
+            ) = _assemble_palette(
+                infos=infos,
+                color_page=color_page,
+                symbol_page=symbol_page,
                 grid=grid,
                 cell_color_id=cell_color_id,
                 canonical_colors=canonical_colors,
                 cell_signature=cell_signature,
                 representative_bbox=representative_bbox,
+                cell_symbol_bbox=cell_symbol_bbox,
                 grid_type=grid_type,
                 symbol_page_number=symbol_page_number,
             )
@@ -439,13 +490,7 @@ def _analyze_page(page: Page) -> _PageInfo:
     pitch_x, pitch_y = pitch if pitch is not None else (None, None)
     cellsized_rects: list[Obj] = []
     if pitch_x is not None and pitch_y is not None:
-        min_w, max_w = _CELL_SIZE_MIN_RATIO * pitch_x, _CELL_SIZE_MAX_RATIO * pitch_x
-        min_h, max_h = _CELL_SIZE_MIN_RATIO * pitch_y, _CELL_SIZE_MAX_RATIO * pitch_y
-        cellsized_rects = [
-            r
-            for r in filled_rects
-            if min_w <= (r["x1"] - r["x0"]) <= max_w and min_h <= (r["bottom"] - r["top"]) <= max_h
-        ]
+        cellsized_rects = _cellsized(filled_rects, pitch_x, pitch_y)
     # The border is detected independently of the cell pitch: a pure symbol
     # page (stroke fragments, no large colour fills) has no reliable cell
     # pitch derivable from its rectangles (its filled rectangles, when there
@@ -496,6 +541,74 @@ def _estimate_pitch_from_rects(filled_rects: list[Obj]) -> tuple[float, float] |
     if not (_PITCH_RATIO_MIN <= pitch_x / pitch_y <= _PITCH_RATIO_MAX):
         return None
     return pitch_x, pitch_y
+
+
+def _cellsized(filled_rects: list[Obj], pitch_x: float, pitch_y: float) -> list[Obj]:
+    min_w, max_w = _CELL_SIZE_MIN_RATIO * pitch_x, _CELL_SIZE_MAX_RATIO * pitch_x
+    min_h, max_h = _CELL_SIZE_MIN_RATIO * pitch_y, _CELL_SIZE_MAX_RATIO * pitch_y
+    return [
+        r
+        for r in filled_rects
+        if min_w <= (r["x1"] - r["x0"]) <= max_w and min_h <= (r["bottom"] - r["top"]) <= max_h
+    ]
+
+
+def _cell_step(rects: list[Obj], axis: Literal["x", "y"]) -> float | None:
+    """Median centre-to-centre spacing between consecutive cell-sized
+    rectangles of the same row (`axis="x"`) or column (`axis="y"`) — the
+    real repetition step of the cells, measured on their *positions* rather
+    than on their *sizes*. See `_refine_color_page_pitch` for why both
+    measurements are needed."""
+    lines: dict[float, set[float]] = defaultdict(set)
+    for r in rects:
+        cx = (r["x0"] + r["x1"]) / 2
+        cy = (r["top"] + r["bottom"]) / 2
+        if axis == "x":
+            lines[round(cy, 1)].add(round(cx, 3))
+        else:
+            lines[round(cx, 1)].add(round(cy, 3))
+    diffs: list[float] = []
+    for values in lines.values():
+        ordered = sorted(values)
+        diffs.extend(b - a for a, b in zip(ordered, ordered[1:], strict=False) if b - a > 0.5)
+    return statistics.median(diffs) if diffs else None
+
+
+def _refine_color_page_pitch(info: _PageInfo) -> _PageInfo:
+    """Cross-check the colour page's pitch (median rectangle *size*,
+    `_estimate_pitch_from_rects`) against the median centre-to-centre *step*
+    of its cell-sized rectangles, and trust the step when the two disagree
+    by more than `_PITCH_STEP_TOLERANCE`.
+
+    Measured on `summer-flight-dmc` (issue #44): every cell there is drawn as
+    a 6.059 pt fill **plus** a thin outline frame whose inner hole is a
+    5.734 pt square (see `_outline_frame_ids`) — those inner squares
+    outnumber the real fills, so the size median gave 5.734 pt, i.e. a
+    90 x 90 grid instead of the real 85 x 85 one (515.1 pt border / 6.059),
+    with an empty row/column silently inserted every ~18 cells. The inner
+    squares share their cell's centre, so the step (6.059 pt) is immune to
+    them. On the three other DMC fixtures the two measurements agree within
+    0.001 pt (5.364/5.365, 4.886/4.886, 5.967/5.967): the size median, the
+    historical estimator, is then kept bit for bit."""
+    assert info.pitch_x is not None
+    assert info.pitch_y is not None
+    pitch_x, pitch_y = info.pitch_x, info.pitch_y
+    step_x = _cell_step(info.cellsized_rects, "x")
+    step_y = _cell_step(info.cellsized_rects, "y")
+    if step_x is not None and abs(step_x - pitch_x) > _PITCH_STEP_TOLERANCE * pitch_x:
+        pitch_x = step_x
+    if step_y is not None and abs(step_y - pitch_y) > _PITCH_STEP_TOLERANCE * pitch_y:
+        pitch_y = step_y
+    if (pitch_x, pitch_y) == (info.pitch_x, info.pitch_y):
+        return info
+    if not (_PITCH_RATIO_MIN <= pitch_x / pitch_y <= _PITCH_RATIO_MAX):
+        return info
+    return replace(
+        info,
+        pitch_x=pitch_x,
+        pitch_y=pitch_y,
+        cellsized_rects=_cellsized(info.filled_rects, pitch_x, pitch_y),
+    )
 
 
 # --------------------------------------------------------------------------
@@ -747,21 +860,73 @@ def _color_to_rgb(color: Color) -> tuple[float, float, float]:
     return 0.0, 0.0, 0.0
 
 
-def _build_color_grid(
+def _signed_area(rect: Obj) -> float:
+    pts = rect.get("pts") or []
+    total = 0.0
+    for (x1, y1), (x2, y2) in zip(pts, [*pts[1:], *pts[:1]], strict=False):
+        total += x1 * y2 - x2 * y1
+    return total / 2
+
+
+def _outline_frame_ids(filled_rects: list[Obj]) -> set[int]:
+    """`id()` of the filled rectangles that are actually the two halves of a
+    thin *outline frame* rather than a solid fill.
+
+    Measured on `summer-flight-dmc` (issue #44): each coloured cell is
+    redrawn, after its real 6.059 pt fill, as a single path made of two
+    nested squares (6.059 pt and 5.734 pt) of opposite orientation, filled
+    with the non-zero winding rule — i.e. a ~0.16 pt ring in a darkened
+    shade of the cell colour (CMYK halved, K = 0.502), confirmed by
+    PyMuPDF's `get_drawings` (one path, two `re` items) and by the rendered
+    page (the cell shows its real colour, not the darkened one). pdfplumber
+    splits that path into two consecutive "filled" rectangles of the same
+    colour; taken as fills, "last drawn wins" (`_build_color_stacks`) made
+    the darkened ring replace the real colour of ~350 cells, which appeared
+    as 10 extra "shades" in the palette.
+
+    Signature, measured rather than assumed: two rectangles **consecutive in
+    drawing order**, same fill colour, one strictly inside the other, and
+    either the even-odd rule or opposite orientations (the inner square is
+    then a hole). Two same-colour solid squares drawn on top of each other
+    would have the same orientation under the non-zero rule, so they are
+    never mistaken for a frame. Found 906 times on `summer-flight-dmc`'s
+    colour page, 0 times on every page of the five other fixtures."""
+    frames: set[int] = set()
+    for a, b in zip(filled_rects, filled_rects[1:], strict=False):
+        if a.get("non_stroking_color") != b.get("non_stroking_color"):
+            continue
+        area_a = (a["x1"] - a["x0"]) * (a["bottom"] - a["top"])
+        area_b = (b["x1"] - b["x0"]) * (b["bottom"] - b["top"])
+        outer, inner = (a, b) if area_a >= area_b else (b, a)
+        if not (
+            outer["x0"] < inner["x0"]
+            and inner["x1"] < outer["x1"]
+            and outer["top"] < inner["top"]
+            and inner["bottom"] < outer["bottom"]
+        ):
+            continue
+        if a.get("evenodd") or _signed_area(a) * _signed_area(b) < 0:
+            frames.add(id(a))
+            frames.add(id(b))
+    return frames
+
+
+def _build_color_stacks(
     color_page: _PageInfo, grid: _GridGeometry
-) -> dict[tuple[int, int], Color]:
-    """Colour per cell, in the PDF's drawing order (`page.rects` is already
-    in content-stream order): when several rectangles overlap exactly on the
-    same cell (observed: a background fill under the cell's real fill, cf.
-    `_exclude_background_color`), the last one drawn is visually the one
-    that counts — never the smallest in area (type A heuristic, invalid here
-    since both rectangles are the same size)."""
+) -> dict[tuple[int, int], list[Color]]:
+    """Fill colours of each cell, in the PDF's drawing order (`page.rects` is
+    already in content-stream order) — resolved into a single colour per
+    cell by `_resolve_cell_colors`. Outline frames (`_outline_frame_ids`)
+    are never counted as fills."""
     border = color_page.border
     assert border is not None
     margin_x = grid.pitch_x * 0.5
     margin_y = grid.pitch_y * 0.5
-    cells: dict[tuple[int, int], Color] = {}
+    frame_ids = _outline_frame_ids(color_page.filled_rects)
+    stacks: dict[tuple[int, int], list[Color]] = defaultdict(list)
     for rect in color_page.cellsized_rects:
+        if id(rect) in frame_ids:
+            continue
         cx = (rect["x0"] + rect["x1"]) / 2
         cy = (rect["top"] + rect["bottom"]) / 2
         if not (
@@ -772,32 +937,49 @@ def _build_color_grid(
         row0, col0 = grid.cell_of(cx, cy)
         if row0 < 0 or col0 < 0 or row0 >= grid.rows or col0 >= grid.columns:
             continue
-        cells[(row0, col0)] = _normalize_color(rect["non_stroking_color"])
-    return cells
+        stacks[(row0, col0)].append(_normalize_color(rect["non_stroking_color"]))
+    return stacks
 
 
-def _exclude_background_color(
-    cells: dict[tuple[int, int], Color], total_grid_cells: int
+def _resolve_cell_colors(
+    stacks: dict[tuple[int, int], list[Color]], total_grid_cells: int
 ) -> tuple[dict[tuple[int, int], Color], DetectionWarning | None]:
-    """Exclude a colour that dominates an implausible fraction of the whole
-    grid (observed: a neutral background fill applied under every cell,
-    coloured or not, on `summer-flight-dmc` — no real thread of a
-    multicoloured pattern ever covers such a proportion). Detection by
-    frequency, never by a hard-coded colour value: it triggers on none of the
-    three other reference fixtures, where no colour exceeds ~5% of the
-    cells."""
-    if not cells:
-        return cells, None
-    counts = Counter(cells.values())
-    dominant_color, dominant_count = counts.most_common(1)[0]
+    """One colour per cell from its drawing-order stack.
+
+    By default the last rectangle drawn is visually the one that counts —
+    never the smallest in area (type A heuristic, invalid here since the
+    rectangles of one cell are the same size).
+
+    Exception: a colour that is on top of an implausible fraction of the
+    whole grid (`_BACKGROUND_DOMINANCE_RATIO`) is a background/decoration
+    layer, never a real thread (no real thread of a multicoloured pattern
+    covers such a proportion) — detection by frequency, never by a
+    hard-coded colour value; it triggers on none of the three other DMC
+    fixtures, where no colour exceeds ~5% of the cells (64% on
+    `summer-flight-dmc`). That layer is excluded, **and it never hides a real
+    fill drawn under it**: measured on `summer-flight-dmc` (issue #44), the
+    neutral grey layer is a per-cell outline drawn *after* the real fill of
+    449 cells (frame drawn as a polygon plus an inner square, which
+    pdfplumber reports as two unrelated objects — not caught by
+    `_outline_frame_ids`); the rendered page shows those cells in their real
+    colour. Before this fix, those cells were silently dropped from the
+    pattern."""
+    if not stacks:
+        return {}, None
+    tops = Counter(stack[-1] for stack in stacks.values())
+    dominant_color, dominant_count = tops.most_common(1)[0]
     if dominant_count < _BACKGROUND_DOMINANCE_RATIO * total_grid_cells:
-        return cells, None
-    filtered = {pos: c for pos, c in cells.items() if c != dominant_color}
+        return {pos: stack[-1] for pos, stack in stacks.items()}, None
+    cells: dict[tuple[int, int], Color] = {}
+    for pos, stack in stacks.items():
+        real = [color for color in stack if color != dominant_color]
+        if real:
+            cells[pos] = real[-1]
     warning = DetectionWarning(
         code="type_bc.background_color_excluded",
         params={"cells": dominant_count},
     )
-    return filtered, warning
+    return cells, warning
 
 
 # --------------------------------------------------------------------------
@@ -907,7 +1089,7 @@ def _build_symbol_signatures(
     sym_grid: _GridGeometry,
     colored_cells: set[tuple[int, int]],
     pdf_path: Path,
-) -> tuple[dict[tuple[int, int], int], dict[int, Bbox]]:
+) -> tuple[dict[tuple[int, int], int], dict[int, Bbox], dict[tuple[int, int], Bbox]]:
     """Shape signature per cell: a fingerprint from the cell's real raster
     rendering (see `_raster_fingerprint`), never from a bitmap derived from
     vector path points — makes it possible to group the cells carrying the
@@ -938,7 +1120,14 @@ def _build_symbol_signatures(
     `sym_grid` is the geometry already re-registered on `symbol_page` (see
     `_symbol_grid_for` and its call site) — never recomputed here, to keep a
     single place that decides between reusing the colour grid as is or
-    re-registering on the symbol page's own border."""
+    re-registering on the symbol page's own border.
+
+    Returns the merged signature per cell, one representative vector bbox per
+    signature group (the first cell met with that group, whatever its
+    colour), and the vector bbox of every marked cell — the latter lets the
+    legend-based assembly show, for each thread, a real cell *of that
+    thread* (`_glyph_bbox_for_entry`) rather than a group representative
+    that may belong to another colour."""
     cellsized_ids = {id(r) for r in symbol_page.cellsized_rects}
 
     buckets: dict[tuple[int, int], list[Obj]] = defaultdict(list)
@@ -971,7 +1160,7 @@ def _build_symbol_signatures(
             vector_bbox[pos] = (min(xs), min(ys), max(xs), max(ys))
 
     if not vector_bbox:
-        return {pos: 0 for pos in colored_cells}, {}
+        return {pos: 0 for pos in colored_cells}, {}, {}
 
     gray, origin_px, origin_py = _render_symbol_page_gray(pdf_path, symbol_page.index + 1, sym_grid)
 
@@ -988,9 +1177,10 @@ def _build_symbol_signatures(
             representative_bbox[fingerprint] = vector_bbox[pos]
             representative_pos[fingerprint] = pos
 
-    return _merge_near_duplicate_signatures(
+    merged_signatures, merged_bbox = _merge_near_duplicate_signatures(
         signatures, representative_bbox, representative_pos, gray, origin_px, origin_py
     )
+    return merged_signatures, merged_bbox, vector_bbox
 
 
 def _render_symbol_page_gray(
@@ -1191,6 +1381,188 @@ def _bucket_object(
 
 
 # --------------------------------------------------------------------------
+# Text legend (issue #44, specification §8.5: when the legend provides the
+# codes as text, they are authoritative — colour matching only associates
+# each grid colour with the right legend entry)
+# --------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class _LegendEntry:
+    code: str
+    """As printed in the legend (`"3345"`, `"E321"`, `"blanc"`, `"07"`...)
+    — never re-capitalised or zero-stripped: the legend is authoritative."""
+    rgb: tuple[float, float, float]
+    """Fill colour of the row's vector swatch, 0-1 components."""
+
+
+def _legend_candidate_pages(infos: list[_PageInfo], grid_pages: set[int]) -> list[_PageInfo]:
+    """Pages that may carry a text legend: never a page used as the colour
+    or symbol grid, and never a page that itself tiles enough cell-sized
+    rectangles to be a grid (a second grid page of a multi-page chart carries
+    axis numbers next to coloured cells, which would otherwise look exactly
+    like "code next to a swatch")."""
+    return [
+        info
+        for info in infos
+        if info.index not in grid_pages and len(info.cellsized_rects) < _MIN_CELLSIZED_RECTS
+    ]
+
+
+def _parse_legend(pages: list[_PageInfo]) -> list[_LegendEntry]:
+    """Every (code, swatch colour) pair of the PDF's text legend, by
+    structural measurement only — never by an assumed page number or column
+    position.
+
+    Measured on the four DMC fixtures (issue #44): each full-stitch legend
+    row is a vector swatch (one or a 2x2 block of filled squares, 7.1 pt,
+    filled with **the exact same colour as the grid cells of that thread**,
+    sometimes with the symbol drawn on top) followed on the same line by the
+    code as real text (`3345`, `E321`, `blanc`/`Blanc`, `07`...), 21-33 pt
+    to the right of the swatch for an 8 pt font. A symbol-only column
+    (black strokes on the white page, no filled square) may sit further left
+    and a skein count (`x 1`) further right — neither is ever taken for the
+    swatch or the code, thanks to the "nearest square to the left, with no
+    other word in between" rule. Backstitch rows (thin line samples, never a
+    square) are ignored by construction.
+
+    Duplicate (code, colour) pairs are kept once (the same thread listed in
+    two sections). The same code next to two *different* swatch colours
+    means the layout was misread — measured on the type A fixture
+    `cafe-brasserie-charting-export` (never handed to this module in
+    practice, `detect_type_a` wins first, but a useful structural
+    counter-example): the word nearest to each of its 33 swatches is the
+    strand count `2`, not the code. The whole legend is then rejected
+    (empty list, historical catalogue matching kept) rather than collapsing
+    every colour into one bogus code."""
+    entries: list[_LegendEntry] = []
+    seen: set[tuple[str, Color]] = set()
+    colors_of_code: dict[str, set[Color]] = defaultdict(set)
+    for info in pages:
+        squares = [
+            r
+            for r in info.filled_rects
+            if (r["bottom"] - r["top"]) > 0
+            and _LEGEND_SWATCH_ASPECT_MIN
+            <= (r["x1"] - r["x0"]) / (r["bottom"] - r["top"])
+            <= _LEGEND_SWATCH_ASPECT_MAX
+        ]
+        if not squares:
+            continue
+        words = info.page.extract_words()
+        for word in words:
+            if not _LEGEND_CODE_PATTERN.match(word["text"]):
+                continue
+            height = word["bottom"] - word["top"]
+            if height <= 0:
+                continue
+            swatch_color = _swatch_left_of(word, words, squares, height)
+            if swatch_color is None:
+                continue
+            key = (word["text"].lower(), swatch_color)
+            if key in seen:
+                continue
+            seen.add(key)
+            colors_of_code[word["text"].lower()].add(swatch_color)
+            entries.append(_LegendEntry(code=word["text"], rgb=_color_to_rgb(swatch_color)))
+    if any(len(colors) > 1 for colors in colors_of_code.values()):
+        return []
+    return entries
+
+
+def _swatch_left_of(
+    word: Obj, words: list[Obj], squares: list[Obj], height: float
+) -> Color | None:
+    """Colour of the swatch immediately to the left of `word` on the same
+    line, or `None` — see `_parse_legend` for the measured layout."""
+    min_side = _LEGEND_SWATCH_MIN_SIDE_RATIO * height
+    max_side = _LEGEND_SWATCH_MAX_SIDE_RATIO * height
+    max_gap = _LEGEND_MAX_GAP_RATIO * height
+    candidates = [
+        r
+        for r in squares
+        if min_side <= (r["x1"] - r["x0"]) <= max_side
+        and r["x1"] <= word["x0"] + 0.5
+        and word["x0"] - r["x1"] <= max_gap
+        and r["top"] < word["bottom"]
+        and r["bottom"] > word["top"]
+    ]
+    if not candidates:
+        return None
+    nearest = max(candidates, key=lambda r: r["x1"])
+    # Another word between the swatch and this one: this word belongs to a
+    # further column (the skein count `x 1`, for example), not to the swatch.
+    for other in words:
+        if other is word:
+            continue
+        if (
+            other["x0"] >= nearest["x1"] - 0.5
+            and other["x1"] <= word["x0"] + 0.5
+            and other["top"] < word["bottom"]
+            and other["bottom"] > word["top"]
+        ):
+            return None
+    width = nearest["x1"] - nearest["x0"]
+    block = [r for r in candidates if r["x0"] >= nearest["x0"] - 1.6 * width]
+    area: Counter[Color] = Counter()
+    for r in block:
+        area[_normalize_color(r["non_stroking_color"])] += (r["x1"] - r["x0"]) * (
+            r["bottom"] - r["top"]
+        )
+    # The swatch's own fill covers the largest area; a symbol drawn on top of
+    # it (small strokes, never as large) never wins.
+    return area.most_common(1)[0][0]
+
+
+@dataclass(frozen=True)
+class _LegendMatch:
+    code: str
+    distance: float
+    ambiguous: bool
+    """Another legend code's swatch is almost as close — the colour alone
+    cannot tell which of the two threads this is."""
+
+
+def _match_clusters_to_legend(
+    canonical_colors: list[tuple[float, float, float]], legend: list[_LegendEntry]
+) -> list[_LegendMatch]:
+    """Nearest legend swatch (Lab distance, never raw RGB) for each canonical
+    grid colour."""
+    legend_lab = [(entry.code, rgb_to_lab(entry.rgb)) for entry in legend]
+    matches: list[_LegendMatch] = []
+    for rgb in canonical_colors:
+        lab = rgb_to_lab(rgb)
+        best_per_code: dict[str, float] = {}
+        for code, swatch_lab in legend_lab:
+            distance = lab_distance(lab, swatch_lab)
+            if distance < best_per_code.get(code, float("inf")):
+                best_per_code[code] = distance
+        ranked = sorted(best_per_code.items(), key=lambda kv: kv[1])
+        code, distance = ranked[0]
+        ambiguous = len(ranked) > 1 and ranked[1][1] - distance < _LEGEND_AMBIGUITY_MARGIN
+        matches.append(_LegendMatch(code=code, distance=distance, ambiguous=ambiguous))
+    return matches
+
+
+def _legend_is_consistent(
+    matches: list[_LegendMatch], cell_color_id: dict[tuple[int, int], int]
+) -> bool:
+    """A parsed legend is only trusted if it really describes this grid: at
+    least `_LEGEND_MIN_COVERAGE` of the coloured cells must find their exact
+    swatch in it. Otherwise (mis-parsed legend, a legend for another layer)
+    the historical catalogue matching is kept — never codes forced from a
+    legend that does not match the grid's colours."""
+    if not cell_color_id:
+        return False
+    matched = sum(
+        1
+        for color_id in cell_color_id.values()
+        if matches[color_id].distance <= _LEGEND_MATCH_DISTANCE
+    )
+    return matched >= _LEGEND_MIN_COVERAGE * len(cell_color_id)
+
+
+# --------------------------------------------------------------------------
 # Final assembly: palette, cells, uncertainties
 # --------------------------------------------------------------------------
 
@@ -1215,6 +1587,218 @@ def _rgb_hex(rgb: tuple[float, float, float]) -> str:
     return f"#{r:02x}{g:02x}{b:02x}"
 
 
+def _assemble_palette(
+    infos: list[_PageInfo],
+    color_page: _PageInfo,
+    symbol_page: _PageInfo | None,
+    grid: _GridGeometry,
+    cell_color_id: dict[tuple[int, int], int],
+    canonical_colors: list[tuple[float, float, float]],
+    cell_signature: dict[tuple[int, int], int],
+    representative_bbox: dict[int, Bbox],
+    cell_symbol_bbox: dict[tuple[int, int], Bbox],
+    grid_type: Literal["B", "C"],
+    symbol_page_number: int | None,
+) -> tuple[list[TypeBCPaletteEntry], list[int], list[int], list[DetectionWarning], float]:
+    """Legend-authoritative assembly when the PDF carries a usable text
+    legend that matches the grid's colours, otherwise the historical
+    catalogue-based assembly, unchanged (never an import blocked for lack
+    of a legend)."""
+    grid_pages = {color_page.index}
+    if symbol_page is not None:
+        grid_pages.add(symbol_page.index)
+    legend = _parse_legend(_legend_candidate_pages(infos, grid_pages))
+    if len({entry.code.lower() for entry in legend}) >= 2:
+        matches = _match_clusters_to_legend(canonical_colors, legend)
+        if _legend_is_consistent(matches, cell_color_id):
+            return _build_palette_and_cells_from_legend(
+                grid=grid,
+                cell_color_id=cell_color_id,
+                canonical_colors=canonical_colors,
+                cell_signature=cell_signature,
+                cell_symbol_bbox=cell_symbol_bbox,
+                grid_type=grid_type,
+                symbol_page_number=symbol_page_number,
+                legend_matches=matches,
+            )
+    return _build_palette_and_cells(
+        grid=grid,
+        cell_color_id=cell_color_id,
+        canonical_colors=canonical_colors,
+        cell_signature=cell_signature,
+        representative_bbox=representative_bbox,
+        grid_type=grid_type,
+        symbol_page_number=symbol_page_number,
+    )
+
+
+def _glyph_bbox_for_entry(
+    positions: list[tuple[int, int]],
+    dominant_symbol: int,
+    cell_signature: dict[tuple[int, int], int],
+    cell_symbol_bbox: dict[tuple[int, int], Bbox],
+) -> Bbox | None:
+    """Vector bbox of a real cell of this palette entry that carries its
+    dominant symbol group: the one with the median bbox area, so that a cell
+    crossed by a backstitch line (larger bbox) or carrying only a stray
+    fragment (smaller bbox) is never the one shown."""
+    candidates = sorted(
+        (
+            (bbox[2] - bbox[0]) * (bbox[3] - bbox[1]),
+            pos,
+        )
+        for pos in positions
+        if cell_signature.get(pos, 0) == dominant_symbol
+        and (bbox := cell_symbol_bbox.get(pos)) is not None
+    )
+    if not candidates:
+        return None
+    _, pos = candidates[len(candidates) // 2]
+    return cell_symbol_bbox[pos]
+
+
+def _build_palette_and_cells_from_legend(
+    grid: _GridGeometry,
+    cell_color_id: dict[tuple[int, int], int],
+    canonical_colors: list[tuple[float, float, float]],
+    cell_signature: dict[tuple[int, int], int],
+    cell_symbol_bbox: dict[tuple[int, int], Bbox],
+    grid_type: Literal["B", "C"],
+    symbol_page_number: int | None,
+    legend_matches: list[_LegendMatch],
+) -> tuple[list[TypeBCPaletteEntry], list[int], list[int], list[DetectionWarning], float]:
+    """Palette assembly when a text legend was found and matches the grid
+    (issue #44, specification §8.5): **one palette entry per legend code
+    actually used**, never one per (colour x symbol variant) pair.
+
+    Before this, a thread whose cells carried two symbol variants (a
+    backstitch line crossing the symbol, a French knot drawn on top — the
+    "line running through the symbol" of the issue) became several palette
+    entries, and every code came from the nearest shade of the whole
+    community catalogue (`nearest_dmc`) even though the PDF prints the real
+    codes. Now:
+
+    - the code comes from the legend (as printed), the name from the
+      community catalogue when it knows the code (`dmc_name`), otherwise
+      empty — never made up;
+    - the display colour stays the colour actually extracted from the PDF's
+      grid (§1: "exact colour per cell"), the most frequent one when several
+      grid colours map to the same code;
+    - the symbol shown is a real cell of *that* thread carrying the entry's
+      dominant symbol group (`_glyph_bbox_for_entry`) — never the group's
+      global representative, which may belong to another colour (measured
+      on `summer-flight-dmc`: one raster group spans cells of 09, 3854, 369
+      and blanc, so 09's palette entry showed 3854's symbol);
+    - legend codes that no grid cell uses never enter the palette.
+
+    Uncertainty stays explicit, never a silent wrong value: cells whose
+    colour is not within `_LEGEND_MATCH_DISTANCE` of its swatch, or whose
+    nearest swatch is ambiguous, are flagged (and counted in
+    `type_bc.uncertain_dmc_match`); a colour far from *every* swatch
+    (`_UNCERTAIN_COLOR_DISTANCE`, i.e. probably a legend row the parser
+    missed) keeps its own entry with the nearest catalogue code rather than
+    being folded into another thread; in type C, cells whose symbol differs
+    from their entry's dominant symbol (or every cell of an entry with no
+    clearly dominant symbol) are flagged, exactly as before the merge."""
+    warnings: list[DetectionWarning] = []
+    cells = [0] * (grid.columns * grid.rows)
+
+    # Palette key: the legend code, or — for a colour far from every swatch —
+    # the colour cluster itself (kept apart, see docstring).
+    def key_of(color_id: int) -> str:
+        match = legend_matches[color_id]
+        if match.distance > _UNCERTAIN_COLOR_DISTANCE:
+            return f"\x00off-legend-{color_id}"
+        return match.code
+
+    key_counts: Counter[str] = Counter()
+    colors_of_key: dict[str, Counter[int]] = defaultdict(Counter)
+    symbols_of_key: dict[str, Counter[int]] = defaultdict(Counter)
+    cells_of_key: dict[str, list[tuple[int, int]]] = defaultdict(list)
+    for pos, color_id in cell_color_id.items():
+        key = key_of(color_id)
+        key_counts[key] += 1
+        cells_of_key[key].append(pos)
+        colors_of_key[key][color_id] += 1
+        symbols_of_key[key][cell_signature.get(pos, 0) if grid_type == "C" else 0] += 1
+
+    palette: list[TypeBCPaletteEntry] = []
+    index_of_key: dict[str, int] = {}
+    doubtful_keys: set[str] = set()
+    for key in sorted(key_counts, key=lambda k: (-key_counts[k], k)):
+        index = len(palette) + 1
+        index_of_key[key] = index
+        display_color_id = colors_of_key[key].most_common(1)[0][0]
+        rgb = canonical_colors[display_color_id]
+        if any(
+            legend_matches[color_id].distance > _LEGEND_MATCH_DISTANCE
+            or legend_matches[color_id].ambiguous
+            for color_id in colors_of_key[key]
+        ):
+            doubtful_keys.add(key)
+        if key.startswith("\x00"):
+            catalogue_match = nearest_dmc(rgb)
+            code, name = catalogue_match.code, catalogue_match.name
+        else:
+            code, name = key, dmc_name(key) or ""
+        symbol_glyph = None
+        dominant_symbol = symbols_of_key[key].most_common(1)[0][0]
+        if grid_type == "C" and dominant_symbol != 0 and symbol_page_number is not None:
+            bbox = _glyph_bbox_for_entry(
+                cells_of_key[key], dominant_symbol, cell_signature, cell_symbol_bbox
+            )
+            if bbox is not None:
+                symbol_glyph = SymbolGlyphLocation(page_number=symbol_page_number, bbox=bbox)
+        palette.append(
+            TypeBCPaletteEntry(
+                code=code,
+                name=name,
+                rgb_hex=_rgb_hex(rgb),
+                symbol_key=_symbol_key(index - 1),
+                symbol_glyph=symbol_glyph,
+            )
+        )
+
+    uncertain_positions: set[tuple[int, int]] = set()
+    for pos, color_id in cell_color_id.items():
+        key = key_of(color_id)
+        row0, col0 = pos
+        cells[row0 * grid.columns + col0] = index_of_key[key]
+        match = legend_matches[color_id]
+        if match.distance > _LEGEND_MATCH_DISTANCE or match.ambiguous:
+            uncertain_positions.add(pos)
+        if grid_type == "C":
+            counter = symbols_of_key[key]
+            if len(counter) > 1:
+                dominant_symbol, dominant_count = counter.most_common(1)[0]
+                dominant_ratio = dominant_count / sum(counter.values())
+                symbol = cell_signature.get(pos, 0)
+                if dominant_ratio < 0.6 or symbol != dominant_symbol:
+                    uncertain_positions.add(pos)
+
+    total_colored = len(cell_color_id)
+    fraction_uncertain = len(uncertain_positions) / total_colored if total_colored else 0.0
+    penalty = min(0.4, fraction_uncertain)
+
+    if doubtful_keys:
+        warnings.append(
+            DetectionWarning(
+                code="type_bc.uncertain_dmc_match",
+                params={"count": len(doubtful_keys)},
+            )
+        )
+    if uncertain_positions:
+        warnings.append(
+            DetectionWarning(
+                code="type_bc.uncertain_cells",
+                params={"count": len(uncertain_positions)},
+            )
+        )
+
+    uncertain_cells = sorted(row0 * grid.columns + col0 for row0, col0 in uncertain_positions)
+    return palette, cells, uncertain_cells, warnings, penalty
+
+
 def _build_palette_and_cells(
     grid: _GridGeometry,
     cell_color_id: dict[tuple[int, int], int],
@@ -1224,6 +1808,10 @@ def _build_palette_and_cells(
     grid_type: Literal["B", "C"],
     symbol_page_number: int | None,
 ) -> tuple[list[TypeBCPaletteEntry], list[int], list[int], list[DetectionWarning], float]:
+    """Historical palette assembly (Lot 5), kept unchanged as the fallback
+    when no usable text legend is found (`_parse_legend` /
+    `_legend_is_consistent`): one entry per (colour x symbol group) pair,
+    codes from the nearest shade of the community catalogue."""
     warnings: list[DetectionWarning] = []
     cells = [0] * (grid.columns * grid.rows)
 
@@ -1263,8 +1851,9 @@ def _build_palette_and_cells(
                 # reliable here than the DMC catalogue's theoretical shade,
                 # which only serves to match the code (`nearest_dmc`), never
                 # used alone to decide a colour (§8.5: the legend text, when
-                # there is one, always takes priority over colour — out of
-                # scope for this module, which only has the colour).
+                # there is one, always takes priority over colour — handled
+                # by `_build_palette_and_cells_from_legend`; this function
+                # only runs when no usable legend was found).
                 rgb_hex=_rgb_hex(rgb),
                 symbol_key=_symbol_key(index - 1),
                 symbol_glyph=symbol_glyph,

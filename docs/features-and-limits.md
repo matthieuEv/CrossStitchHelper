@@ -17,7 +17,7 @@
 
 - Check off cells as you go, cell by cell, by group, or "all of this colour in the visible area".
 - Move around the grid with your fingers (zoom, pan), including on a pattern of several tens of thousands of cells, with smoothness designed for iPhone/iPad.
-- Highlight a specific colour to easily spot where it goes, hide what is already done, see the current row and column.
+- Highlight a specific colour to easily spot where it goes (while it is highlighted, only that colour can be checked off), hide what is already done, see the current row and column.
 - Undo an action, pick up where you left off, including on another device (tracking is not lost if you switch iPhone or tablet).
 - Keep checking cells even without an internet connection (data updates automatically as soon as the network returns).
 

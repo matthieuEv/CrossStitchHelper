@@ -4,6 +4,7 @@ import { useT } from "../i18n";
 import { useTheme } from "../lib/theme";
 import { drawGrid, drawOverlay, onSymbolImageLoaded, readGridTheme } from "../pattern/render";
 import type { CellPosition, ImportPainter } from "../state/useImportPainter";
+import { UndoIcon } from "./Icons";
 
 interface ImportGridPainterProps {
   painter: ImportPainter;
@@ -38,6 +39,21 @@ export function ImportGridPainter({
 
   const [tool, setTool] = useState<"paint" | "pan">("paint");
   const { pattern, view, cursor, selection } = painter;
+
+  // "Show next": centres the uncertain cells one after the other, in reading
+  // order (row by row), wrapping around after the last one.
+  const lastShownRef = useRef(-1);
+  const showNextUncertain = (): void => {
+    const canvas = canvasRef.current;
+    if (canvas === null || uncertainCells === null || uncertainCells.size === 0) return;
+    const sorted = [...uncertainCells].sort((a, b) => a - b);
+    const next = sorted.find((index) => index > lastShownRef.current) ?? sorted[0];
+    if (next === undefined) return;
+    lastShownRef.current = next;
+    const x = next % pattern.width;
+    const box = canvas.getBoundingClientRect();
+    painter.focusCell(x, (next - x) / pattern.width, box.width, box.height);
+  };
 
   // See TrackScreen.tsx: forces a re-render once a real symbol (Lot 4)
   // finishes decoding asynchronously.
@@ -143,7 +159,7 @@ export function ImportGridPainter({
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
       <div
-        className="track-canvas-wrap"
+        className="track-canvas-wrap edit-area"
         style={{ height: 320, borderRadius: 18, overflow: "hidden" }}
       >
         <canvas
@@ -179,6 +195,17 @@ export function ImportGridPainter({
           >
             ✥
           </button>
+          <button
+            type="button"
+            className="btn btn-secondary btn-icon"
+            aria-label={t("import.paint.undo")}
+            title={t("import.paint.undo")}
+            onClick={painter.undo}
+            disabled={!painter.canUndo}
+            style={{ opacity: painter.canUndo ? 1 : 0.4 }}
+          >
+            <UndoIcon />
+          </button>
         </div>
         <div style={{ display: "flex", gap: 6 }}>
           <button
@@ -202,6 +229,24 @@ export function ImportGridPainter({
       <div className="text-muted" style={{ fontSize: 12 }}>
         {t("import.paint.filled", { filled: painter.filledCount, total: painter.cellCount })}
       </div>
+      {uncertainCells !== null && uncertainCells.size > 0 && (
+        <div
+          style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", fontSize: 12 }}
+        >
+          <span className="uncertain-sample" aria-hidden="true" />
+          <span className="text-muted" style={{ flex: "1 1 180px" }}>
+            {t("import.paint.uncertainHint", { count: uncertainCells.size })}
+          </span>
+          <button
+            type="button"
+            className="btn btn-secondary"
+            style={{ minHeight: 36, padding: "0 14px", fontSize: 13 }}
+            onClick={showNextUncertain}
+          >
+            {t("import.paint.uncertainNext")}
+          </button>
+        </div>
+      )}
     </div>
   );
 }
