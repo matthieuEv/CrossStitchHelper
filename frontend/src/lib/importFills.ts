@@ -40,3 +40,30 @@ export function applyFillsLocal(
   }
   return cells;
 }
+
+/**
+ * Uncertain cells (`ApiImportConfig.uncertain_cells`) that no painted area
+ * covers yet. Painting over a flagged cell — with any colour, the detected
+ * one included, or the eraser — is a manual decision on that cell, so its
+ * uncertainty is resolved: the marker and the count must drop it (issue
+ * #46). Derived from `fills` rather than stored separately: `fills` is
+ * already the persisted record of every manual correction.
+ */
+export function unresolvedUncertainCells(
+  columns: number,
+  rows: number,
+  uncertain: readonly number[],
+  fills: readonly ApiImportFillZone[],
+): number[] {
+  const covered = new Uint8Array(columns * rows);
+  for (const fill of fills) {
+    const x0 = Math.max(0, Math.min(fill.x0, fill.x1));
+    const x1 = Math.min(columns - 1, Math.max(fill.x0, fill.x1));
+    const y0 = Math.max(0, Math.min(fill.y0, fill.y1));
+    const y1 = Math.min(rows - 1, Math.max(fill.y0, fill.y1));
+    for (let y = y0; y <= y1; y++) {
+      covered.fill(1, y * columns + x0, y * columns + x1 + 1);
+    }
+  }
+  return uncertain.filter((index) => index >= 0 && index < covered.length && covered[index] === 0);
+}
