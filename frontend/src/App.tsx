@@ -81,7 +81,15 @@ export function App() {
   // navigate without specifying a pattern.
   const [activeId, setActiveId] = useState<string>(() => entries[0]?.pattern.id ?? "");
   const effectiveId = routePatternId ?? activeId;
-  const activeEntry = entries.find((entry) => entry.pattern.id === effectiveId) ?? entries[0];
+  // While the library is still loading, `entries` holds the demo patterns,
+  // which are not the pattern the URL asks for: opening a pattern session
+  // now would briefly show the demo, then remount on the real pattern once it
+  // arrives (resetting its view). Nothing is shown until the real source is
+  // known — the demo stays the fallback once loading settles on it.
+  const activeEntry =
+    library.source === "loading"
+      ? undefined
+      : (entries.find((entry) => entry.pattern.id === effectiveId) ?? entries[0]);
 
   // A demo pattern does not exist on the server: its history stays fake
   // rather than querying an `/activity` that would answer 404 for genuine

@@ -181,12 +181,16 @@ export interface CellChange {
  * (never a whole array): that is what lets a caller (server sync, Lot 1) send
  * precise deltas without having to compare two 45 KB copies on every checked
  * cell.
+ *
+ * `initialView` reopens the view where it was left (zoom and position, see
+ * `lib/viewMemory.ts`); without it, the default starting position below.
  */
 export function useTracker(
   pattern: Pattern,
   initialProgress: Progress,
   initialSpecial: SpecialProgress = emptySpecialProgress(pattern),
   onChange?: (changes: CellChange[]) => void,
+  initialView?: GridView | null,
 ): Tracker {
   const doneRef = useRef<TrackerState>({
     full: initialProgress,
@@ -204,14 +208,23 @@ export function useTracker(
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
 
-  const [cell, setCell] = useState(16);
-  // Starting position designed for a large pattern (move away from the
-  // corner so the view does not stick to the edge); without the same clamping
-  // as `setOffset` below, a small pattern painted by hand (Lot 2) would open
-  // on an entirely empty view, outside its grid.
+  const [cell, setCell] = useState(() =>
+    Math.max(MIN_CELL, Math.min(MAX_CELL, initialView?.cell ?? 16)),
+  );
+  // Default starting position designed for a large pattern (move away from
+  // the corner so the view does not stick to the edge); without the same
+  // clamping as `setOffset` below, a small pattern painted by hand (Lot 2)
+  // would open on an entirely empty view, outside its grid — and a remembered
+  // view goes through the same clamping, never trusted blindly.
   const [offset, setOffsetState] = useState(() => ({
-    x0: Math.max(-panMargin(pattern.width), Math.min(pattern.width - panMargin(pattern.width), 30)),
-    y0: Math.max(-panMargin(pattern.height), Math.min(pattern.height - panMargin(pattern.height), 24)),
+    x0: Math.max(
+      -panMargin(pattern.width),
+      Math.min(pattern.width - panMargin(pattern.width), initialView?.x0 ?? 30),
+    ),
+    y0: Math.max(
+      -panMargin(pattern.height),
+      Math.min(pattern.height - panMargin(pattern.height), initialView?.y0 ?? 24),
+    ),
   }));
   const [tool, setTool] = useState<Tool>("stitch");
   const [activeLayer, setActiveLayer] = useState<StitchLayer>("full");
