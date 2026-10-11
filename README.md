@@ -57,6 +57,19 @@ That's it. Everything below is optional detail.
 2. Share button → **Add to Home Screen**.
 3. It now behaves like an app: full screen, no address bar, works offline.
 
+### Who owns `./data` (Linux)
+
+Nothing to do: on startup the container makes `./data` writable whoever owns
+it, then drops root. If you created `./data` yourself, the app runs as your
+user and the files stay yours; if Docker created it, they belong to uid 10001.
+To pick the uid/gid explicitly, set them in `docker-compose.yml`:
+
+```yaml
+    environment:
+      PUID: 1000
+      PGID: 1000
+```
+
 ### Building from source instead
 
 Prefer to build the image yourself? Clone the repo and uncomment the `build:`

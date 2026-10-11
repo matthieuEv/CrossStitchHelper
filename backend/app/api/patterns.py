@@ -9,7 +9,8 @@ progress synchronisation, and `.cshp` export.
 from __future__ import annotations
 
 import json
-from datetime import UTC
+import uuid
+from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends
@@ -23,17 +24,20 @@ from app.codec import (
     bytes_to_base64,
     count_set_bits,
     decode_uint16_layer,
+    empty_bitmap,
     set_bit,
 )
 from app.db import get_session
 from app.export_cshp import build_cshp_archive
 from app.http import api_error, content_disposition
-from app.models import Pattern, Progress, ProgressEvent
+from app.models import Grid, PaletteEntry, Pattern, Progress, ProgressEvent
 from app.schemas import (
     GridOut,
     PaletteEntryOut,
     PatternActivityOut,
     PatternDetail,
+    PatternDuplicateIn,
+    PatternDuplicateOut,
     PatternSummary,
     ProgressOp,
     ProgressOut,
@@ -356,3 +360,74 @@ def export_pattern(
         media_type="application/zip",
         headers={"Content-Disposition": content_disposition(f"{pattern.name}.cshp")},
     )
+
+
+@router.delete("/{pattern_id}", status_code=204, summary="Delete a pattern")
+def delete_pattern(pattern_id: str, session: Annotated[Session, Depends(get_session)]) -> Response:
+    """Deletes a pattern with everything that belongs to it — palette, grid,
+    progress and its activity log (ORM cascades, plus `ON DELETE CASCADE` for
+    `progress_events`). An import job that created it only loses its link
+    (`ON DELETE SET NULL`). Irreversible: the client asks for confirmation."""
+    session.delete(_get_pattern(session, pattern_id))
+    session.commit()
+    return Response(status_code=204)
+
+
+def _copy_columns(row: object, model: type, skip: set[str]) -> dict[str, object]:
+    """Column values of `row`, except those in `skip` (keys, links)."""
+    table = model.__table__  # type: ignore[attr-defined]
+    return {
+        column.key: getattr(row, column.key)
+        for column in table.columns
+        if column.key not in skip
+    }
+
+
+@router.post(
+    "/{pattern_id}/duplicate",
+    response_model=PatternDuplicateOut,
+    status_code=201,
+    summary="Duplicate a pattern",
+)
+def duplicate_pattern(
+    pattern_id: str,
+    payload: PatternDuplicateIn,
+    session: Annotated[Session, Depends(get_session)],
+) -> PatternDuplicateOut:
+    """Copies a pattern — palette and grid — under a new name, with **empty
+    progress**: a duplicate is the same chart to stitch again (issue #52). The
+    source's progress and activity log stay its own, never shared — the two
+    patterns are fully independent from then on."""
+    source = _get_pattern(session, pattern_id)
+    now = datetime.now(UTC)
+    new_id = uuid.uuid4().hex
+    copy = Pattern(
+        **_copy_columns(source, Pattern, {"id", "name", "created_at", "updated_at"}),
+        id=new_id,
+        name=payload.name,
+        created_at=now,
+        updated_at=now,
+    )
+    session.add(copy)
+    session.flush()
+    for entry in source.palette_entries:
+        session.add(
+            PaletteEntry(
+                **_copy_columns(entry, PaletteEntry, {"id", "pattern_id"}),
+                id=uuid.uuid4().hex,
+                pattern_id=new_id,
+            )
+        )
+    if source.grid is not None:
+        session.add(Grid(**_copy_columns(source.grid, Grid, {"pattern_id"}), pattern_id=new_id))
+    session.add(
+        Progress(
+            pattern_id=new_id,
+            bitmap=empty_bitmap(source.width * source.height),
+            version=1,
+            stitched_count=0,
+            updated_at=now,
+        )
+    )
+    session.commit()
+    return PatternDuplicateOut(id=new_id)

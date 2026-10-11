@@ -4,7 +4,8 @@ import { AppShell } from "./components/AppShell";
 import { createDemoPattern, createDemoProgress } from "./demo/lavender";
 import { createDemoVariants } from "./demo/variants";
 import { useT } from "./i18n";
-import { useServerHealth } from "./lib/api";
+import { deletePattern, duplicatePattern, useServerHealth } from "./lib/api";
+import { forgetCachedPattern } from "./lib/db";
 import { useWideLayout } from "./lib/hooks";
 import { useRouter } from "./lib/router";
 import { emptySpecialProgress } from "./pattern/types";
@@ -81,7 +82,15 @@ export function App() {
   // navigate without specifying a pattern.
   const [activeId, setActiveId] = useState<string>(() => entries[0]?.pattern.id ?? "");
   const effectiveId = routePatternId ?? activeId;
-  const activeEntry = entries.find((entry) => entry.pattern.id === effectiveId) ?? entries[0];
+  // While the library is still loading, `entries` holds the demo patterns,
+  // which are not the pattern the URL asks for: opening a pattern session
+  // now would briefly show the demo, then remount on the real pattern once it
+  // arrives (resetting its view). Nothing is shown until the real source is
+  // known — the demo stays the fallback once loading settles on it.
+  const activeEntry =
+    library.source === "loading"
+      ? undefined
+      : (entries.find((entry) => entry.pattern.id === effectiveId) ?? entries[0]);
 
   // A demo pattern does not exist on the server: its history stays fake
   // rather than querying an `/activity` that would answer 404 for genuine
@@ -113,9 +122,23 @@ export function App() {
       {screen === "library" && (
         <LibraryScreen
           entries={entries}
+          loading={library.source === "loading"}
           wide={wide}
           onOpen={openPattern}
           onImport={() => navigate("import")}
+          // Only on patterns that really live on the server: neither the
+          // built-in demo nor a library read from the offline cache.
+          {...(library.source === "server" && {
+            onDuplicate: async (patternId: string, name: string) => {
+              await duplicatePattern(patternId, name);
+              await library.refresh();
+            },
+            onDelete: async (patternId: string) => {
+              await deletePattern(patternId);
+              await forgetCachedPattern(patternId);
+              await library.refresh();
+            },
+          })}
         />
       )}
 
