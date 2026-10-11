@@ -27,19 +27,20 @@ const BOTANICAL_CITRUS_PATH = fileURLToPath(
 );
 
 /** Lot 5's trap case (specification §4.3): same DMC visual template, but the
- * colour page itself already carries an amount of vector paths comparable
- * to a symbol page — the connector must notice this and never blindly
- * overlay a redundant second page. Shape recognition also turns out to be
- * too unreliable across the whole file (richly shaded illustration), hence
- * an honest fallback to type B rather than an unusable palette of several
- * hundred entries — see `backend/tests/test_type_bc.py`. */
+ * colour page itself already carries its symbols — the connector must notice
+ * this and never blindly overlay the redundant second page. Issue #44: once
+ * the per-cell outline frames of its colour page are no longer taken for
+ * fills, it comes out as a reliable type C read from that single page, with
+ * exactly its 12 legend codes, and real uncertainty (symbols crossed by
+ * backstitch lines, one colour off its legend swatch) flagged — see
+ * `backend/tests/test_type_bc.py`. */
 const SUMMER_FLIGHT_PATH = fileURLToPath(
   new URL("../../fixtures/summer-flight-dmc/vol_de_te.pdf", import.meta.url),
 );
 
 const DETECTION_TIMEOUT = 90_000;
 
-test("a type C PDF with an overlay pre-fills the wizard with real symbols and flags uncertain cells", async ({
+test("a type C PDF with an overlay pre-fills the wizard with real symbols", async ({
   page,
 }) => {
   test.setTimeout(120_000);
@@ -55,9 +56,9 @@ test("a type C PDF with an overlay pre-fills the wizard with real symbols and fl
   await expect(page.getByText(/Détection automatique : type C/)).toBeVisible({
     timeout: DETECTION_TIMEOUT,
   });
-  // Explicit flagging of uncertain cells (roadmap Lot 5, "done when"): never
-  // a wrong cell left without indication in the detection banner.
-  await expect(page.getByText(/case\(s\) signalée\(s\) comme incertaine\(s\)/)).toBeVisible();
+  // Issue #44: every grid colour of this file is exactly its legend swatch
+  // and carries a single symbol — no uncertain cell any more (flagging is
+  // checked on `summer-flight-dmc` below).
 
   const [columnsInput, rowsInput] = await page.locator("input.input").all();
   await expect(columnsInput!).not.toHaveValue("");
@@ -76,11 +77,6 @@ test("a type C PDF with an overlay pre-fills the wizard with real symbols and fl
   );
   await expect(legendRowImages.first()).toBeVisible();
 
-  // Visual marker of uncertain cells on the brush itself (Lot 5,
-  // `pattern/render.ts`): the hint text must appear under the canvas, with a
-  // non-zero count — consistent with the banner above.
-  await expect(page.getByText(/case\(s\) marquée\(s\) de ce repère/)).toBeVisible();
-
   await page.getByRole("button", { name: "Continuer", exact: true }).click();
 
   const nameInput = page.getByLabel("Nom du motif");
@@ -95,7 +91,7 @@ test("a type C PDF with an overlay pre-fills the wizard with real symbols and fl
   expect(pageErrors).toEqual([]);
 });
 
-test("the summer-flight-dmc trap case never overlays a redundant page and honestly falls back to type B", async ({
+test("the summer-flight-dmc trap case reads its symbols from its own colour page and flags uncertain cells", async ({
   page,
 }) => {
   test.setTimeout(120_000);
@@ -108,21 +104,27 @@ test("the summer-flight-dmc trap case never overlays a redundant page and honest
   await page.locator('input[type="file"][accept*="pdf"]').setInputFiles(SUMMER_FLIGHT_PATH);
 
   await expect(page.getByText("Colonnes")).toBeVisible();
-  await expect(page.getByText(/Détection automatique : type B/)).toBeVisible({
+  await expect(page.getByText(/Détection automatique : type C/)).toBeVisible({
     timeout: DETECTION_TIMEOUT,
   });
+  // Explicit flagging of uncertain cells (roadmap Lot 5, "done when"): never
+  // a wrong cell left without indication in the detection banner.
+  await expect(page.getByText(/case\(s\) signalée\(s\) comme incertaine\(s\)/)).toBeVisible();
 
   await page.getByRole("button", { name: "Continuer", exact: true }).click();
 
-  // Type B: colour only, never a symbol presented as reliable when it is not
-  // (`app/type_bc.py`: fallback rather than an unusable palette of several
-  // hundred entries). A real palette must still be there, not an empty list
-  // as in manual Lot 2.
+  // One palette entry per legend code (issue #44): 12, never one per symbol
+  // variant — and real symbols cut out of the colour page itself.
   await expect(page.getByPlaceholder("Code").first()).toBeVisible();
-  expect(await page.getByPlaceholder("Code").count()).toBeGreaterThan(0);
-  expect(
-    await page.locator('button.badge img[src^="data:image/svg+xml;base64,"]').count(),
-  ).toBe(0);
+  expect(await page.getByPlaceholder("Code").count()).toBe(12);
+  await expect(
+    page.locator('button.badge img[src^="data:image/svg+xml;base64,"]').first(),
+  ).toBeVisible();
+
+  // Visual marker of uncertain cells on the brush itself (Lot 5,
+  // `pattern/render.ts`): the hint text must appear under the canvas, with a
+  // non-zero count — consistent with the banner above.
+  await expect(page.getByText(/case\(s\) marquée\(s\) de ce repère/)).toBeVisible();
 
   expect(pageErrors).toEqual([]);
 });
