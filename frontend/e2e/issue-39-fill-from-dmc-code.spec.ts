@@ -36,6 +36,21 @@ test("a DMC code fills in its colour and name", async ({ page, request }) => {
   await page.getByRole("button", { name: "Continuer", exact: true }).click();
   await page.getByRole("button", { name: /Ajouter une couleur/ }).click();
 
+  // The code suggestions follow a printed DMC chart: named whites first,
+  // then numbers ascending (review of #39 — they used to look shuffled).
+  const suggested = await page
+    .locator("datalist option")
+    .evaluateAll((options) => options.map((option) => (option as HTMLOptionElement).value));
+  expect(suggested).toHaveLength(shades.length);
+  expect(suggested.slice(0, 4).map((value) => value.toLowerCase())).toEqual([
+    "blanc",
+    "white",
+    "b5200",
+    "ecru",
+  ]);
+  const numbered = suggested.filter((value) => /^\d+$/.test(value)).map(Number);
+  expect(numbered).toEqual([...numbered].sort((a, b) => a - b));
+
   const code = page.getByLabel("Code", { exact: true });
   const name = page.getByPlaceholder("Nom du fil");
   const colour = page.locator('input[type="color"]');
