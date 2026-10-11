@@ -22,6 +22,7 @@ import {
   fetchImport,
   importPagePreviewUrl,
   patchImportConfig,
+  type ApiImportConfigPatch,
   translateApiError,
   translateDetectionWarning,
   type ApiImportConfig,
@@ -56,6 +57,17 @@ interface ImportScreenProps {
   onFinish: (patternId: string) => void;
 }
 
+/**
+ * A palette row as edited in the wizard: the API entry, plus — on the client
+ * only — the PDF symbol a typed one replaced, so it can be restored (issue
+ * #42). Never sent to the server (`paletteForApi`).
+ */
+type PaletteRow = ApiImportPaletteEntry & { pdf_symbol_svg?: string };
+
+function paletteForApi(palette: readonly PaletteRow[]): ApiImportPaletteEntry[] {
+  return palette.map(({ pdf_symbol_svg: _original, ...entry }) => entry);
+}
+
 export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
   const t = useT();
   const wide = useWideLayout();
@@ -73,7 +85,9 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
   const [page, setPage] = useState(1);
   const [columns, setColumns] = useState<string>("");
   const [rows, setRows] = useState<string>("");
-  const [palette, setPalette] = useState<ApiImportPaletteEntry[]>([]);
+  const [palette, setPalette] = useState<PaletteRow[]>([]);
+  // Row whose symbol field has just replaced a PDF symbol: focused right away.
+  const [focusSymbolIndex, setFocusSymbolIndex] = useState<number | null>(null);
   const [fills, setFills] = useState<ApiImportFillZone[]>([]);
   const [detectedCells, setDetectedCells] = useState<number[] | null>(null);
   const [uncertainCells, setUncertainCells] = useState<number[] | null>(null);
@@ -226,6 +240,26 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
   const dimensionsValid =
     Number.isFinite(columnsValue) && columnsValue > 0 && Number.isFinite(rowsValue) && rowsValue > 0;
 
+  // Edits are saved in the background (on blur, after each painted area)
+  // without waiting for the answer — but always in order, one after the
+  // other, and the steps that read the saved configuration back (`extract`,
+  // `commit`) first wait for the last one. Without this, an edit made just
+  // before "Continue" was lost: `extract` reads the whole job, takes a while
+  // to recompute the preview of a large grid, then writes it all back,
+  // overwriting a save that landed in between (issue #42).
+  const configSaveRef = useRef<Promise<void>>(Promise.resolve());
+  const saveConfig = (jobId: string, patch: ApiImportConfigPatch): Promise<void> => {
+    const next = configSaveRef.current
+      .then(() => patchImportConfig(jobId, patch))
+      .then(
+        () => undefined,
+        // Best effort, as before: a failed save must not block the next ones.
+        () => undefined,
+      );
+    configSaveRef.current = next;
+    return next;
+  };
+
   const goToPalette = async (): Promise<void> => {
     if (job === null || !dimensionsValid) return;
     const cropByPageForApi = Object.fromEntries(
@@ -265,7 +299,7 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
     fills,
     (nextFills) => {
       setFills(nextFills);
-      if (job !== null) void patchImportConfig(job.id, { fills: nextFills });
+      if (job !== null) void saveConfig(job.id, { fills: nextFills });
     },
     name,
     detectedCells,
@@ -275,7 +309,7 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
     const next = [...palette, nextPaletteEntry(palette)];
     setPalette(next);
     setActiveIndex(next.length);
-    if (job !== null) void patchImportConfig(job.id, { palette: next });
+    if (job !== null) void saveConfig(job.id, { palette: paletteForApi(next) });
   };
 
   const updatePaletteEntry = (index: number, patch: Partial<ApiImportPaletteEntry>): void => {
@@ -284,18 +318,44 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
   };
 
   const commitPaletteEdits = (): void => {
-    if (job !== null) void patchImportConfig(job.id, { palette });
+    if (job !== null) void saveConfig(job.id, { palette: paletteForApi(palette) });
   };
 
   const removePaletteEntry = (index: number): void => {
     const next = palette.filter((_, i) => i !== index);
     setPalette(next);
     if (activeIndex > next.length) setActiveIndex(Math.max(1, next.length));
-    if (job !== null) void patchImportConfig(job.id, { palette: next });
+    if (job !== null) void saveConfig(job.id, { palette: paletteForApi(next) });
+  };
+
+  // A symbol cut out of the PDF can be replaced by one typed by hand (issue
+  // #42): without `symbol_svg`, the text key (`symbol_key`) is what gets
+  // drawn, here and in the created pattern. The PDF symbol is kept aside so it
+  // can be restored for as long as the wizard is open.
+  const replacePdfSymbol = (index: number): void => {
+    const next = palette.map((entry, i) =>
+      i === index && entry.symbol_svg != null
+        ? { ...entry, symbol_svg: null, pdf_symbol_svg: entry.symbol_svg }
+        : entry,
+    );
+    setPalette(next);
+    setFocusSymbolIndex(index);
+    if (job !== null) void saveConfig(job.id, { palette: paletteForApi(next) });
+  };
+
+  const restorePdfSymbol = (index: number): void => {
+    const next = palette.map((entry, i) => {
+      if (i !== index || entry.pdf_symbol_svg === undefined) return entry;
+      const { pdf_symbol_svg: original, ...rest } = entry;
+      return { ...rest, symbol_svg: original };
+    });
+    setPalette(next);
+    if (job !== null) void saveConfig(job.id, { palette: paletteForApi(next) });
   };
 
   const goToRecap = async (): Promise<void> => {
     if (job === null) return;
+    await configSaveRef.current;
     const updated = await extractImport(job.id);
     setJob(updated);
     setPreview(updated.preview);
@@ -318,6 +378,7 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
         }
       }
       const fabric = Number.parseInt(fabricCount, 10);
+      await configSaveRef.current;
       const response = await commitImport(job.id, {
         name: name.trim(),
         ...(Number.isFinite(fabric) && fabric > 0 && { fabric_count: fabric }),
@@ -702,27 +763,56 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
                       aria-label={t("import.legend.color")}
                     />
                     {hasRealSymbol ? (
-                      // Real symbol cut out of the PDF (Lot 4): the internal
-                      // key (`symbol_key`) then no longer needs to be visible or
-                      // editable — this symbol comes from the file, never from
-                      // it.
-                      <img
-                        src={`data:image/svg+xml;base64,${btoa(entry.symbol_svg as string)}`}
-                        alt=""
-                        style={{ width: 28, height: 28, flex: "none" }}
-                      />
+                      // Real symbol cut out of the PDF (Lot 4): shown as is,
+                      // its internal key (`symbol_key`) is never meant to be
+                      // displayed. A tap replaces it with a symbol of one's
+                      // own choosing (issue #42).
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-icon"
+                        style={{ flex: "none" }}
+                        aria-label={t("import.legend.replaceSymbol")}
+                        title={t("import.legend.replaceSymbol")}
+                        onClick={() => replacePdfSymbol(index)}
+                      >
+                        <img
+                          src={`data:image/svg+xml;base64,${btoa(entry.symbol_svg as string)}`}
+                          alt=""
+                          style={{ width: 28, height: 28 }}
+                        />
+                      </button>
                     ) : (
-                      <input
-                        className="input"
-                        style={{ width: 44, textAlign: "center", flex: "none" }}
-                        maxLength={2}
-                        placeholder={t("import.legend.symbol")}
-                        value={entry.symbol_key}
-                        onChange={(event) =>
-                          updatePaletteEntry(index, { symbol_key: event.target.value })
-                        }
-                        onBlur={commitPaletteEdits}
-                      />
+                      <>
+                        <input
+                          className="input"
+                          style={{ width: 44, textAlign: "center", flex: "none" }}
+                          maxLength={2}
+                          placeholder={t("import.legend.symbol")}
+                          aria-label={t("import.legend.symbol")}
+                          value={entry.symbol_key}
+                          autoFocus={focusSymbolIndex === index}
+                          onFocus={(event) => event.target.select()}
+                          onChange={(event) =>
+                            updatePaletteEntry(index, { symbol_key: event.target.value })
+                          }
+                          onBlur={() => {
+                            setFocusSymbolIndex(null);
+                            commitPaletteEdits();
+                          }}
+                        />
+                        {entry.pdf_symbol_svg !== undefined && (
+                          <button
+                            type="button"
+                            className="btn btn-icon btn-ghost"
+                            style={{ flex: "none" }}
+                            aria-label={t("import.legend.restoreSymbol")}
+                            title={t("import.legend.restoreSymbol")}
+                            onClick={() => restorePdfSymbol(index)}
+                          >
+                            ↺
+                          </button>
+                        )}
+                      </>
                     )}
                     <input
                       className="input"
