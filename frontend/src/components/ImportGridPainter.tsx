@@ -7,12 +7,12 @@ import { drawGrid, drawOverlay, onSymbolImageLoaded, readGridTheme } from "../pa
 import type { CellPosition, ImportPainter } from "../state/useImportPainter";
 import { UndoIcon } from "./Icons";
 
-const STITCHES: readonly ApiImportStitch[] = ["full", "half", "quarter"];
-
 interface ImportGridPainterProps {
   painter: ImportPainter;
   /** 1-based palette index currently chosen for painting; 0 = eraser. */
   activeIndex: number;
+  /** Stitch type the brush paints (issue #41), chosen in `StitchTypeBar`. */
+  stitch: ApiImportStitch;
   /** Cells flagged uncertain by type B/C detection (Lot 5) — see
    * `pattern/render.ts::DrawGridOptions.uncertainCells`. */
   uncertainCells?: ReadonlySet<number> | null;
@@ -28,6 +28,7 @@ interface ImportGridPainterProps {
 export function ImportGridPainter({
   painter,
   activeIndex,
+  stitch,
   uncertainCells = null,
 }: ImportGridPainterProps) {
   const t = useT();
@@ -41,8 +42,6 @@ export function ImportGridPainter({
   });
 
   const [tool, setTool] = useState<"paint" | "pan">("paint");
-  // Stitch type the brush paints (issue #41).
-  const [stitch, setStitch] = useState<ApiImportStitch>("full");
   const { pattern, view, cursor, selection } = painter;
 
   // "Show next": centres the uncertain cells one after the other, in reading
@@ -164,25 +163,6 @@ export function ImportGridPainter({
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
       <div
-        className="seg"
-        role="group"
-        aria-label={t("import.paint.stitch")}
-        style={{ alignSelf: "flex-start" }}
-      >
-        {STITCHES.map((item) => (
-          <button
-            key={item}
-            type="button"
-            aria-pressed={stitch === item}
-            aria-label={t(`import.paint.stitch.${item}`)}
-            title={t(`import.paint.stitch.${item}`)}
-            onClick={() => setStitch(item)}
-          >
-            {t(`import.paint.stitch.${item}.short`)}
-          </button>
-        ))}
-      </div>
-      <div
         className="track-canvas-wrap edit-area"
         style={{ height: 320, borderRadius: 18, overflow: "hidden" }}
       >
@@ -271,6 +251,42 @@ export function ImportGridPainter({
           </button>
         </div>
       )}
+    </div>
+  );
+}
+
+const STITCHES: readonly ApiImportStitch[] = ["full", "half", "quarter"];
+
+/** Stitch-type toolbar of the import brush (issue #41): full, 1/2 or 1/4.
+ * Kept outside `ImportGridPainter` so the grid stays level with the source
+ * file shown beside it on a wide screen (issue #40). */
+export function StitchTypeBar({
+  stitch,
+  onChange,
+}: {
+  stitch: ApiImportStitch;
+  onChange: (stitch: ApiImportStitch) => void;
+}) {
+  const t = useT();
+  return (
+    <div
+      className="seg"
+      role="group"
+      aria-label={t("import.paint.stitch")}
+      style={{ alignSelf: "flex-start" }}
+    >
+      {STITCHES.map((item) => (
+        <button
+          key={item}
+          type="button"
+          aria-pressed={stitch === item}
+          aria-label={t(`import.paint.stitch.${item}`)}
+          title={t(`import.paint.stitch.${item}`)}
+          onClick={() => onChange(item)}
+        >
+          {t(`import.paint.stitch.${item}.short`)}
+        </button>
+      ))}
     </div>
   );
 }

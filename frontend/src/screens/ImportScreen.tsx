@@ -8,7 +8,7 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from "react";
 
-import { ImportGridPainter } from "../components/ImportGridPainter";
+import { ImportGridPainter, StitchTypeBar } from "../components/ImportGridPainter";
 import { SourcePreview } from "../components/SourcePreview";
 import { BackIcon, UploadIcon } from "../components/Icons";
 import { PatternThumbnail } from "../components/PatternThumbnail";
@@ -28,6 +28,7 @@ import {
   translateDetectionWarning,
   type ApiImportConfig,
   type ApiImportFillZone,
+  type ApiImportStitch,
   type ApiImportJob,
   type ApiImportPaletteEntry,
 } from "../lib/api";
@@ -99,6 +100,8 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
   const [detectedQuarter, setDetectedQuarter] = useState<number[] | null>(null);
   const [detection, setDetection] = useState<ApiImportJob["detection"]>(null);
   const [activeIndex, setActiveIndex] = useState(1);
+  // Stitch type the brush paints (issue #41).
+  const [stitch, setStitch] = useState<ApiImportStitch>("full");
 
   const [name, setName] = useState("");
   const [fabricCount, setFabricCount] = useState("14");
@@ -744,6 +747,8 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
               </button>
             </div>
 
+            <StitchTypeBar stitch={stitch} onChange={setStitch} />
+
             {/* The generated grid, and the imported file next to it to check
                 it against (issue #40): side by side when there is room, on
                 demand below the grid on a phone. */}
@@ -763,6 +768,7 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
                 <ImportGridPainter
                   painter={painter}
                   activeIndex={activeIndex}
+                  stitch={stitch}
                   uncertainCells={uncertainCellsSet}
                 />
               )}
