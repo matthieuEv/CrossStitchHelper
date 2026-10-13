@@ -1,10 +1,13 @@
 import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 
 import { useT } from "../i18n";
+import type { ApiImportStitch } from "../lib/api";
 import { useTheme } from "../lib/theme";
 import { drawGrid, drawOverlay, onSymbolImageLoaded, readGridTheme } from "../pattern/render";
 import type { CellPosition, ImportPainter } from "../state/useImportPainter";
 import { UndoIcon } from "./Icons";
+
+const STITCHES: readonly ApiImportStitch[] = ["full", "half", "quarter"];
 
 interface ImportGridPainterProps {
   painter: ImportPainter;
@@ -38,6 +41,8 @@ export function ImportGridPainter({
   });
 
   const [tool, setTool] = useState<"paint" | "pan">("paint");
+  // Stitch type the brush paints (issue #41).
+  const [stitch, setStitch] = useState<ApiImportStitch>("full");
   const { pattern, view, cursor, selection } = painter;
 
   // "Show next": centres the uncertain cells one after the other, in reading
@@ -151,13 +156,32 @@ export function ImportGridPainter({
 
   const onPointerUp = (): void => {
     if (tool === "paint" && painter.selection !== null) {
-      painter.paint(activeIndex);
+      painter.paint(activeIndex, stitch);
     }
     dragRef.current = { ...dragRef.current, active: false };
   };
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      <div
+        className="seg"
+        role="group"
+        aria-label={t("import.paint.stitch")}
+        style={{ alignSelf: "flex-start" }}
+      >
+        {STITCHES.map((item) => (
+          <button
+            key={item}
+            type="button"
+            aria-pressed={stitch === item}
+            aria-label={t(`import.paint.stitch.${item}`)}
+            title={t(`import.paint.stitch.${item}`)}
+            onClick={() => setStitch(item)}
+          >
+            {t(`import.paint.stitch.${item}.short`)}
+          </button>
+        ))}
+      </div>
       <div
         className="track-canvas-wrap edit-area"
         style={{ height: 320, borderRadius: 18, overflow: "hidden" }}

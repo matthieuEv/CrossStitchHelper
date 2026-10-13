@@ -31,6 +31,13 @@ function paletteFromImportEntries(entries: ApiImportPaletteEntry[]): PaletteEntr
   }));
 }
 
+/** A 1/2 or 1/4 layer of the import preview, empty when absent. */
+function optionalLayer(encoded: string | null, cellCount: number): Uint8Array {
+  return encoded === null
+    ? new Uint8Array(cellCount)
+    : Uint8Array.from(decodeUint16Layer(base64ToBytes(encoded)));
+}
+
 /**
  * Builds a `Pattern` from the preview computed by the import wizard (Lot 2) —
  * same compact format as `patternFromApi`, so the area-painting screen and
@@ -45,12 +52,11 @@ export function patternFromImportPreview(preview: ApiImportPreview, name: string
     width: preview.width,
     height: preview.height,
     cells: Uint8Array.from(layer),
-    // The import wizard (Lots 2, 4, 5) only produces full stitches —
-    // backstitch/knots/1-2/1-4 remained Lot 9's scope, not built yet at the
-    // time: layers always present but empty here, never `undefined` (see
-    // `Pattern.cellsHalf`).
-    cellsHalf: new Uint8Array(cellCount),
-    cellsQuarter: new Uint8Array(cellCount),
+    // 1/2 and 1/4 stitches (Lot 9 detection, issue #41 painting): always
+    // present, empty when the server sends none — never `undefined` (see
+    // `Pattern.cellsHalf`). Backstitch and knots are not part of the preview.
+    cellsHalf: optionalLayer(preview.layer_half, cellCount),
+    cellsQuarter: optionalLayer(preview.layer_quarter, cellCount),
     backstitch: [],
     frenchKnots: [],
     palette: paletteFromImportEntries(preview.palette),

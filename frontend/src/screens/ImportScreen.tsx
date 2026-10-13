@@ -95,6 +95,8 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
   const [fills, setFills] = useState<ApiImportFillZone[]>([]);
   const [detectedCells, setDetectedCells] = useState<number[] | null>(null);
   const [uncertainCells, setUncertainCells] = useState<number[] | null>(null);
+  const [detectedHalf, setDetectedHalf] = useState<number[] | null>(null);
+  const [detectedQuarter, setDetectedQuarter] = useState<number[] | null>(null);
   const [detection, setDetection] = useState<ApiImportJob["detection"]>(null);
   const [activeIndex, setActiveIndex] = useState(1);
 
@@ -139,6 +141,8 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
     setFills(config.fills);
     setDetectedCells(config.detected_cells);
     setUncertainCells(config.uncertain_cells);
+    setDetectedHalf(config.detected_half);
+    setDetectedQuarter(config.detected_quarter);
     if (!manualFabricEditRef.current && config.detected_fabric_count !== null) {
       setFabricCount(String(config.detected_fabric_count));
     }
@@ -306,7 +310,7 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
       if (job !== null) void saveConfig(job.id, { fills: nextFills });
     },
     name,
-    detectedCells,
+    { full: detectedCells, half: detectedHalf, quarter: detectedQuarter },
   );
 
   const addPaletteEntry = (): void => {
