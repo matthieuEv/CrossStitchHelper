@@ -172,8 +172,6 @@ export const en: Record<TranslationKey, string> = {
   "stats.activity": "Activity",
 
   "settings.title": "Settings",
-  "settings.brand": "Default thread brand",
-  "settings.brand.hint": "Used to name the colours detected during import.",
   "settings.theme": "Theme",
   "settings.theme.hint": "Dark mode also dims the fabric.",
   "settings.theme.light": "Light",

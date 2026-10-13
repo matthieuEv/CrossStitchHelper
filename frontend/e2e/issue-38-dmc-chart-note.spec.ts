@@ -31,3 +31,11 @@ test("the Palette step names DMC as the thread chart", async ({ page }) => {
   // Informative only: no chart picker.
   await expect(page.getByRole("combobox")).toHaveCount(0);
 });
+
+test("Settings no longer offers other thread brands", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("button", { name: "Réglages", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Français" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Anchor" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Madeira" })).toHaveCount(0);
+});

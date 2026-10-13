@@ -179,8 +179,6 @@ export const fr = {
   "stats.activity": "Activité",
 
   "settings.title": "Réglages",
-  "settings.brand": "Marque de fil par défaut",
-  "settings.brand.hint": "Utilisée pour nommer les couleurs détectées à l'import.",
   "settings.theme": "Thème",
   "settings.theme.hint": "Le mode sombre baisse aussi la luminosité de la toile.",
   "settings.theme.light": "Clair",
