@@ -80,6 +80,7 @@ export const fr = {
   "import.palette.title": "Palette",
   "import.palette.add": "Ajouter une couleur",
   "import.palette.remove": "Retirer",
+  "import.palette.chart": "Nuancier : DMC",
   "import.palette.empty": "Ajoutez au moins une couleur pour commencer à peindre la grille.",
   "import.paint.hint":
     "Choisissez une couleur, puis dessinez une zone sur la grille pour la peindre.",

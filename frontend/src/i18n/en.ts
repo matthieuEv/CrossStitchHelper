@@ -75,6 +75,7 @@ export const en: Record<TranslationKey, string> = {
   "import.palette.title": "Palette",
   "import.palette.add": "Add a colour",
   "import.palette.remove": "Remove",
+  "import.palette.chart": "Thread chart: DMC",
   "import.palette.empty": "Add at least one colour to start painting the grid.",
   "import.paint.hint": "Pick a colour, then drag over the grid to paint an area.",
   "import.paint.filled": "{filled} / {total} cells painted",
