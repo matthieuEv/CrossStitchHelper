@@ -334,6 +334,24 @@ def test_commit_creates_a_real_usable_pattern(client: TestClient) -> None:
     assert sync["stitched_count"] == 1
 
 
+def test_commit_saves_the_labels_chosen_in_the_summary(client: TestClient) -> None:
+    """Issue #57: labels picked on the summary step reach the pattern."""
+    job_id = _upload_pdf(client)["id"]
+    client.patch(
+        f"/api/imports/{job_id}/config",
+        json={
+            "columns": 2,
+            "rows": 1,
+            "palette": _SAMPLE_PALETTE,
+            "fills": [{"x0": 0, "y0": 0, "x1": 1, "y1": 0, "palette_index": 1}],
+        },
+    )
+    pattern_id = client.post(
+        f"/api/imports/{job_id}/commit", json={"name": "Koi", "labels": ["Mini", "Mer"]}
+    ).json()["pattern_id"]
+    assert client.get(f"/api/patterns/{pattern_id}").json()["labels"] == ["Mini", "Mer"]
+
+
 def test_commit_is_final(client: TestClient) -> None:
     job = _upload_pdf(client)
     job_id = job["id"]

@@ -29,6 +29,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.codec import base64_to_bytes, bytes_to_base64
+from app.labels import labels_from_json, labels_to_json
 from app.models import Grid, PaletteEntry, Pattern, Progress, ProgressEvent, Recipe
 from app.schemas import (
     BackupDocument,
@@ -104,6 +105,7 @@ def _dump_pattern(pattern: Pattern, events: list[ProgressEvent]) -> BackupPatter
         import_config_json=pattern.import_config_json,
         recipe_id=pattern.recipe_id,
         notes=pattern.notes,
+        labels=labels_from_json(pattern.labels_json),
         palette=[_dump_palette_entry(entry) for entry in pattern.palette_entries],
         grid=_dump_grid(pattern.grid) if pattern.grid is not None else None,
         progress=_dump_progress(pattern.progress) if pattern.progress is not None else None,
@@ -216,6 +218,7 @@ def restore_backup(session: Session, document: BackupDocument) -> BackupRestoreS
             import_config_json=pattern_data.import_config_json,
             recipe_id=pattern_data.recipe_id,
             notes=pattern_data.notes,
+            labels_json=labels_to_json(pattern_data.labels),
         )
         session.add(pattern)
 
