@@ -12,7 +12,9 @@ from __future__ import annotations
 import base64
 import hashlib
 import io
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import pymupdf
 from PIL import Image
@@ -135,9 +137,33 @@ def render_image_page(path: Path, max_dimension: int = MAX_PREVIEW_DIMENSION) ->
         return buffer.getvalue()
 
 
+@dataclass(frozen=True)
+class PaintedLayers:
+    """The three cell layers an import paints (issue #41): full, 1/2 and 1/4
+    stitches, same convention as the grid blob (0 = no stitch, n = 1-based
+    palette index)."""
+
+    full: list[int]
+    half: list[int]
+    quarter: list[int]
+
+
+def _layer(base: list[int] | None, size: int) -> list[int]:
+    if base is None:
+        return [0] * size
+    if len(base) != size:
+        raise ValueError("a base layer must have exactly columns*rows cells")
+    return list(base)
+
+
 def apply_fills(
-    columns: int, rows: int, fills: list[dict[str, int]], base: list[int] | None = None
-) -> list[int]:
+    columns: int,
+    rows: int,
+    fills: list[dict[str, Any]],
+    base: list[int] | None = None,
+    base_half: list[int] | None = None,
+    base_quarter: list[int] | None = None,
+) -> PaintedLayers:
     """Assemble a `columns` × `rows` grid from the painted areas.
 
     Each area is an inclusive rectangle of cell coordinates
@@ -147,25 +173,32 @@ def apply_fills(
     (`frontend/src/state/useTracker.ts`), so the brush behaves identically
     during import and during tracking.
 
-    `base` (Lot 4): an automatically detected grid (`app/type_a.py`) serves
-    as the background rather than an empty cell — areas painted by the user
-    remain *corrections* on top of the proposal, with no new painting
-    mechanism to write on the client.
+    ``stitch`` (issue #41, ``"full"`` when absent) picks the layer an area
+    paints. A cell painted by hand holds one stitch type only: painting a
+    colour clears the cell's other two layers, and the eraser (index 0)
+    clears all three — so repainting an area as 1/2 stitches never leaves the
+    full stitches underneath.
+
+    `base`/`base_half`/`base_quarter` (Lots 4 and 9): the automatically
+    detected layers serve as the background rather than empty cells — areas
+    painted by the user remain *corrections* on top of the proposal.
     """
-    if base is not None:
-        if len(base) != columns * rows:
-            raise ValueError("`base` must have exactly columns*rows cells")
-        cells = list(base)
-    else:
-        cells = [0] * (columns * rows)
+    size = columns * rows
+    layers = {
+        "full": _layer(base, size),
+        "half": _layer(base_half, size),
+        "quarter": _layer(base_quarter, size),
+    }
     for fill in fills:
         x0 = max(0, min(fill["x0"], fill["x1"]))
         x1 = min(columns - 1, max(fill["x0"], fill["x1"]))
         y0 = max(0, min(fill["y0"], fill["y1"]))
         y1 = min(rows - 1, max(fill["y0"], fill["y1"]))
         palette_index = fill["palette_index"]
-        for y in range(y0, y1 + 1):
-            row_offset = y * columns
-            for x in range(x0, x1 + 1):
-                cells[row_offset + x] = palette_index
-    return cells
+        stitch = fill.get("stitch") or "full"
+        for name, cells in layers.items():
+            value = palette_index if name == stitch else 0
+            for y in range(y0, y1 + 1):
+                row_offset = y * columns
+                cells[row_offset + x0 : row_offset + x1 + 1] = [value] * (x1 - x0 + 1)
+    return PaintedLayers(full=layers["full"], half=layers["half"], quarter=layers["quarter"])
