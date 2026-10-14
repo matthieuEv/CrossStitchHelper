@@ -371,17 +371,7 @@ def get_activity(
         .scalars()
         .all()
     )
-    # SQLite does not keep the time zone in storage: `event.ts` comes back
-    # naive even though the column is `DateTime(timezone=True)` and always
-    # written in UTC (`_utcnow`, `app/models.py`) — without this explicit
-    # re-attachment, comparing with `datetime.now(UTC)` raises a `TypeError`.
-    parsed = [
-        (
-            event.ts if event.ts.tzinfo is not None else event.ts.replace(tzinfo=UTC),
-            json.loads(event.ops_json),
-        )
-        for event in events
-    ]
+    parsed = [(event.ts, json.loads(event.ops_json)) for event in events]
     return compute_activity(parsed)
 
 

@@ -80,12 +80,6 @@ def _token_hash(token: str) -> str:
     return hashlib.sha256(token.encode("ascii")).hexdigest()
 
 
-def _as_aware(value: datetime) -> datetime:
-    # SQLite does not keep the time zone (same caveat as `get_activity`,
-    # `app/api/patterns.py`): every timestamp is written in UTC.
-    return value if value.tzinfo is not None else value.replace(tzinfo=UTC)
-
-
 def open_session(session: Session, user: User, request: Request, response: Response) -> None:
     """Create a session for `user` and set its cookie on `response`."""
     token = secrets.token_urlsafe(32)
@@ -146,13 +140,13 @@ def user_for_request(session: Session, request: Request) -> User | None:
         return None
 
     now = datetime.now(UTC)
-    created_at = _as_aware(row.created_at)
-    if _as_aware(row.expires_at) <= now or created_at + SESSION_ABSOLUTE_LIFETIME <= now:
+    created_at = row.created_at
+    if row.expires_at <= now or created_at + SESSION_ABSOLUTE_LIFETIME <= now:
         session.delete(row)
         session.commit()
         return None
 
-    if now - _as_aware(row.last_seen_at) >= _SESSION_TOUCH_INTERVAL:
+    if now - row.last_seen_at >= _SESSION_TOUCH_INTERVAL:
         row.last_seen_at = now
         row.expires_at = min(now + SESSION_IDLE_LIFETIME, created_at + SESSION_ABSOLUTE_LIFETIME)
         session.commit()

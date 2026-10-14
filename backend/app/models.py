@@ -26,8 +26,10 @@ from sqlalchemy import (
     LargeBinary,
     String,
     Text,
+    TypeDecorator,
     UniqueConstraint,
 )
+from sqlalchemy.engine import Dialect
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db import Base
@@ -35,6 +37,36 @@ from app.db import Base
 
 def _utcnow() -> datetime:
     return datetime.now(UTC)
+
+
+class UtcDateTime(TypeDecorator[datetime]):
+    """A timestamp stored in UTC and always read back time-zone aware.
+
+    SQLite has no time zone type: `DateTime(timezone=True)` alone writes the
+    wall-clock digits and reads them back *naive*. The API then sent
+    "2026-10-14T08:00:00" without an offset, which a browser reads as its own
+    local time — a pattern changed a minute ago showed "2 hours ago" in
+    Paris. Converting to UTC on write and re-attaching UTC on read keeps
+    every timestamp comparable with `datetime.now(UTC)` and serialised with
+    its offset. The storage format is unchanged: no migration.
+    """
+
+    impl = DateTime(timezone=True)
+    cache_ok = True
+
+    def process_bind_param(self, value: datetime | None, dialect: Dialect) -> datetime | None:
+        if value is None:
+            return None
+        # A naive value can only come from this column itself or from a
+        # backup written before this type existed: both are UTC already.
+        if value.tzinfo is None:
+            return value
+        return value.astimezone(UTC).replace(tzinfo=None)
+
+    def process_result_value(self, value: datetime | None, dialect: Dialect) -> datetime | None:
+        if value is None or value.tzinfo is not None:
+            return value
+        return value.replace(tzinfo=UTC)
 
 
 class AppMeta(Base):
@@ -51,7 +83,7 @@ class AppMeta(Base):
     key: Mapped[str] = mapped_column(String(64), primary_key=True)
     value: Mapped[str] = mapped_column(Text, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, default=_utcnow, onupdate=_utcnow
+        UtcDateTime, nullable=False, default=_utcnow, onupdate=_utcnow
     )
 
     def __repr__(self) -> str:  # pragma: no cover - debugging convenience
@@ -83,10 +115,10 @@ class Pattern(Base):
     height: Mapped[int] = mapped_column(Integer, nullable=False)
     fabric_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, default=_utcnow
+        UtcDateTime, nullable=False, default=_utcnow
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, default=_utcnow, onupdate=_utcnow
+        UtcDateTime, nullable=False, default=_utcnow, onupdate=_utcnow
     )
     import_config_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     recipe_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
@@ -212,7 +244,7 @@ class Progress(Base):
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     stitched_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, default=_utcnow, onupdate=_utcnow
+        UtcDateTime, nullable=False, default=_utcnow, onupdate=_utcnow
     )
 
     pattern: Mapped[Pattern] = relationship(back_populates="progress")
@@ -237,7 +269,7 @@ class ProgressEvent(Base):
     pattern_id: Mapped[str] = mapped_column(
         ForeignKey("patterns.id", ondelete="CASCADE"), nullable=False, index=True
     )
-    ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow)
+    ts: Mapped[datetime] = mapped_column(UtcDateTime, nullable=False, default=_utcnow)
     ops_json: Mapped[str] = mapped_column(Text, nullable=False)
     version_after: Mapped[int] = mapped_column(Integer, nullable=False)
 
@@ -268,7 +300,7 @@ class Recipe(Base):
     grid_type: Mapped[str] = mapped_column(String(8), nullable=False)
     config_json: Mapped[str] = mapped_column(Text, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, default=_utcnow
+        UtcDateTime, nullable=False, default=_utcnow
     )
     usage_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 
@@ -302,9 +334,9 @@ class ImportJob(Base):
     result_json: Mapped[str] = mapped_column(Text, nullable=False)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, default=_utcnow
+        UtcDateTime, nullable=False, default=_utcnow
     )
-    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(UtcDateTime, nullable=True)
 
     def __repr__(self) -> str:  # pragma: no cover - debugging convenience
         return f"ImportJob(id={self.id!r}, status={self.status!r}, kind={self.kind!r})"
@@ -330,10 +362,10 @@ class User(Base):
     role: Mapped[str] = mapped_column(String(16), nullable=False, default="user")
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, default=_utcnow
+        UtcDateTime, nullable=False, default=_utcnow
     )
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, default=_utcnow, onupdate=_utcnow
+        UtcDateTime, nullable=False, default=_utcnow, onupdate=_utcnow
     )
 
     def __repr__(self) -> str:  # pragma: no cover - debugging convenience
@@ -358,12 +390,12 @@ class UserSession(Base):
     )
     token_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, default=_utcnow
+        UtcDateTime, nullable=False, default=_utcnow
     )
     last_seen_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, default=_utcnow
+        UtcDateTime, nullable=False, default=_utcnow
     )
-    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(UtcDateTime, nullable=False)
     user_agent: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     user: Mapped[User] = relationship()
