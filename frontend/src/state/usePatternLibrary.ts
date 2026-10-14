@@ -45,6 +45,10 @@ export interface LibraryPattern {
   version: number;
   /** When the pattern was last stitched, in milliseconds since the epoch. */
   lastActivityAt: number;
+  /** The shared pattern this one is a copy of (Lot 11) — null otherwise. */
+  originId?: string | null;
+  /** That shared original's content changed since it was copied. */
+  updateAvailable?: boolean;
 }
 
 export type LibrarySource = "loading" | "server" | "cache" | "demo";
@@ -116,6 +120,8 @@ async function loadEntryFromServer(summary: ApiPatternSummary): Promise<LibraryP
     special: merged.special,
     version: progress.version,
     lastActivityAt: Date.parse(summary.updated_at),
+    originId: summary.origin_pattern_id ?? null,
+    updateAvailable: summary.update_available ?? false,
   };
 }
 
