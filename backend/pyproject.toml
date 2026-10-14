@@ -16,6 +16,9 @@ dependencies = [
     "pymupdf>=1.24",
     "pillow>=11.0",
     "pdfplumber>=0.11",
+    # Password hashing (Argon2id) for profiles (Lot 10) — the maintained
+    # successor of passlib; never hand-rolled.
+    "pwdlib[argon2]>=0.3",
 ]
 
 [project.optional-dependencies]

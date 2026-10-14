@@ -17,6 +17,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.auth import require_admin
 from app.db import get_session
 from app.http import api_error
 from app.models import ImportJob, Recipe
@@ -93,7 +94,14 @@ def create_recipe(
     return _recipe_out(recipe)
 
 
-@router.delete("/{recipe_id}", status_code=204, summary="Delete a recipe")
+@router.delete(
+    "/{recipe_id}",
+    status_code=204,
+    summary="Delete a recipe",
+    # Recipes are shared by every profile (structural only, never content):
+    # deleting one affects everyone's imports, so only admins may (Lot 10).
+    dependencies=[Depends(require_admin)],
+)
 def delete_recipe(recipe_id: str, session: Annotated[Session, Depends(get_session)]) -> None:
     recipe = session.get(Recipe, recipe_id)
     if recipe is None:

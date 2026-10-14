@@ -7,6 +7,7 @@ from typing import Any
 
 import pymupdf
 import pytest
+from conftest import as_app_client
 from fastapi.testclient import TestClient
 from PIL import Image
 
@@ -187,6 +188,17 @@ def test_create_import_rejects_oversized_file(
 ) -> None:
     monkeypatch.setenv("CSH_IMPORT_MAX_UPLOAD_MB", "1")
     with make_client(None) as client:  # type: ignore[operator]
+        as_app_client(client)
+        setup = client.post(
+            "/api/auth/setup",
+            json={
+                "email": "admin@example.com",
+                "first_name": "Ada",
+                "last_name": "Admin",
+                "password": "admin-password",
+            },
+        )
+        assert setup.status_code == 201
         big = b"0" * (2 * 1024 * 1024)
         response = client.post(
             "/api/imports", files={"file": ("big.png", big, "image/png")}

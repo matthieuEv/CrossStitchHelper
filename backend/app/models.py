@@ -8,6 +8,10 @@ only by ``pattern_id`` — a re-import never touches ``progress``.
 
 ``recipes`` (§6.2, Lot 6) completes this model: a file fingerprint
 (``app/fingerprint.py``) associated with a reusable import configuration.
+
+``users`` and ``user_sessions`` (Lot 10, issue #77) turn the instance into a
+group of profiles: every pattern and every import job belongs to one user
+(``owner_id``), and a user's personal library is never visible to another.
 """
 
 from __future__ import annotations
@@ -58,14 +62,20 @@ class Pattern(Base):
     """An imported pattern (or, before Lot 2, injected directly into the
     database).
 
-    ``owner_id`` is nullable from the single-user V1 onwards, so as not to
-    close the door on multi-user later (specification §5.2).
+    ``owner_id`` is the profile whose library holds the pattern (Lot 10).
+    Still nullable: a pattern created before the first admin exists (the
+    seed, an instance upgraded from a single-user version) has no owner until
+    the first-launch setup hands every such pattern to that admin
+    (`app/accounts.py::create_first_admin`). An ownerless pattern is visible
+    to nobody.
     """
 
     __tablename__ = "patterns"
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True)
-    owner_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    owner_id: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True
+    )
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     source_filename: Mapped[str | None] = mapped_column(String(255), nullable=True)
     source_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
@@ -280,6 +290,9 @@ class ImportJob(Base):
     __tablename__ = "import_jobs"
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    owner_id: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True
+    )
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="ready")
     kind: Mapped[str] = mapped_column(String(8), nullable=False)
     pattern_id: Mapped[str | None] = mapped_column(
@@ -295,3 +308,65 @@ class ImportJob(Base):
 
     def __repr__(self) -> str:  # pragma: no cover - debugging convenience
         return f"ImportJob(id={self.id!r}, status={self.status!r}, kind={self.kind!r})"
+
+
+class User(Base):
+    """A profile of the instance's group (Lot 10, issue #77).
+
+    ``role`` is ``"admin"`` or ``"user"``; there is always at least one admin
+    (`app/accounts.py::ensure_an_admin_remains`). ``email`` is stored
+    lowercased and unique, but is not the login identifier: the login screen
+    lists profiles by first name and asks only for the password. Passwords
+    are hashed with Argon2id by `pwdlib` (`app/auth.py`), never stored or
+    logged in clear.
+    """
+
+    __tablename__ = "users"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    email: Mapped[str] = mapped_column(String(254), nullable=False, unique=True)
+    first_name: Mapped[str] = mapped_column(String(100), nullable=False)
+    last_name: Mapped[str] = mapped_column(String(100), nullable=False)
+    role: Mapped[str] = mapped_column(String(16), nullable=False, default="user")
+    password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utcnow
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utcnow, onupdate=_utcnow
+    )
+
+    def __repr__(self) -> str:  # pragma: no cover - debugging convenience
+        return f"User(id={self.id!r}, role={self.role!r})"
+
+
+class UserSession(Base):
+    """A logged-in device (Lot 10).
+
+    The browser holds an opaque random token in an HttpOnly cookie; only its
+    SHA-256 is stored here, so a leaked database does not hand out live
+    sessions. Server-side rows (rather than a signed cookie) are what make a
+    password change, a password reset or a deleted profile end that
+    profile's sessions immediately.
+    """
+
+    __tablename__ = "user_sessions"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    token_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utcnow
+    )
+    last_seen_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utcnow
+    )
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    user_agent: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+    user: Mapped[User] = relationship()
+
+    def __repr__(self) -> str:  # pragma: no cover - debugging convenience
+        return f"UserSession(id={self.id!r}, user_id={self.user_id!r})"

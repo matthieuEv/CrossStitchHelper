@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session, selectinload
 from sqlalchemy.orm.attributes import flag_modified
 
 from app.activity import compute_activity
+from app.auth import CurrentUser
 from app.codec import (
     bitmap_byte_length,
     bytes_to_base64,
@@ -32,7 +33,7 @@ from app.db import get_session
 from app.export_cshp import build_cshp_archive
 from app.http import api_error, content_disposition
 from app.labels import labels_from_json, labels_to_json
-from app.models import Grid, PaletteEntry, Pattern, Progress, ProgressEvent
+from app.models import Grid, PaletteEntry, Pattern, Progress, ProgressEvent, User
 from app.schemas import (
     GridOut,
     PaletteEntryOut,
@@ -56,9 +57,12 @@ router = APIRouter(prefix="/patterns", tags=["patterns"])
 MAX_REPLAYED_EVENTS = 2000
 
 
-def _get_pattern(session: Session, pattern_id: str) -> Pattern:
+def _get_pattern(session: Session, pattern_id: str, user: User) -> Pattern:
+    """A pattern of `user`'s library. Someone else's pattern answers the same
+    404 as a pattern that does not exist (Lot 10): a personal library is
+    private, down to the existence of what it holds."""
     pattern = session.get(Pattern, pattern_id)
-    if pattern is None:
+    if pattern is None or pattern.owner_id != user.id:
         raise api_error(404, "pattern_not_found")
     return pattern
 
@@ -70,10 +74,14 @@ def _non_empty_cell_count(pattern: Pattern) -> int:
 
 
 @router.get("", response_model=list[PatternSummary], summary="List of patterns")
-def list_patterns(session: Annotated[Session, Depends(get_session)]) -> list[PatternSummary]:
+def list_patterns(
+    session: Annotated[Session, Depends(get_session)], user: CurrentUser
+) -> list[PatternSummary]:
     patterns = (
         session.execute(
-            select(Pattern).options(
+            select(Pattern)
+            .where(Pattern.owner_id == user.id)
+            .options(
                 selectinload(Pattern.grid),
                 selectinload(Pattern.progress),
                 selectinload(Pattern.palette_entries),
@@ -108,9 +116,9 @@ def list_patterns(session: Annotated[Session, Depends(get_session)]) -> list[Pat
 
 @router.get("/{pattern_id}", response_model=PatternDetail, summary="Metadata and palette")
 def get_pattern(
-    pattern_id: str, session: Annotated[Session, Depends(get_session)]
+    pattern_id: str, session: Annotated[Session, Depends(get_session)], user: CurrentUser
 ) -> PatternDetail:
-    return _pattern_detail(_get_pattern(session, pattern_id))
+    return _pattern_detail(_get_pattern(session, pattern_id, user))
 
 
 @router.patch("/{pattern_id}", response_model=PatternDetail, summary="Edit name and labels")
@@ -118,10 +126,11 @@ def update_pattern(
     pattern_id: str,
     payload: PatternUpdate,
     session: Annotated[Session, Depends(get_session)],
+    user: CurrentUser,
 ) -> PatternDetail:
     """The library's "Edit" action (issue #57): name and labels only. Never
     touches the grid or the progress."""
-    pattern = _get_pattern(session, pattern_id)
+    pattern = _get_pattern(session, pattern_id, user)
     last_activity = pattern.updated_at
     if payload.name is not None:
         pattern.name = payload.name
@@ -154,8 +163,10 @@ def _pattern_detail(pattern: Pattern) -> PatternDetail:
 
 
 @router.get("/{pattern_id}/grid", response_model=GridOut, summary="Grid layers")
-def get_grid(pattern_id: str, session: Annotated[Session, Depends(get_session)]) -> GridOut:
-    pattern = _get_pattern(session, pattern_id)
+def get_grid(
+    pattern_id: str, session: Annotated[Session, Depends(get_session)], user: CurrentUser
+) -> GridOut:
+    pattern = _get_pattern(session, pattern_id, user)
     grid = pattern.grid
     if grid is None:
         raise api_error(404, "pattern_grid_not_found")
@@ -206,9 +217,9 @@ def _progress_out(pattern: Pattern, progress: Progress) -> ProgressOut:
     "/{pattern_id}/progress", response_model=ProgressOut, summary="Progress bitmap"
 )
 def get_progress(
-    pattern_id: str, session: Annotated[Session, Depends(get_session)]
+    pattern_id: str, session: Annotated[Session, Depends(get_session)], user: CurrentUser
 ) -> ProgressOut:
-    pattern = _get_pattern(session, pattern_id)
+    pattern = _get_pattern(session, pattern_id, user)
     if pattern.progress is None:
         raise api_error(404, "pattern_progress_not_found")
     return _progress_out(pattern, pattern.progress)
@@ -262,6 +273,7 @@ def sync_progress(
     pattern_id: str,
     payload: ProgressSyncRequest,
     session: Annotated[Session, Depends(get_session)],
+    user: CurrentUser,
 ) -> ProgressSyncResponse:
     """Versioned-delta synchronisation (specification §9).
 
@@ -276,7 +288,7 @@ def sync_progress(
     between categories, so the wrong element is never checked through a
     layer mix-up (see `app/models.py::Progress`).
     """
-    pattern = _get_pattern(session, pattern_id)
+    pattern = _get_pattern(session, pattern_id, user)
     progress = pattern.progress
     if progress is None:
         raise api_error(404, "pattern_progress_not_found")
@@ -347,9 +359,9 @@ def sync_progress(
     summary="Activity history derived from progress events",
 )
 def get_activity(
-    pattern_id: str, session: Annotated[Session, Depends(get_session)]
+    pattern_id: str, session: Annotated[Session, Depends(get_session)], user: CurrentUser
 ) -> PatternActivityOut:
-    _get_pattern(session, pattern_id)  # 404 if the pattern does not exist.
+    _get_pattern(session, pattern_id, user)  # 404 if the pattern does not exist.
     events = (
         session.execute(
             select(ProgressEvent)
@@ -379,9 +391,9 @@ def get_activity(
     response_class=Response,
 )
 def export_pattern(
-    pattern_id: str, session: Annotated[Session, Depends(get_session)]
+    pattern_id: str, session: Annotated[Session, Depends(get_session)], user: CurrentUser
 ) -> Response:
-    pattern = _get_pattern(session, pattern_id)
+    pattern = _get_pattern(session, pattern_id, user)
     if pattern.grid is None or pattern.progress is None:
         raise api_error(404, "pattern_grid_or_progress_not_found")
 
@@ -394,12 +406,14 @@ def export_pattern(
 
 
 @router.delete("/{pattern_id}", status_code=204, summary="Delete a pattern")
-def delete_pattern(pattern_id: str, session: Annotated[Session, Depends(get_session)]) -> Response:
+def delete_pattern(
+    pattern_id: str, session: Annotated[Session, Depends(get_session)], user: CurrentUser
+) -> Response:
     """Deletes a pattern with everything that belongs to it — palette, grid,
     progress and its activity log (ORM cascades, plus `ON DELETE CASCADE` for
     `progress_events`). An import job that created it only loses its link
     (`ON DELETE SET NULL`). Irreversible: the client asks for confirmation."""
-    session.delete(_get_pattern(session, pattern_id))
+    session.delete(_get_pattern(session, pattern_id, user))
     session.commit()
     return Response(status_code=204)
 
@@ -424,12 +438,13 @@ def duplicate_pattern(
     pattern_id: str,
     payload: PatternDuplicateIn,
     session: Annotated[Session, Depends(get_session)],
+    user: CurrentUser,
 ) -> PatternDuplicateOut:
     """Copies a pattern — palette and grid — under a new name, with **empty
     progress**: a duplicate is the same chart to stitch again (issue #52). The
     source's progress and activity log stay its own, never shared — the two
     patterns are fully independent from then on."""
-    source = _get_pattern(session, pattern_id)
+    source = _get_pattern(session, pattern_id, user)
     now = datetime.now(UTC)
     new_id = uuid.uuid4().hex
     copy = Pattern(

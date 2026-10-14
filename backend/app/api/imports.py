@@ -36,6 +36,7 @@ from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
 from app.api.recipes import find_matching_recipe
+from app.auth import CurrentUser
 from app.codec import bytes_to_base64, encode_uint16_layer
 from app.codec import empty_bitmap as codec_empty_bitmap
 from app.config import Settings, get_settings
@@ -53,7 +54,7 @@ from app.imports_engine import (
     sha256_file,
 )
 from app.labels import labels_to_json
-from app.models import Grid, ImportJob, PaletteEntry, Pattern, Progress
+from app.models import Grid, ImportJob, PaletteEntry, Pattern, Progress, User
 from app.schemas import (
     BackstitchSegment,
     DetectionWarning,
@@ -89,9 +90,11 @@ def _source_path(settings: Settings, job: ImportJob, result: dict[str, Any]) -> 
     return _job_dir(settings, job.id) / f"source.{result['source_ext']}"
 
 
-def _get_job(session: Session, job_id: str) -> ImportJob:
+def _get_job(session: Session, job_id: str, user: User) -> ImportJob:
+    """An import job started by `user` — someone else's answers 404, like a
+    pattern of someone else's library (Lot 10)."""
     job = session.get(ImportJob, job_id)
-    if job is None:
+    if job is None or job.owner_id != user.id:
         raise api_error(404, "import_not_found")
     return job
 
@@ -204,6 +207,7 @@ def _require_editable(job: ImportJob) -> None:
 async def create_import(
     background_tasks: BackgroundTasks,
     session: Annotated[Session, Depends(get_session)],
+    user: CurrentUser,
     settings: Annotated[Settings, Depends(get_settings)],
     file: UploadFile,
 ) -> ImportJobOut:
@@ -269,6 +273,7 @@ async def create_import(
 
     job = ImportJob(
         id=job_id,
+        owner_id=user.id,
         status="ready",
         kind=kind,
         pattern_id=None,
@@ -495,8 +500,10 @@ def _run_auto_detection(job_id: str, source_path: Path) -> None:
     response_model=ImportJobOut,
     summary="Job status and current configuration",
 )
-def get_import(job_id: str, session: Annotated[Session, Depends(get_session)]) -> ImportJobOut:
-    return _job_out(_get_job(session, job_id))
+def get_import(
+    job_id: str, session: Annotated[Session, Depends(get_session)], user: CurrentUser
+) -> ImportJobOut:
+    return _job_out(_get_job(session, job_id, user))
 
 
 @router.get(
@@ -508,10 +515,11 @@ def get_page_preview(
     job_id: str,
     page_number: int,
     session: Annotated[Session, Depends(get_session)],
+    user: CurrentUser,
     settings: Annotated[Settings, Depends(get_settings)],
     max_dimension: Annotated[int, Query(ge=200, le=MAX_PREVIEW_DIMENSION)] = MAX_PREVIEW_DIMENSION,
 ) -> Response:
-    job = _get_job(session, job_id)
+    job = _get_job(session, job_id, user)
     result = _result_of(job)
     source_path = _source_path(settings, job, result)
     if not source_path.is_file():
@@ -543,8 +551,9 @@ def patch_config(
     job_id: str,
     payload: ImportConfigPatch,
     session: Annotated[Session, Depends(get_session)],
+    user: CurrentUser,
 ) -> ImportJobOut:
-    job = _get_job(session, job_id)
+    job = _get_job(session, job_id, user)
     _require_editable(job)
     result = _result_of(job)
     config = result["config"]
@@ -587,12 +596,14 @@ def patch_config(
     response_model=ImportJobOut,
     summary="Recompute the grid from the current configuration",
 )
-def extract(job_id: str, session: Annotated[Session, Depends(get_session)]) -> ImportJobOut:
+def extract(
+    job_id: str, session: Annotated[Session, Depends(get_session)], user: CurrentUser
+) -> ImportJobOut:
     # Lot 2 has no detection engine: "extracting" here only replays
     # `apply_fills` on the already known configuration. The endpoint exists
     # to honour the API contract (§9) and so the wizard's summary step has a
     # stable call point for when a real engine (Lot 4+) replaces it.
-    job = _get_job(session, job_id)
+    job = _get_job(session, job_id, user)
     _require_editable(job)
     result = _result_of(job)
     result["preview"] = _compute_preview(result["config"])
@@ -610,9 +621,10 @@ def commit(
     job_id: str,
     payload: ImportCommitRequest,
     session: Annotated[Session, Depends(get_session)],
+    user: CurrentUser,
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> ImportCommitResponse:
-    job = _get_job(session, job_id)
+    job = _get_job(session, job_id, user)
     _require_editable(job)
     result = _result_of(job)
     preview = _compute_preview(result["config"])
@@ -643,7 +655,7 @@ def commit(
 
     pattern = Pattern(
         id=pattern_id,
-        owner_id=None,
+        owner_id=user.id,
         name=payload.name,
         source_filename=result["source_filename"],
         source_sha256=result["source_sha256"],

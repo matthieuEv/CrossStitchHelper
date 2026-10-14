@@ -2,6 +2,9 @@
 
 Distinct from `app/api/patterns.py::export_pattern` (`.cshp`, a single
 pattern): here, the whole instance as one JSON document (`app/backup.py`).
+
+Admins only (Lot 10): the document holds every profile's library and the
+profiles themselves, password hashes included.
 """
 
 from __future__ import annotations
@@ -13,13 +16,14 @@ from fastapi import APIRouter, Depends
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
+from app.auth import AdminUser, require_admin
 from app.auto_backup import is_auto_backup_enabled, set_auto_backup_enabled
 from app.backup import BackupFormatError, build_backup, restore_backup
 from app.db import get_session
 from app.http import api_error, content_disposition
 from app.schemas import AutoBackupSettings, BackupDocument, BackupRestoreSummary
 
-router = APIRouter(prefix="/backup", tags=["backup"])
+router = APIRouter(prefix="/backup", tags=["backup"], dependencies=[Depends(require_admin)])
 
 
 @router.get(
@@ -43,10 +47,10 @@ def export_backup(session: Annotated[Session, Depends(get_session)]) -> Response
     summary="Full restore — replaces all existing data",
 )
 def restore(
-    document: BackupDocument, session: Annotated[Session, Depends(get_session)]
+    document: BackupDocument, admin: AdminUser, session: Annotated[Session, Depends(get_session)]
 ) -> BackupRestoreSummary:
     try:
-        return restore_backup(session, document)
+        return restore_backup(session, document, restored_by=admin)
     except BackupFormatError as error:
         raise api_error(400, error.code, **error.params) from error
 
