@@ -1,9 +1,9 @@
 name: Integration build
 
-# Pre-release image for testers: main plus every open pull request, assembled
-# by `.github/scripts/assemble-integration.sh`, then tested and published by
-# release.yml. The pull requests stay open and are merged one by one once
-# validated.
+# Pre-release image for testers: main plus every open pull request (stacked
+# ones included), assembled by `.github/scripts/assemble-integration.sh`, then
+# tested and published by release.yml. The pull requests stay open and are
+# merged one by one once validated.
 on:
   workflow_dispatch:
     inputs:
@@ -12,7 +12,7 @@ on:
         required: true
         type: string
       exclude:
-        description: "Pull requests to leave out, comma-separated (e.g. 66,70)"
+        description: "Pull requests to leave out, comma-separated (e.g. 66,70); the ones stacked on them are left out too"
         required: false
         type: string
         default: ""
