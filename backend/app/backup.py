@@ -15,6 +15,11 @@ Deliberately out of scope: ``ImportJob`` (transient state of an import
 wizard in progress, never durable data — see `app/models.py`), ``AppMeta``
 (internal bookkeeping, not user data) and sessions.
 
+Mirrors of a paired instance's shared library, and the requests mirrored
+with them (Lot 11b), are never in a backup: they belong to that instance and
+are pulled again from it after a restore (`_after_restore`). The pairings
+themselves stay as they are — a restore is about this instance's data.
+
 Format version 3 (Lot 11) adds the shared library: each pattern's library,
 revision and links, and the requests about shared patterns. Version 2
 documents restore with every pattern personal.
@@ -32,22 +37,26 @@ ambiguity about conflicting identifiers.
 
 from __future__ import annotations
 
+import uuid
 from datetime import UTC, datetime
 from typing import Literal
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 from sqlalchemy.orm import Session, selectinload
 
 from app.codec import base64_to_bytes, bytes_to_base64
+from app.instance import next_seq
 from app.labels import labels_from_json, labels_to_json
 from app.models import (
     Grid,
     PaletteEntry,
     Pattern,
+    Peer,
     Progress,
     ProgressEvent,
     Recipe,
     SharedRequest,
+    SharedTombstone,
     User,
 )
 from app.schemas import (
@@ -85,7 +94,9 @@ class BackupFormatError(ValueError):
 def build_backup(session: Session) -> BackupDocument:
     patterns = (
         session.execute(
-            select(Pattern).options(
+            select(Pattern)
+            .where(Pattern.source_peer_id.is_(None))
+            .options(
                 selectinload(Pattern.palette_entries),
                 selectinload(Pattern.grid),
                 selectinload(Pattern.progress),
@@ -102,7 +113,13 @@ def build_backup(session: Session) -> BackupDocument:
     recipes = session.execute(select(Recipe).order_by(Recipe.created_at)).scalars().all()
     users = session.execute(select(User).order_by(User.created_at)).scalars().all()
     requests = (
-        session.execute(select(SharedRequest).order_by(SharedRequest.created_at)).scalars().all()
+        session.execute(
+            select(SharedRequest)
+            .where(SharedRequest.source_peer_id.is_(None))
+            .order_by(SharedRequest.created_at)
+        )
+        .scalars()
+        .all()
     )
 
     return BackupDocument(
@@ -152,8 +169,8 @@ def _dump_pattern(pattern: Pattern, events: list[ProgressEvent]) -> BackupPatter
         contributed_by=pattern.contributed_by,
         origin_pattern_id=pattern.origin_pattern_id,
         origin_revision=pattern.origin_revision,
-        palette=[_dump_palette_entry(entry) for entry in pattern.palette_entries],
-        grid=_dump_grid(pattern.grid) if pattern.grid is not None else None,
+        palette=[dump_palette_entry(entry) for entry in pattern.palette_entries],
+        grid=dump_grid(pattern.grid) if pattern.grid is not None else None,
         progress=_dump_progress(pattern.progress) if pattern.progress is not None else None,
         progress_events=[_dump_event(event) for event in events],
     )
@@ -175,7 +192,7 @@ def _dump_request(request: SharedRequest) -> BackupSharedRequest:
     )
 
 
-def _dump_palette_entry(entry: PaletteEntry) -> BackupPaletteEntry:
+def dump_palette_entry(entry: PaletteEntry) -> BackupPaletteEntry:
     return BackupPaletteEntry(
         id=entry.id,
         index_in_grid=entry.index_in_grid,
@@ -196,7 +213,49 @@ def _dump_palette_entry(entry: PaletteEntry) -> BackupPaletteEntry:
     )
 
 
-def _dump_grid(grid: Grid) -> BackupGrid:
+def palette_entry_from(
+    entry: BackupPaletteEntry, pattern_id: str, *, keep_id: bool = False
+) -> PaletteEntry:
+    """A palette row from its serialised form — a backup's, or a pattern
+    received from a paired instance (`app/federation.py`, which gives it a
+    fresh id of this instance's own)."""
+    return PaletteEntry(
+        id=entry.id if keep_id else uuid.uuid4().hex,
+        pattern_id=pattern_id,
+        index_in_grid=entry.index_in_grid,
+        brand=entry.brand,
+        code=entry.code,
+        name=entry.name,
+        rgb_hex=entry.rgb_hex,
+        symbol_key=entry.symbol_key,
+        symbol_svg=entry.symbol_svg,
+        strands_full=entry.strands_full,
+        strands_back=entry.strands_back,
+        count_full=entry.count_full,
+        count_half=entry.count_half,
+        count_quarter=entry.count_quarter,
+        count_french=entry.count_french,
+        count_beads=entry.count_beads,
+        backstitch_length_cm=entry.backstitch_length_cm,
+    )
+
+
+def grid_from(grid: BackupGrid, pattern_id: str) -> Grid:
+    return Grid(
+        pattern_id=pattern_id,
+        layer_full=base64_to_bytes(grid.layer_full),
+        layer_half=base64_to_bytes(grid.layer_half) if grid.layer_half is not None else None,
+        layer_quarter=base64_to_bytes(grid.layer_quarter)
+        if grid.layer_quarter is not None
+        else None,
+        backstitch_json=grid.backstitch_json,
+        french_knots_json=grid.french_knots_json,
+        encoding=grid.encoding,
+        version=grid.version,
+    )
+
+
+def dump_grid(grid: Grid) -> BackupGrid:
     return BackupGrid(
         layer_full=bytes_to_base64(grid.layer_full),
         layer_half=bytes_to_base64(grid.layer_half) if grid.layer_half is not None else None,
@@ -272,6 +331,14 @@ def restore_backup(
     # Deleting the patterns cascades in SQLite (`PRAGMA foreign_keys=ON`,
     # `app/db.py`) to their palette, grid, progress and associated event log
     # — never a special case to write here.
+    shared_before = {
+        pattern_id
+        for (pattern_id,) in session.execute(
+            select(Pattern.id).where(
+                Pattern.library == "shared", Pattern.source_peer_id.is_(None)
+            )
+        )
+    }
     session.execute(delete(SharedRequest))
     session.execute(delete(Pattern))
     session.execute(delete(Recipe))
@@ -321,46 +388,10 @@ def restore_backup(
         session.add(pattern)
 
         for entry in pattern_data.palette:
-            session.add(
-                PaletteEntry(
-                    id=entry.id,
-                    pattern_id=pattern.id,
-                    index_in_grid=entry.index_in_grid,
-                    brand=entry.brand,
-                    code=entry.code,
-                    name=entry.name,
-                    rgb_hex=entry.rgb_hex,
-                    symbol_key=entry.symbol_key,
-                    symbol_svg=entry.symbol_svg,
-                    strands_full=entry.strands_full,
-                    strands_back=entry.strands_back,
-                    count_full=entry.count_full,
-                    count_half=entry.count_half,
-                    count_quarter=entry.count_quarter,
-                    count_french=entry.count_french,
-                    count_beads=entry.count_beads,
-                    backstitch_length_cm=entry.backstitch_length_cm,
-                )
-            )
+            session.add(palette_entry_from(entry, pattern.id, keep_id=True))
 
         if pattern_data.grid is not None:
-            grid = pattern_data.grid
-            session.add(
-                Grid(
-                    pattern_id=pattern.id,
-                    layer_full=base64_to_bytes(grid.layer_full),
-                    layer_half=base64_to_bytes(grid.layer_half)
-                    if grid.layer_half is not None
-                    else None,
-                    layer_quarter=base64_to_bytes(grid.layer_quarter)
-                    if grid.layer_quarter is not None
-                    else None,
-                    backstitch_json=grid.backstitch_json,
-                    french_knots_json=grid.french_knots_json,
-                    encoding=grid.encoding,
-                    version=grid.version,
-                )
-            )
+            session.add(grid_from(pattern_data.grid, pattern.id))
 
         if pattern_data.progress is not None:
             progress = pattern_data.progress
@@ -439,6 +470,7 @@ def restore_backup(
             )
         )
 
+    _after_restore(session, shared_before)
     session.commit()
 
     return BackupRestoreSummary(
@@ -472,3 +504,32 @@ def _replace_users(session: Session, users: list[BackupUser]) -> None:
         user.created_at = data.created_at
         user.updated_at = data.updated_at
     session.flush()
+
+
+def _after_restore(session: Session, shared_before: set[str]) -> None:
+    """Keep paired instances right after a restore (Lot 11b): a subscriber
+    re-reads every restored shared pattern of this instance and drops those
+    that are gone; this instance re-reads its hosts from the start, its
+    mirrors having been deleted with every other pattern."""
+    session.flush()
+    restored = [
+        pattern_id
+        for (pattern_id,) in session.execute(
+            select(Pattern.id).where(
+                Pattern.library == "shared", Pattern.source_peer_id.is_(None)
+            )
+        )
+    ]
+    for pattern_id in restored:
+        # A Core update, so the restored `updated_at` stays what the backup
+        # says (the ORM's `onupdate` would set it to now).
+        session.execute(
+            update(Pattern)
+            .where(Pattern.id == pattern_id)
+            .values(shared_seq=next_seq(session), updated_at=Pattern.updated_at)
+        )
+    for gone in shared_before - set(restored):
+        session.merge(SharedTombstone(pattern_id=gone, seq=next_seq(session)))
+    for peer in session.execute(select(Peer).where(Peer.role == "host")).scalars():
+        peer.cursor = 0
+

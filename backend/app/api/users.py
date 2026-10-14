@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 
 from app import accounts
 from app.api.auth import user_out
-from app.auth import COOKIE_NAME, AdminUser, require_admin
+from app.auth import AdminUser, require_admin, session_token
 from app.db import get_session
 from app.http import api_error
 from app.models import Pattern, User
@@ -80,7 +80,7 @@ def update_user(
     if payload.password is not None:
         # An admin resetting their own password keeps the device they are
         # using, like `/api/auth/me/password`; anyone else's sessions all end.
-        keep = request.cookies.get(COOKIE_NAME) if user.id == admin.id else None
+        keep = session_token(session, request) if user.id == admin.id else None
         accounts.set_password(session, user, payload.password, keep_token=keep)
     session.commit()
     return _admin_user_out(session, user)

@@ -106,9 +106,10 @@ export function SharedLibraryView({
   const byId = new Map(shared.entries.map((entry) => [entry.summary.id, entry]));
   const pending = shared.requests.filter((request) => request.status === "pending");
   // Admins decide on every pending request; anybody follows their own.
-  const queue = isAdmin ? pending : [];
+  const queue = isAdmin ? pending.filter((request) => request.can_decide !== false) : [];
+  const inQueue = new Set(queue.map((request) => request.id));
   const mine = shared.requests.filter(
-    (request) => request.mine && request.status !== "cancelled" && !(isAdmin && request.status === "pending"),
+    (request) => request.mine && request.status !== "cancelled" && !inQueue.has(request.id),
   );
 
   const openSheet = (entry: SharedEntry): void => {
@@ -358,8 +359,15 @@ export function SharedLibraryView({
                   ? t("shared.addedBy", { name: entry.summary.contributed_by_name })
                   : t("shared.addedByFormer")}
               </div>
-              {(entry.summary.labels.length > 0 || entry.summary.my_copy_ids.length > 0) && (
+              {(entry.summary.labels.length > 0 ||
+                entry.summary.my_copy_ids.length > 0 ||
+                entry.summary.source_name != null) && (
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                  {entry.summary.source_name != null && (
+                    <span className="tag tag-neutral" style={{ fontSize: 11 }}>
+                      {t("shared.fromSite", { name: entry.summary.source_name })}
+                    </span>
+                  )}
                   {entry.summary.my_copy_ids.length > 0 && (
                     <span className="tag tag-accent-2" style={{ fontSize: 11 }}>
                       {t("shared.haveCopy")}
@@ -411,6 +419,8 @@ export function SharedLibraryView({
                   {open.summary.contributed_by_name !== null
                     ? t("shared.addedBy", { name: open.summary.contributed_by_name })
                     : t("shared.addedByFormer")}
+                  {open.summary.source_name != null &&
+                    ` · ${t("shared.fromSite", { name: open.summary.source_name })}`}
                 </div>
               </div>
               <button type="button" className="btn btn-icon btn-secondary" onClick={close} aria-label={t("track.close")}>
@@ -439,7 +449,7 @@ export function SharedLibraryView({
                       }),
                     true,
                   )}
-                  {isAdmin ? (
+                  {open.summary.can_moderate === true ? (
                     <>
                       {sheetButton(t("library.edit"), () => setMode("edit"))}
                       {sheetButton(t("shared.replace"), () => setMode("replace"))}

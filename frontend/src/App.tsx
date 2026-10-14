@@ -98,7 +98,9 @@ export function App() {
   const shared = useSharedLibrary();
   const [libraryTab, setLibraryTab] = useState<LibraryTab>("mine");
   const pendingForMe = isAdmin
-    ? shared.requests.filter((request) => request.status === "pending").length
+    ? shared.requests.filter(
+        (request) => request.status === "pending" && request.can_decide !== false,
+      ).length
     : 0;
 
   // The URL (`/track/{id}`) is the source of truth when it carries one —
@@ -164,10 +166,11 @@ export function App() {
           tab={libraryTab}
           onTabChange={(tab) => {
             setLibraryTab(tab);
-            if (tab === "shared") void shared.refresh();
+            if (tab === "shared") void shared.refresh({ pull: true });
           }}
           sharedBadge={pendingForMe}
           sharedCount={shared.entries.length}
+          shareTargets={shared.targets}
           sharedView={
             <SharedLibraryView
               shared={shared}
@@ -199,8 +202,8 @@ export function App() {
               await updatePattern(patternId, changes);
               await library.refresh();
             },
-            onShare: async (patternId: string) => {
-              await sharePattern(patternId);
+            onShare: async (patternId: string, targetPeerId: string | null) => {
+              await sharePattern(patternId, targetPeerId);
               await Promise.all([library.refresh(), shared.refresh()]);
             },
             onUpdateFromOrigin: async (patternId: string, newCopyName: string) => {
@@ -214,6 +217,7 @@ export function App() {
 
       {screen === "import" && (
         <ImportScreen
+          sharedTargets={shared.targets}
           onCancel={() => navigate("library")}
           onFinish={(patternId) => {
             void Promise.all([library.refresh(), shared.refresh()]).then(() => {

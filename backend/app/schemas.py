@@ -443,6 +443,12 @@ class ImportCommitRequest(BaseModel):
         description="Where the pattern goes (Lot 11): one's own library, the shared "
         "library, or both (a personal copy linked to the shared one).",
     )
+    shared_target_peer_id: str | None = Field(
+        default=None,
+        max_length=32,
+        description="For `shared`/`both`: a paired instance's shared library rather than "
+        "this one's (Lot 11b).",
+    )
 
 
 class ImportCommitResponse(BaseModel):
@@ -757,6 +763,15 @@ class SharedPatternOut(BaseModel):
     my_copy_ids: list[str] = Field(
         default_factory=list, description="The logged-in profile's copies of it."
     )
+    source_name: str | None = Field(
+        default=None,
+        description="The paired instance this pattern's home is (Lot 11b); null if here.",
+    )
+    can_moderate: bool = Field(
+        default=False,
+        description="The logged-in profile may rename, replace or remove it: an admin, "
+        "for a pattern of a paired instance only if that instance trusts this one's admins.",
+    )
 
 
 RequestKind = Literal["removal", "replacement"]
@@ -775,6 +790,21 @@ class SharedRequestOut(BaseModel):
     proposal_pattern_id: str | None
     created_at: datetime
     resolved_at: datetime | None
+    can_decide: bool = Field(
+        default=False,
+        description="The logged-in profile may accept or decline it: an admin, for a "
+        "request about a paired instance's pattern only if that instance trusts this "
+        "one's admins (Lot 11b).",
+    )
+
+
+class SharedTarget(BaseModel):
+    """A shared library a pattern can be added to (Lot 11b): this
+    instance's (``peer_id`` null), or a paired instance's that this one
+    mirrors."""
+
+    peer_id: str | None
+    name: str
 
 
 class SharedLibraryOut(BaseModel):
@@ -784,10 +814,18 @@ class SharedLibraryOut(BaseModel):
 
     patterns: list[SharedPatternOut]
     requests: list[SharedRequestOut]
+    targets: list[SharedTarget] = Field(default_factory=list)
 
 
 class SharedPatternRef(BaseModel):
     id: str
+
+
+class ShareRequest(BaseModel):
+    """Which shared library to add a pattern to: this instance's (null), or
+    a paired instance's (Lot 11b)."""
+
+    target_peer_id: str | None = Field(default=None, max_length=32)
 
 
 class SharedCopyRequest(BaseModel):
@@ -824,4 +862,166 @@ class UpdateFromOriginRequest(BaseModel):
 class UpdateFromOriginOut(BaseModel):
     pattern_id: str
     in_place: bool
+
+
+# --- Between two paired instances (Lot 11b, issue #78) -----------------------
+
+
+class FedPattern(BaseModel):
+    """A shared pattern's content as two instances exchange it — the same
+    serialisation as a backup's palette and grid, never any progress."""
+
+    id: str
+    name: str = Field(min_length=1, max_length=200)
+    labels: list[str] = Field(default_factory=list)
+    revision: int = 1
+    width: int = Field(ge=1, le=2000)
+    height: int = Field(ge=1, le=2000)
+    fabric_count: int | None = None
+    notes: str | None = None
+    contributed_by_name: str | None = None
+    palette: list[BackupPaletteEntry] = Field(default_factory=list)
+    grid: BackupGrid | None = None
+
+
+class FedInfo(BaseModel):
+    protocol: int
+    instance_id: str
+    name: str
+
+
+class FedPairRequest(BaseModel):
+    secret: str = Field(max_length=200)
+    instance_id: str = Field(max_length=64)
+    name: str = Field(min_length=1, max_length=200)
+
+
+class FedPairResponse(BaseModel):
+    token: str
+    instance_id: str
+    name: str
+    trust_admins: bool
+
+
+class FedChanges(BaseModel):
+    """What changed in the host's shared library since a cursor: patterns
+    added or changed (whole), patterns removed (their ids)."""
+
+    cursor: int
+    more: bool
+    upserts: list[FedPattern] = Field(default_factory=list)
+    deletions: list[str] = Field(default_factory=list)
+
+
+class FedContribution(BaseModel):
+    pattern: FedPattern
+    contributor_name: str = Field(min_length=1, max_length=200)
+
+
+class FedCreated(BaseModel):
+    id: str
+    revision: int
+
+
+class FedActor(BaseModel):
+    """Who acts, on the subscribed instance, for the host's record."""
+
+    actor_name: str = Field(min_length=1, max_length=200)
+
+
+class FedRename(FedActor):
+    name: str | None = Field(default=None, min_length=1, max_length=200)
+    labels: list[str] | None = None
+
+
+class FedReplace(FedActor):
+    pattern: FedPattern
+
+
+class FedRequestCreate(BaseModel):
+    kind: RequestKind
+    shared_pattern_id: str = Field(max_length=32)
+    message: str | None = Field(default=None, max_length=1000)
+    requester_name: str = Field(min_length=1, max_length=200)
+    requester_ref: str = Field(max_length=32)
+    proposal: FedPattern | None = None
+
+
+class FedCancel(BaseModel):
+    requester_ref: str = Field(max_length=32)
+
+
+class FedRequest(BaseModel):
+    id: str
+    kind: RequestKind
+    status: RequestStatus
+    shared_pattern_id: str | None
+    pattern_name: str
+    requested_by_name: str | None
+    requester_ref: str | None = Field(
+        description="The requesting profile's id on the subscribed instance, for its own "
+        "requests; null for anybody else's."
+    )
+    message: str | None
+    proposal_pattern_id: str | None
+    created_at: datetime
+    resolved_at: datetime | None
+
+
+class FedRequests(BaseModel):
+    requests: list[FedRequest]
+
+
+# --- Linking instances, admin side (Lot 11b) ---------------------------------
+
+
+class PeerOut(BaseModel):
+    id: str
+    name: str
+    role: Literal["host", "subscriber"]
+    base_url: str | None
+    trust_admins: bool
+    last_sync_at: datetime | None
+    last_error: str | None
+    created_at: datetime
+
+
+class InvitationOut(BaseModel):
+    id: str
+    trust_admins: bool
+    created_at: datetime
+    expires_at: datetime
+
+
+class FederationOut(BaseModel):
+    instance_id: str
+    instance_name: str
+    peers: list[PeerOut]
+    invitations: list[InvitationOut]
+
+
+class InstanceNameUpdate(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+
+
+class InvitationCreate(BaseModel):
+    """`public_url`: how the invited instance's *server* reaches this one —
+    by default the address the admin uses (the frontend fills it in)."""
+
+    public_url: str = Field(min_length=8, max_length=500, pattern=r"^https?://")
+    trust_admins: bool = False
+
+
+class InvitationCreated(BaseModel):
+    code: str
+    expires_at: datetime
+
+
+class JoinRequest(BaseModel):
+    code: str = Field(min_length=8, max_length=2000)
+
+
+class SyncResult(BaseModel):
+    synced: int
+    errors: list[str] = Field(default_factory=list)
 

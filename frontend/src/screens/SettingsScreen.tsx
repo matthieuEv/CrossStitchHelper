@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ChangeEvent } from "react";
 
 import { AccountPanel } from "../components/AccountPanel";
+import { FederationPanel } from "../components/FederationPanel";
 import { ProfilesPanel } from "../components/ProfilesPanel";
 import { LANGUAGES, useI18n, type Language } from "../i18n";
 import {
@@ -199,6 +200,7 @@ export function SettingsScreen({ version }: SettingsScreenProps) {
       <div style={{ maxWidth: 620, display: "flex", flexDirection: "column", gap: 14 }}>
         <AccountPanel />
         {isAdmin && <ProfilesPanel />}
+        {isAdmin && <FederationPanel />}
 
         <section className="panel">
           <div>

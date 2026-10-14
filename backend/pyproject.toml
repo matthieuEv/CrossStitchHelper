@@ -19,12 +19,13 @@ dependencies = [
     # Password hashing (Argon2id) for profiles (Lot 10) — the maintained
     # successor of passlib; never hand-rolled.
     "pwdlib[argon2]>=0.3",
+    # HTTP client to a paired instance (Lot 11b, `app/federation.py`).
+    "httpx>=0.27",
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest>=8.3",
-    "httpx>=0.27",
     "mypy>=1.13",
     "ruff>=0.8",
 ]

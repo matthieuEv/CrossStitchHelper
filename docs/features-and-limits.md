@@ -46,6 +46,7 @@
 - A shared library next to everyone's own: anyone in the group can add a pattern to it (when importing, or from one of their patterns) and copy a shared pattern into their library to stitch it — progress always stays personal.
 - Only administrators rename, replace or remove a shared pattern. Anyone else asks them: a removal request, or a proposal to replace a pattern with their own version. Everyone sees what became of their requests.
 - When a shared pattern is replaced, everyone who copied it sees "Update" on their copy; updating is their choice and never loses the stitching already done.
+- Two households, each with their own server, can share one library: the site hosting it invites the other with a one-time code. The other site's profiles see its shared patterns, copy them, add to it and send their requests; the host's admins decide — or the other site's admins too, if the host chose to trust them. Only the hosting site needs to be reachable from the other server (the same remote access you would set up for your phone outside the house).
 
 ### Stay at home
 
@@ -63,7 +64,7 @@ These are deliberate scope choices, not features still missing — they remain t
 - **It does not create patterns.** It does not turn a personal photo into a chart to stitch (it is not a creation tool, only a tool for reading/tracking an existing pattern).
 - **It does not offer photo capture or automatic recognition from a free-form photo of a paper chart.** A decision made along the way (not in the initial plan): with no real reference file to verify such detection, and full-frame computer vision too uncertain to be honestly automated in this application — see specification §13 (decision log). The universal manual import (cropping, dimensions, palette and painting by hand) remains available for any file, images included, if you drop one yourself.
 - **It neither offers nor sells patterns.** No library of charts to download in the app: everyone imports the files they already own.
-- **It is not a social network.** Sharing stays within the instance's group (and, later, one paired instance): no public catalogue, no "see what others are stitching", nothing ever sent to a third-party service. Whoever shares a pattern remains responsible for having the right to share it.
+- **It is not a social network.** Sharing stays within the instance's group and the instances its admins deliberately linked: no public catalogue, no "see what others are stitching", nothing ever sent to a third-party service. Whoever shares a pattern remains responsible for having the right to share it.
 - **It will not be a "native" iPhone/iPad app** downloadable from the App Store — it will be a web page you install on the home screen, which amounts to the same thing in use but avoids Apple's fees and constraints. *(To be validated together: this is a deliberate trade-off to stay free, not a technical limitation that could not be lifted later if needed.)*
 - **It has no sign-up and sends no email.** Profiles are created by an administrator of the instance; a forgotten password is reset by an administrator, not by an email link.
 - **It does not sync with a public cloud** (no iCloud, no Google Drive) — backup and synchronisation stay internal to the app, on the server you host yourself.
@@ -88,7 +89,6 @@ This document is precisely meant to check together whether an important feature 
 
 - Should the Apple Pencil be usable on iPad to mark cells or annotate the grid?
 - Is a "print" mode needed to output a paper version of the pattern or the legend?
-- Should it be possible to share a pattern (just the file, not via the app) with another person who has their own instance?
 - Is Android support necessary, or does use remain strictly iPhone/iPad?
 - Should the time actually spent stitching be tracked (a stopwatch), in addition to the completion percentage?
 - Should several thread brands (Anchor, DMC…) be supported, with conversion of codes from one to another?
