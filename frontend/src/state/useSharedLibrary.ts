@@ -12,8 +12,10 @@ import {
   fetchSharedGrid,
   fetchSharedLibrary,
   fetchSharedPatternDetail,
+  syncShared,
   type ApiSharedPattern,
   type ApiSharedRequest,
+  type ApiSharedTarget,
 } from "../lib/api";
 import { patternFromApi } from "../lib/mappers";
 import type { Pattern } from "../pattern/types";
@@ -29,7 +31,12 @@ export interface SharedLibrary {
   state: SharedLibraryState;
   entries: SharedEntry[];
   requests: ApiSharedRequest[];
-  refresh: () => Promise<void>;
+  /** Shared libraries a pattern can be added to (Lot 11b): this
+   * instance's first, then each paired host's. */
+  targets: ApiSharedTarget[];
+  /** Reload; with `pull`, first ask the server to pull the paired hosts
+   * (opening the tab — the server skips it if done moments ago). */
+  refresh: (options?: { pull?: boolean }) => Promise<void>;
 }
 
 /** A shared pattern or a proposal, drawn like any other pattern. */
@@ -42,14 +49,20 @@ export function useSharedLibrary(): SharedLibrary {
   const [state, setState] = useState<SharedLibraryState>("loading");
   const [entries, setEntries] = useState<SharedEntry[]>([]);
   const [requests, setRequests] = useState<ApiSharedRequest[]>([]);
+  const [targets, setTargets] = useState<ApiSharedTarget[]>([]);
   // Patterns already drawn, by id and revision: a refresh after an action
   // only fetches what changed.
   const cacheRef = useRef(new Map<string, { revision: number; pattern: Pattern }>());
   const requestIdRef = useRef(0);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (options?: { pull?: boolean }) => {
     const requestId = ++requestIdRef.current;
     try {
+      if (options?.pull === true) {
+        // A host out of reach is no reason not to show the mirror as last
+        // pulled: the error is the link's (Settings), not the tab's.
+        await syncShared().catch(() => undefined);
+      }
       const library = await fetchSharedLibrary();
       const loaded = await Promise.all(
         library.patterns.map(async (summary): Promise<SharedEntry> => {
@@ -65,6 +78,7 @@ export function useSharedLibrary(): SharedLibrary {
       if (requestId !== requestIdRef.current) return;
       setEntries(loaded);
       setRequests(library.requests);
+      setTargets(library.targets ?? []);
       setState("ready");
     } catch {
       if (requestId === requestIdRef.current) setState("unavailable");
@@ -72,8 +86,8 @@ export function useSharedLibrary(): SharedLibrary {
   }, []);
 
   useEffect(() => {
-    void load();
+    void load({ pull: true });
   }, [load]);
 
-  return { state, entries, requests, refresh: load };
+  return { state, entries, requests, targets, refresh: load };
 }
