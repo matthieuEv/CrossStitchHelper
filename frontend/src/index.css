@@ -256,6 +256,7 @@ button { font-family: inherit; color: inherit; }
   justify-content: flex-start;
 }
 .switch[aria-checked="true"] { background: var(--color-accent); justify-content: flex-end; }
+.switch:disabled { opacity: 0.5; cursor: default; }
 .switch > span {
   width: 26px;
   height: 26px;

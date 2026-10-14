@@ -145,15 +145,29 @@ test.describe("Lot 8 — data backup/restore", () => {
     // long as no other spec has already toggled this global server setting —
     // so start from the state read, not from an assumed "true", and always
     // return to that starting state at the end of the test.
+    // Enabled once the server's value is loaded — read it only then.
+    await expect(toggle).toBeEnabled();
     const initiallyChecked = (await toggle.getAttribute("aria-checked")) === "true";
 
+    // The switch flips at once (optimistic) while its PUT is still on its
+    // way: read the server only once it has answered.
+    const saved = page.waitForResponse(
+      (response) =>
+        response.url().endsWith("/api/backup/auto") && response.request().method() === "PUT",
+    );
     await toggle.click();
     await expect(toggle).toHaveAttribute("aria-checked", String(!initiallyChecked));
+    await saved;
     const afterToggle = await request.get("/api/backup/auto");
     expect(((await afterToggle.json()) as { enabled: boolean }).enabled).toBe(!initiallyChecked);
 
+    const restored = page.waitForResponse(
+      (response) =>
+        response.url().endsWith("/api/backup/auto") && response.request().method() === "PUT",
+    );
     await toggle.click(); // back to the starting state so other specs are unaffected.
     await expect(toggle).toHaveAttribute("aria-checked", String(initiallyChecked));
+    await restored;
   });
 
   test("clearing all data empties the instance (then a safety restore)", async ({

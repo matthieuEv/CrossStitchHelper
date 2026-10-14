@@ -43,10 +43,12 @@ function Switch({
   checked,
   onChange,
   label,
+  disabled = false,
 }: {
   checked: boolean;
   onChange: (value: boolean) => void;
   label: string;
+  disabled?: boolean;
 }) {
   return (
     <button
@@ -55,6 +57,7 @@ function Switch({
       aria-checked={checked}
       aria-label={label}
       className="switch"
+      disabled={disabled}
       onClick={() => onChange(!checked)}
     >
       <span />
@@ -78,6 +81,9 @@ export function SettingsScreen({ version }: SettingsScreenProps) {
   // `app/auto_backup.py`), not a browser-local preference — it must apply
   // even if nobody opens the application that day.
   const [autoBackup, setAutoBackupState] = useState(true);
+  // Disabled until the server's value is known: a tap made before it
+  // arrives would otherwise be silently undone by that late answer.
+  const [autoBackupLoaded, setAutoBackupLoaded] = useState(false);
   const [autoBackupError, setAutoBackupError] = useState(false);
   const [dataBusy, setDataBusy] = useState(false);
   const [dataMessage, setDataMessage] = useState<string | null>(null);
@@ -87,7 +93,10 @@ export function SettingsScreen({ version }: SettingsScreenProps) {
     if (!isAdmin) return;
     const controller = new AbortController();
     void fetchAutoBackupSetting(controller.signal)
-      .then((setting) => setAutoBackupState(setting.enabled))
+      .then((setting) => {
+        setAutoBackupState(setting.enabled);
+        setAutoBackupLoaded(true);
+      })
       .catch((error: unknown) => {
         // An `AbortError` comes from our own cleanup (unmount, or StrictMode's
         // double mount in development) — never a real network failure, so
@@ -320,6 +329,7 @@ export function SettingsScreen({ version }: SettingsScreenProps) {
                 checked={autoBackup}
                 onChange={toggleAutoBackup}
                 label={t("settings.data.autoBackup")}
+                disabled={!autoBackupLoaded}
               />
             </div>
             {autoBackupError && (
