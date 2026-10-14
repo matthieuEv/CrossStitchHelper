@@ -395,6 +395,15 @@ def test_imports_belong_to_whoever_started_them(client: TestClient, make_user: M
     assert client.get(f"/api/patterns/{pattern_id}").status_code == 404
 
 
+def test_a_recipe_is_saved_only_from_ones_own_import(
+    client: TestClient, make_user: MakeUser
+) -> None:
+    bea = make_user("bea@example.com")
+    job = bea.post("/api/imports", files={"file": ("grille.png", _png(), "image/png")}).json()
+    response = client.post("/api/recipes", json={"job_id": job["id"], "label": "Not mine"})
+    assert response.status_code == 404
+
+
 def test_recipes_are_shared_but_only_admins_delete_them(
     client: TestClient, make_user: MakeUser
 ) -> None:
