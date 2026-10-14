@@ -525,10 +525,10 @@ class Peer(Base):
     )
     trust_admins: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     cursor: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    last_sync_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_sync_at: Mapped[datetime | None] = mapped_column(UtcDateTime, nullable=True)
     last_error: Mapped[str | None] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, default=_utcnow
+        UtcDateTime, nullable=False, default=_utcnow
     )
 
     def __repr__(self) -> str:  # pragma: no cover - debugging convenience
@@ -549,10 +549,10 @@ class PeerInvitation(Base):
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, default=_utcnow
+        UtcDateTime, nullable=False, default=_utcnow
     )
-    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    expires_at: Mapped[datetime] = mapped_column(UtcDateTime, nullable=False)
+    used_at: Mapped[datetime | None] = mapped_column(UtcDateTime, nullable=True)
 
 
 class SharedTombstone(Base):
@@ -565,6 +565,6 @@ class SharedTombstone(Base):
     pattern_id: Mapped[str] = mapped_column(String(32), primary_key=True)
     seq: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
     deleted_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, default=_utcnow
+        UtcDateTime, nullable=False, default=_utcnow
     )
 

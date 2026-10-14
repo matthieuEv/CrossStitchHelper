@@ -121,8 +121,7 @@ def accept_pairing(
     now = datetime.now(UTC)
     if invitation is None or invitation.used_at is not None:
         raise api_error(403, "invitation_invalid")
-    expires_at = invitation.expires_at
-    if (expires_at if expires_at.tzinfo else expires_at.replace(tzinfo=UTC)) <= now:
+    if invitation.expires_at <= now:
         raise api_error(403, "invitation_expired")
     if peer_instance_id == instance_id(session):
         raise api_error(400, "invitation_same_instance")

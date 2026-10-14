@@ -15,6 +15,7 @@ import subprocess
 import sys
 import time
 from collections.abc import Callable, Iterator
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -23,6 +24,11 @@ import pytest
 from conftest import USER_PASSWORD
 from fastapi.testclient import TestClient
 from PIL import Image
+from sqlalchemy import select
+
+from app.db import get_session_factory
+from app.federation import decode_invitation
+from app.models import PeerInvitation
 
 BACKEND = Path(__file__).resolve().parent.parent
 MakeUser = Callable[..., TestClient]
@@ -212,6 +218,32 @@ def test_an_invitation_works_once(client: TestClient, host: Host) -> None:
     assert again.json()["detail"]["code"] == "invitation_invalid"
     garbled = client.post("/api/federation/join", json={"code": "csh1.not-base64!"})
     assert garbled.json()["detail"]["code"] == "invitation_invalid"
+
+
+def test_an_expired_invitation_is_hidden_and_refused(client: TestClient) -> None:
+    created = client.post(
+        "/api/federation/invitations",
+        json={"public_url": "http://site-a.test", "trust_admins": False},
+    )
+    assert created.status_code == 201
+    [listed] = client.get("/api/federation").json()["invitations"]
+    # Sent in UTC with its offset, or Settings shows it expiring hours early.
+    expires_at = datetime.fromisoformat(listed["expires_at"])
+    assert expires_at.utcoffset() == timedelta(0)
+    assert timedelta(hours=23) < expires_at - datetime.now(UTC) <= timedelta(hours=24)
+
+    with get_session_factory()() as session:
+        for invitation in session.execute(select(PeerInvitation)).scalars():
+            invitation.expires_at = datetime.now(UTC) - timedelta(minutes=1)
+        session.commit()
+    assert client.get("/api/federation").json()["invitations"] == []
+    _, secret = decode_invitation(created.json()["code"])
+    refused = client.post(
+        "/api/federation/v1/pair",
+        json={"secret": secret, "instance_id": "another-instance", "name": "Site B"},
+    )
+    assert refused.status_code == 403
+    assert refused.json()["detail"]["code"] == "invitation_expired"
 
 
 def test_regular_profiles_cannot_manage_links(

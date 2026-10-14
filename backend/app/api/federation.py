@@ -434,20 +434,15 @@ def overview(
     admin: AdminUser, session: Annotated[Session, Depends(get_session)]
 ) -> FederationOut:
     now = datetime.now(UTC)
-    invitations = [
-        invitation
-        for invitation in session.execute(
+    invitations = (
+        session.execute(
             select(PeerInvitation)
-            .where(PeerInvitation.used_at.is_(None))
+            .where(PeerInvitation.used_at.is_(None), PeerInvitation.expires_at > now)
             .order_by(PeerInvitation.created_at.desc())
-        ).scalars()
-        if (
-            invitation.expires_at
-            if invitation.expires_at.tzinfo
-            else invitation.expires_at.replace(tzinfo=UTC)
         )
-        > now
-    ]
+        .scalars()
+        .all()
+    )
     result = FederationOut(
         instance_id=instance_id(session),
         instance_name=instance_name(session),
