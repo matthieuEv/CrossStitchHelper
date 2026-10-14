@@ -28,8 +28,10 @@ test("the Palette step names DMC as the thread chart", async ({ page }) => {
   // Still there once colours exist, next to their codes.
   await page.getByRole("button", { name: /Ajouter une couleur/ }).click();
   await expect(page.getByText("Nuancier : DMC", { exact: true })).toBeVisible();
-  // Informative only: no chart picker.
-  await expect(page.getByRole("combobox")).toHaveCount(0);
+  // Informative only: no chart picker (a `<select>`, or a choice of brands).
+  // The code fields' DMC suggestions (#39) are not one.
+  await expect(page.locator("select")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /Anchor|Madeira/ })).toHaveCount(0);
 });
 
 test("Settings no longer offers other thread brands", async ({ page }) => {
