@@ -42,6 +42,9 @@ def make_client(
         # `test_auto_backup.py` re-enables it explicitly for what it needs
         # to check.
         monkeypatch.setenv("CSH_RUN_AUTO_BACKUP_LOOP", "false")
+        # Same for the paired instances' pull loop (Lot 11b): tests ask for a
+        # sync explicitly when they need one.
+        monkeypatch.setenv("CSH_RUN_FEDERATION_LOOP", "false")
         if dist is not None:
             monkeypatch.setenv("CSH_FRONTEND_DIST", str(dist))
         else:

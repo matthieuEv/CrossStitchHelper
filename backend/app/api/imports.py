@@ -35,6 +35,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, Query, UploadFile
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
+from app import federation
 from app import shared as shared_library
 from app.api.recipes import find_matching_recipe
 from app.auth import CurrentUser
@@ -655,8 +656,15 @@ def commit(
     french_knots = _detected_special_items(config, "detected_french_knots", palette_size)
 
     # Lot 11: straight into the shared library (no owner, no progress), or
-    # into one's own library — then shared too for "both", below.
-    straight_to_shared = payload.library == "shared"
+    # into one's own library — then shared too for "both", below. Into a
+    # paired host's shared library (Lot 11b), the pattern is made here as a
+    # personal one first, forwarded, then removed if "shared" only.
+    target_peer = (
+        federation.peer_of(session, payload.shared_target_peer_id)
+        if payload.library != "personal" and payload.shared_target_peer_id is not None
+        else None
+    )
+    straight_to_shared = payload.library == "shared" and target_peer is None
     pattern = Pattern(
         id=pattern_id,
         owner_id=None if straight_to_shared else user.id,
@@ -749,7 +757,9 @@ def commit(
     session.flush()
 
     shared_pattern_id = pattern_id if straight_to_shared else None
-    if payload.library == "both":
+    if straight_to_shared:
+        shared_library.touch(session, pattern)
+    if payload.library == "both" and target_peer is None:
         session.refresh(pattern)
         shared_pattern_id = shared_library.share(session, user, pattern).id
 
@@ -762,7 +772,16 @@ def commit(
     # pattern is created, the original PDF or photo is no longer needed.
     shutil.rmtree(_job_dir(settings, job_id), ignore_errors=True)
 
-    return ImportCommitResponse(
-        pattern_id=None if straight_to_shared else pattern_id,
-        shared_pattern_id=shared_pattern_id,
-    )
+    personal_id: str | None = None if straight_to_shared else pattern_id
+    if target_peer is not None:
+        # If the host cannot be reached, the error reaches the user and the
+        # pattern stays in their own library: nothing is lost.
+        session.refresh(pattern)
+        shared_pattern_id = federation.share_to_host(session, user, pattern, target_peer).id
+        if payload.library == "shared":
+            session.delete(session.get(Pattern, pattern_id))
+            job.pattern_id = None
+            session.commit()
+            personal_id = None
+
+    return ImportCommitResponse(pattern_id=personal_id, shared_pattern_id=shared_pattern_id)

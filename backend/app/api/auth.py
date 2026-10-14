@@ -17,13 +17,13 @@ from sqlalchemy.orm import Session
 
 from app import accounts
 from app.auth import (
-    COOKIE_NAME,
     CurrentUser,
     client_address,
     close_session,
     login_throttle,
     open_session,
     require_client_header,
+    session_token,
     user_for_request,
     verify_password,
 )
@@ -183,7 +183,7 @@ def change_password(
     if not verify_password(payload.current_password, user.password_hash):
         raise api_error(400, "current_password_wrong")
     accounts.set_password(
-        session, user, payload.new_password, keep_token=request.cookies.get(COOKIE_NAME)
+        session, user, payload.new_password, keep_token=session_token(session, request)
     )
     session.commit()
     return Response(status_code=204)

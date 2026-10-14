@@ -70,6 +70,14 @@ class Settings(BaseSettings):
     only the tests disable it, so as not to run a background loop in each of
     them."""
 
+    run_federation_loop: bool = True
+    """Pull the shared libraries of the paired hosts now and then (Lot 11b,
+    `app/federation.py`). Disabled in tests, like the backup loop."""
+
+    federation_sync_interval_s: float = 900.0
+    """Seconds between two pulls: a copy hears about a replaced original
+    within this delay at worst — at once when someone opens the shared tab."""
+
     @property
     def database_path(self) -> Path:
         return self.data_dir / self.database_filename

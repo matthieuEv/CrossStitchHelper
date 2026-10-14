@@ -10,6 +10,7 @@ process only answers on ``/api``.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import mimetypes
 from collections.abc import AsyncIterator
@@ -21,6 +22,8 @@ from fastapi.responses import FileResponse
 
 from app.api.auth import router as auth_router
 from app.api.backup import router as backup_router
+from app.api.federation import protocol_router as federation_protocol_router
+from app.api.federation import router as federation_router
 from app.api.health import router as health_router
 from app.api.imports import router as imports_router
 from app.api.patterns import router as patterns_router
@@ -31,6 +34,8 @@ from app.auth import current_user
 from app.auto_backup import run_auto_backup_loop
 from app.config import get_settings
 from app.db import get_session_factory
+from app.federation import run_federation_loop
+from app.instance import ensure_instance_id
 from app.migrations import upgrade_to_head
 
 logger = logging.getLogger(__name__)
@@ -52,21 +57,30 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     settings.ensure_directories()
     if settings.run_migrations_on_startup:
         upgrade_to_head()
+    with get_session_factory()() as session:
+        ensure_instance_id(session)
     logger.info(
         "CrossStitchHelper %s ready — data in %s", settings.app_version, settings.data_dir
     )
 
-    task: asyncio.Task[None] | None = None
+    tasks: list[asyncio.Task[None]] = []
     if settings.run_auto_backup_loop:
-        task = asyncio.create_task(
-            run_auto_backup_loop(get_session_factory(), settings.backups_dir)
+        tasks.append(
+            asyncio.create_task(run_auto_backup_loop(get_session_factory(), settings.backups_dir))
+        )
+    if settings.run_federation_loop:
+        tasks.append(
+            asyncio.create_task(
+                run_federation_loop(get_session_factory(), settings.federation_sync_interval_s)
+            )
         )
 
     yield
 
-    if task is not None:
+    for task in tasks:
         task.cancel()
-        await task
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
 
 
 def _cache_headers(relative_path: str) -> dict[str, str]:
@@ -121,6 +135,9 @@ def create_app() -> FastAPI:
     # screen needs before anyone is logged in (Lot 10).
     app.include_router(health_router, prefix="/api")
     app.include_router(auth_router, prefix="/api")
+    # Called by a paired instance's server, authenticated by its own token
+    # (Lot 11b) — never by a profile's session.
+    app.include_router(federation_protocol_router, prefix="/api")
 
     # Everything else requires a logged-in profile — declared once here, so a
     # new route can never be forgotten unprotected.
@@ -131,6 +148,7 @@ def create_app() -> FastAPI:
     app.include_router(backup_router, prefix="/api", dependencies=logged_in)
     app.include_router(users_router, prefix="/api", dependencies=logged_in)
     app.include_router(shared_router, prefix="/api", dependencies=logged_in)
+    app.include_router(federation_router, prefix="/api", dependencies=logged_in)
 
     # Registered last: the catch-all route must never shadow an API route.
     if settings.frontend_dist is not None:

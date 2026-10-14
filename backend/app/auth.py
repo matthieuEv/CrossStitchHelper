@@ -43,9 +43,24 @@ from sqlalchemy.orm import Session
 
 from app.db import get_session
 from app.http import api_error
+from app.instance import instance_id
 from app.models import User, UserSession
 
-COOKIE_NAME = "csh_session"
+_COOKIE_PREFIX = "csh_session_"
+
+
+def cookie_name(session: Session) -> str:
+    """The session cookie's name, specific to this instance (Lot 11b).
+
+    A browser scopes cookies by host name, never by port: two instances on
+    one machine (`http://nas:8765` and `http://nas:8766` — or two paired
+    sites tried side by side) would otherwise overwrite each other's
+    session with every login."""
+    return _COOKIE_PREFIX + instance_id(session)[:12]
+
+
+def session_token(session: Session, request: Request) -> str | None:
+    return request.cookies.get(cookie_name(session))
 
 # A household logs in once per device and expects to stay logged in: a short
 # idle timeout (OWASP's 15-30 minutes, meant for online services) would ask
@@ -97,7 +112,7 @@ def open_session(session: Session, user: User, request: Request, response: Respo
     )
     session.commit()
     response.set_cookie(
-        COOKIE_NAME,
+        cookie_name(session),
         token,
         max_age=int(SESSION_IDLE_LIFETIME.total_seconds()),
         httponly=True,
@@ -112,11 +127,11 @@ def open_session(session: Session, user: User, request: Request, response: Respo
 
 
 def close_session(session: Session, request: Request, response: Response) -> None:
-    token = request.cookies.get(COOKIE_NAME)
+    token = session_token(session, request)
     if token is not None:
         session.execute(delete(UserSession).where(UserSession.token_hash == _token_hash(token)))
         session.commit()
-    response.delete_cookie(COOKIE_NAME, path="/")
+    response.delete_cookie(cookie_name(session), path="/")
 
 
 def end_sessions(session: Session, user_id: str, *, keep_token: str | None = None) -> None:
@@ -130,7 +145,7 @@ def end_sessions(session: Session, user_id: str, *, keep_token: str | None = Non
 
 def user_for_request(session: Session, request: Request) -> User | None:
     """The user whose valid session cookie came with `request`, if any."""
-    token = request.cookies.get(COOKIE_NAME)
+    token = session_token(session, request)
     if token is None:
         return None
     row = session.execute(
