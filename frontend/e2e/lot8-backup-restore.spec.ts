@@ -4,6 +4,8 @@ import path from "node:path";
 
 import { expect, test, type APIRequestContext } from "@playwright/test";
 
+import { E2E_ADMIN } from "./global-setup";
+
 /**
  * Checks the "done when" criterion of Lot 8's "Data backup/restore"
  * sub-project (docs/roadmap.md, specification §7.5): from Settings, export a
@@ -121,9 +123,14 @@ test.describe("Lot 8 — data backup/restore", () => {
     const content = JSON.parse(fs.readFileSync(downloadPath as string, "utf-8")) as {
       format: string;
       format_version: number;
+      users: Array<{ email: string; role: string }>;
     };
     expect(content.format).toBe("csh-backup");
-    expect(content.format_version).toBe(1);
+    // Version 2 since profiles (Lot 10): the profiles travel with the backup.
+    expect(content.format_version).toBe(2);
+    expect(content.users.some((user) => user.email === E2E_ADMIN.email && user.role === "admin")).toBe(
+      true,
+    );
   });
 
   test("the daily automatic backup can be toggled from Settings", async ({

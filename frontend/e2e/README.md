@@ -26,6 +26,14 @@ cd frontend
 PLAYWRIGHT_BASE_URL=http://127.0.0.1:5173 npm run test:e2e
 ```
 
+Profiles (Lot 10): `global-setup.ts` creates the instance's first admin — the
+e2e admin — before any spec runs, or logs it in again on an instance it set up
+itself, and every spec runs with that session. The target instance must
+therefore be **fresh** (empty `CSH_DATA_DIR`, demo pattern seeded first, as
+above): one already set up with another first admin is refused with an
+explicit message. Specs that act as another profile open their own browser
+context (see `issue-77-profiles.spec.ts`).
+
 Without `PLAYWRIGHT_BASE_URL`, the default target is `http://127.0.0.1:8000`
 (the Docker image, which serves the API and the built frontend on the same
 port — see `.github/workflows/ci.yml`).
