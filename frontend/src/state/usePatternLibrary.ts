@@ -43,7 +43,8 @@ export interface LibraryPattern {
   progress: Progress;
   special: SpecialProgress;
   version: number;
-  hoursAgo: number;
+  /** When the pattern was last stitched, in milliseconds since the epoch. */
+  lastActivityAt: number;
 }
 
 export type LibrarySource = "loading" | "server" | "cache" | "demo";
@@ -94,10 +95,6 @@ async function applyPending(patternId: string, base: LayeredBase): Promise<Layer
   return next;
 }
 
-function hoursAgoFrom(isoDate: string): number {
-  return Math.max(0, (Date.now() - new Date(isoDate).getTime()) / 3_600_000);
-}
-
 async function loadEntryFromServer(summary: ApiPatternSummary): Promise<LibraryPattern> {
   const [detail, grid, progress] = await Promise.all([
     fetchPatternDetail(summary.id),
@@ -118,7 +115,7 @@ async function loadEntryFromServer(summary: ApiPatternSummary): Promise<LibraryP
     progress: merged.full,
     special: merged.special,
     version: progress.version,
-    hoursAgo: hoursAgoFrom(summary.updated_at),
+    lastActivityAt: Date.parse(summary.updated_at),
   };
 }
 
@@ -143,7 +140,7 @@ async function loadEntriesFromCache(): Promise<LibraryPattern[]> {
       progress: merged.full,
       special: merged.special,
       version: cachedProgress?.version ?? 0,
-      hoursAgo: (Date.now() - row.cachedAt) / 3_600_000,
+      lastActivityAt: row.cachedAt,
     });
   }
   return entries;

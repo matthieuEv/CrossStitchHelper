@@ -149,8 +149,8 @@ function buildVariant(kind: VariantKind): { cells: Uint8Array; width: number; he
 export interface DemoLibraryEntry {
   pattern: Pattern;
   progress: Progress;
-  /** Age of the last session, in hours. */
-  hoursAgo: number;
+  /** When the last session was, in milliseconds since the epoch. */
+  lastActivityAt: number;
 }
 
 function progressFromFraction(
@@ -177,6 +177,7 @@ export function createDemoVariants(): DemoLibraryEntry[] {
     { kind: "alphabet", id: "demo-alphabet", name: "Alphabet ancien", fraction: 1, hoursAgo: 2160 },
   ];
 
+  const now = Date.now();
   return definitions.map((definition) => {
     const built = buildVariant(definition.kind);
     const pattern: Pattern = {
@@ -196,7 +197,7 @@ export function createDemoVariants(): DemoLibraryEntry[] {
     return {
       pattern,
       progress: progressFromFraction(built.cells, built.width, built.height, definition.fraction),
-      hoursAgo: definition.hoursAgo,
+      lastActivityAt: now - definition.hoursAgo * 3_600_000,
     };
   });
 }

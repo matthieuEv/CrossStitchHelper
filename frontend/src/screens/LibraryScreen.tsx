@@ -25,7 +25,8 @@ import type { Pattern, Progress, SpecialProgress } from "../pattern/types";
 export interface LibraryEntry {
   pattern: Pattern;
   progress: Progress;
-  hoursAgo: number;
+  /** When the pattern was last stitched, in milliseconds since the epoch. */
+  lastActivityAt: number;
   /** Progress version known to the server; absent for a purely local pattern. */
   version?: number;
   /** Special stitch progress (Lot 8); absent for a purely local demo pattern
@@ -141,6 +142,9 @@ export function LibraryScreen({
     }
   };
   const relative = useRelativeTime();
+  // Ages are worked out on every render, not when the library was loaded:
+  // coming back to the library an hour later shows an hour more.
+  const now = Date.now();
   const compareText = useCompareText();
   const [sort, setSort] = useState<LibrarySort>(readStoredLibrarySort);
   const [sortMenuOpen, setSortMenuOpen] = useState(false);
@@ -183,7 +187,7 @@ export function LibraryScreen({
   // Ties always fall back to recent activity, then name: the order never
   // depends on the order the server happened to list the patterns in.
   const byRecent = (a: (typeof cards)[number], b: (typeof cards)[number]): number =>
-    a.entry.hoursAgo - b.entry.hoursAgo;
+    b.entry.lastActivityAt - a.entry.lastActivityAt;
   const byName = (a: (typeof cards)[number], b: (typeof cards)[number]): number =>
     compareText(a.entry.pattern.name, b.entry.pattern.name);
   cards.sort((a, b) => {
@@ -390,7 +394,7 @@ export function LibraryScreen({
                   </div>
                 )}
                 <div className="text-faint" style={{ fontSize: 11 }}>
-                  {relative(entry.hoursAgo)}
+                  {relative((now - entry.lastActivityAt) / 3_600_000)}
                 </div>
               </div>
             </button>

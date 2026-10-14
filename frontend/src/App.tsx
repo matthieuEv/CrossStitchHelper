@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 
 import { AppShell } from "./components/AppShell";
 import { ProfileMenu } from "./components/ProfileMenu";
@@ -50,6 +50,12 @@ function PatternSession({
     entry.version ?? 0,
     entry.special ?? emptySpecialProgress(entry.pattern),
   );
+  // The library is not reloaded after stitching. Like the progress, which the
+  // tracker updates in place, the card's "last stitched" time moves on here,
+  // or going back to the library would show the time it was loaded.
+  useEffect(() => {
+    if (tracker.version > 0) entry.lastActivityAt = Date.now();
+  }, [entry, tracker.version]);
   return <>{children(tracker)}</>;
 }
 
@@ -68,7 +74,7 @@ export function App() {
     const main: LibraryEntry = {
       pattern,
       progress: createDemoProgress(pattern),
-      hoursAgo: 14,
+      lastActivityAt: Date.now() - 14 * 3_600_000,
     };
     return [main, ...createDemoVariants()];
   }, []);
