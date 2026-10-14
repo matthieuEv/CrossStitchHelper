@@ -230,6 +230,61 @@ export const fr = {
   "settings.about":
     "CrossStitchHelper {version} — logiciel libre, auto-hébergé. Aucune donnée ne quitte votre serveur. Ajoutez l'app à l'écran d'accueil pour l'utiliser hors ligne.",
 
+  // --- Profiles (Lot 10, issue #77) -----------------------------------------
+  "auth.loading": "Chargement…",
+  "auth.unreachable":
+    "Serveur injoignable, et aucun profil n'a encore été utilisé sur cet appareil. Vérifiez la connexion puis réessayez.",
+  "auth.retry": "Réessayer",
+  "auth.who.title": "Qui brode ?",
+  "auth.who.password": "Mot de passe de {name}",
+  "auth.who.submit": "Entrer",
+  "auth.setup.title": "Bienvenue",
+  "auth.setup.intro":
+    "Créez le premier profil de cette instance : il sera administrateur et pourra ensuite ajouter les autres. Les motifs déjà présents sur ce serveur lui seront attribués.",
+  "auth.setup.submit": "Créer le profil administrateur",
+
+  "account.title": "Mon compte",
+  "account.role.admin": "Administrateur",
+  "account.role.user": "Utilisateur",
+  "account.firstName": "Prénom",
+  "account.lastName": "Nom",
+  "account.email": "Adresse e-mail",
+  "account.password": "Mot de passe",
+  "account.password.confirm": "Confirmer le mot de passe",
+  "account.password.tooShort": "Le mot de passe doit faire au moins {min} caractères.",
+  "account.password.mismatch": "Les deux mots de passe ne correspondent pas.",
+  "account.save": "Enregistrer",
+  "account.saved": "Modifications enregistrées.",
+  "account.password.change": "Changer de mot de passe",
+  "account.password.current": "Mot de passe actuel",
+  "account.password.new": "Nouveau mot de passe",
+  "account.password.submit": "Changer le mot de passe",
+  "account.password.changed":
+    "Mot de passe changé. Vos autres appareils devront se reconnecter.",
+
+  "profile.menu": "Profil de {name}",
+  "profile.account": "Mon compte",
+  "profile.switch": "Changer de profil",
+  "profile.switch.pending":
+    "{count} case(s) cochée(s) n'ont pas encore pu être envoyées au serveur. Elles restent sur cet appareil et partiront à la prochaine connexion de ce profil. Changer de profil quand même ?",
+
+  "profiles.title": "Gestion des profils",
+  "profiles.hint":
+    "Chaque profil a sa propre bibliothèque, invisible des autres. Il reste toujours au moins un administrateur.",
+  "profiles.role": "Rôle",
+  "profiles.initialPassword": "Mot de passe initial",
+  "profiles.resetPassword": "Nouveau mot de passe (laisser vide pour ne pas le changer)",
+  "profiles.create": "Ajouter",
+  "profiles.add": "Ajouter un profil",
+  "profiles.you": "(vous)",
+  "profiles.patternCount": "{count} motif(s)",
+  "profiles.edit": "Modifier",
+  "profiles.editLabel": "Modifier le profil de {name}",
+  "profiles.delete": "Supprimer",
+  "profiles.deleteLabel": "Supprimer le profil de {name}",
+  "profiles.deleteConfirm":
+    "Supprimer le profil de {name} ? Ses {count} motif(s) personnel(s) et leur progression seront supprimés avec lui, définitivement.",
+
   "server.ok": "Serveur joignable",
   "server.unreachable": "Serveur injoignable — les modifications resteront locales.",
   "server.checking": "Connexion au serveur…",
@@ -267,6 +322,19 @@ export const fr = {
   "error.pattern_grid_or_progress_not_found": "Grille ou progression introuvable.",
   "error.pattern_progress_index_out_of_range":
     "Index hors limites pour la catégorie « {layer} » : {index} >= {bound}.",
+  "error.auth_required": "Session expirée : reconnectez-vous.",
+  "error.admin_required": "Réservé aux administrateurs.",
+  "error.client_header_missing": "Requête refusée (elle ne vient pas de l'application).",
+  "error.login_failed": "Mot de passe incorrect.",
+  "error.login_throttled": "Trop d'essais. Réessayez dans {seconds} s.",
+  "error.setup_already_done": "Cette instance a déjà un administrateur.",
+  "error.email_taken": "Cette adresse e-mail est déjà utilisée par un autre profil.",
+  "error.last_admin":
+    "Impossible : il doit toujours rester au moins un administrateur. Nommez d'abord un autre administrateur.",
+  "error.current_password_wrong": "Le mot de passe actuel est incorrect.",
+  "error.user_not_found": "Profil introuvable.",
+  "error.backup_without_admin":
+    "Cette sauvegarde ne contient aucun administrateur : la restaurer bloquerait la gestion des profils.",
 
   // --- Automatic detection warnings (translation audit, Lot 8) --------------
   // Translations of the `DetectionWarning.code` codes (backend/app/schemas.py),

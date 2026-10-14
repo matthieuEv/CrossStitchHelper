@@ -17,6 +17,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.auth import CurrentUser, require_admin
 from app.db import get_session
 from app.http import api_error
 from app.models import ImportJob, Recipe
@@ -61,10 +62,11 @@ def list_recipes(session: Annotated[Session, Depends(get_session)]) -> list[Reci
     summary="Save an import's configuration as a recipe",
 )
 def create_recipe(
-    payload: RecipeCreate, session: Annotated[Session, Depends(get_session)]
+    payload: RecipeCreate, session: Annotated[Session, Depends(get_session)], user: CurrentUser
 ) -> RecipeOut:
     job = session.get(ImportJob, payload.job_id)
-    if job is None:
+    # Only from one's own import, like every other import route (Lot 10).
+    if job is None or job.owner_id != user.id:
         raise api_error(404, "import_not_found")
 
     result: dict[str, Any] = json.loads(job.result_json)
@@ -93,7 +95,14 @@ def create_recipe(
     return _recipe_out(recipe)
 
 
-@router.delete("/{recipe_id}", status_code=204, summary="Delete a recipe")
+@router.delete(
+    "/{recipe_id}",
+    status_code=204,
+    summary="Delete a recipe",
+    # Recipes are shared by every profile (structural only, never content):
+    # deleting one affects everyone's imports, so only admins may (Lot 10).
+    dependencies=[Depends(require_admin)],
+)
 def delete_recipe(recipe_id: str, session: Annotated[Session, Depends(get_session)]) -> None:
     recipe = session.get(Recipe, recipe_id)
     if recipe is None:

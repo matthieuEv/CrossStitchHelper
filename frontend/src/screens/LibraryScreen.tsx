@@ -1,4 +1,10 @@
-import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+  type ReactNode,
+} from "react";
 
 import { PatternThumbnail } from "../components/PatternThumbnail";
 import { CloseIcon, PlusIcon } from "../components/Icons";
@@ -19,7 +25,8 @@ import type { Pattern, Progress, SpecialProgress } from "../pattern/types";
 export interface LibraryEntry {
   pattern: Pattern;
   progress: Progress;
-  hoursAgo: number;
+  /** When the pattern was last stitched, in milliseconds since the epoch. */
+  lastActivityAt: number;
   /** Progress version known to the server; absent for a purely local pattern. */
   version?: number;
   /** Special stitch progress (Lot 8); absent for a purely local demo pattern
@@ -29,6 +36,9 @@ export interface LibraryEntry {
 }
 
 interface LibraryScreenProps {
+  /** Shown at the right of the title, before "Sort" — the profile menu on a
+   * narrow screen (Lot 10). */
+  headerAccessory?: ReactNode;
   entries: readonly LibraryEntry[];
   /** The library is still loading: `entries` is not the real list yet. */
   loading?: boolean;
@@ -60,6 +70,7 @@ export function LibraryScreen({
   onDuplicate,
   onDelete,
   onEdit,
+  headerAccessory,
 }: LibraryScreenProps) {
   const t = useT();
   const hasActions = onDuplicate !== undefined && onDelete !== undefined;
@@ -131,6 +142,9 @@ export function LibraryScreen({
     }
   };
   const relative = useRelativeTime();
+  // Ages are worked out on every render, not when the library was loaded:
+  // coming back to the library an hour later shows an hour more.
+  const now = Date.now();
   const compareText = useCompareText();
   const [sort, setSort] = useState<LibrarySort>(readStoredLibrarySort);
   const [sortMenuOpen, setSortMenuOpen] = useState(false);
@@ -173,7 +187,7 @@ export function LibraryScreen({
   // Ties always fall back to recent activity, then name: the order never
   // depends on the order the server happened to list the patterns in.
   const byRecent = (a: (typeof cards)[number], b: (typeof cards)[number]): number =>
-    a.entry.hoursAgo - b.entry.hoursAgo;
+    b.entry.lastActivityAt - a.entry.lastActivityAt;
   const byName = (a: (typeof cards)[number], b: (typeof cards)[number]): number =>
     compareText(a.entry.pattern.name, b.entry.pattern.name);
   cards.sort((a, b) => {
@@ -209,33 +223,36 @@ export function LibraryScreen({
             {loading ? "\u00a0" : t("library.summary", { count: shown.length, active: inProgress })}
           </div>
         </div>
-        <div ref={sortMenuRef} style={{ position: "relative" }}>
-          <button
-            type="button"
-            className="btn btn-secondary"
-            style={{ minHeight: 44, padding: "0 16px" }}
-            aria-haspopup="menu"
-            aria-expanded={sortMenuOpen}
-            onClick={() => setSortMenuOpen((open) => !open)}
-          >
-            {t("library.sort")}
-          </button>
-          {sortMenuOpen && (
-            <div role="menu" aria-label={t("library.sort")} className="menu elev-md">
-              {LIBRARY_SORTS.map((option) => (
-                <button
-                  key={option}
-                  type="button"
-                  role="menuitemradio"
-                  aria-checked={sort === option}
-                  className="menu-item"
-                  onClick={() => chooseSort(option)}
-                >
-                  {t(`library.sort.${option}`)}
-                </button>
-              ))}
-            </div>
-          )}
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          {headerAccessory}
+          <div ref={sortMenuRef} style={{ position: "relative" }}>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              style={{ minHeight: 44, padding: "0 16px" }}
+              aria-haspopup="menu"
+              aria-expanded={sortMenuOpen}
+              onClick={() => setSortMenuOpen((open) => !open)}
+            >
+              {t("library.sort")}
+            </button>
+            {sortMenuOpen && (
+              <div role="menu" aria-label={t("library.sort")} className="menu elev-md">
+                {LIBRARY_SORTS.map((option) => (
+                  <button
+                    key={option}
+                    type="button"
+                    role="menuitemradio"
+                    aria-checked={sort === option}
+                    className="menu-item"
+                    onClick={() => chooseSort(option)}
+                  >
+                    {t(`library.sort.${option}`)}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -277,6 +294,12 @@ export function LibraryScreen({
             </button>
           ))}
         </div>
+      )}
+
+      {!loading && shown.length === 0 && (
+        <p className="text-muted" style={{ fontSize: 14 }}>
+          {t("library.empty")}
+        </p>
       )}
 
       {activeFilter !== null && visibleCards.length === 0 && (
@@ -371,7 +394,7 @@ export function LibraryScreen({
                   </div>
                 )}
                 <div className="text-faint" style={{ fontSize: 11 }}>
-                  {relative(entry.hoursAgo)}
+                  {relative((now - entry.lastActivityAt) / 3_600_000)}
                 </div>
               </div>
             </button>

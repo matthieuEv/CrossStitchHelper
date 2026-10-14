@@ -73,15 +73,48 @@ async function errorFrom(response: Response): Promise<ApiError> {
   return new ApiError(response.status, "unknown");
 }
 
+/**
+ * Called when the server answers 401 on a route that needs a logged-in
+ * profile (session expired, password reset by an admin, profile deleted):
+ * `state/auth.tsx` goes back to the login screen. Never for `/auth/*`, where
+ * a 401 is an expected answer (wrong password) handled by the caller.
+ */
+let unauthorizedListener: (() => void) | null = null;
+
+export function setUnauthorizedListener(listener: (() => void) | null): void {
+  unauthorizedListener = listener;
+}
+
+/**
+ * Every call to the API goes through here. `X-CSH-Client` is what the server
+ * checks on state-changing requests to tell its own frontend from a page of
+ * another site riding on the session cookie (`backend/app/auth.py`,
+ * Lot 10) — a cross-origin page cannot add a custom header.
+ */
+async function apiFetch(path: string, init: RequestInit = {}): Promise<Response> {
+  const headers = new Headers(init.headers);
+  headers.set("X-CSH-Client", "web");
+  const response = await fetch(`/api${path}`, { ...init, headers });
+  if (response.status === 401 && !path.startsWith("/auth/")) unauthorizedListener?.();
+  return response;
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`/api${path}`, {
-    headers: { Accept: "application/json" },
-    ...init,
-  });
+  const headers = new Headers(init?.headers);
+  if (!headers.has("Accept")) headers.set("Accept", "application/json");
+  const response = await apiFetch(path, { ...init, headers });
   if (!response.ok) {
     throw await errorFrom(response);
   }
   return (await response.json()) as T;
+}
+
+/** Same as `request`, for routes answering 204 (no body to parse). */
+async function requestNoContent(path: string, init?: RequestInit): Promise<void> {
+  const response = await apiFetch(path, init);
+  if (!response.ok) {
+    throw await errorFrom(response);
+  }
 }
 
 function postJson<T>(path: string, body: unknown, signal?: AbortSignal): Promise<T> {
@@ -105,14 +138,11 @@ function patchJson<T>(path: string, body: unknown, signal?: AbortSignal): Promis
   });
 }
 
-async function deleteRequest(path: string, signal?: AbortSignal): Promise<void> {
-  const response = await fetch(`/api${path}`, {
+function deleteRequest(path: string, signal?: AbortSignal): Promise<void> {
+  return requestNoContent(path, {
     method: "DELETE",
     ...(signal !== undefined && { signal }),
   });
-  if (!response.ok) {
-    throw await errorFrom(response);
-  }
 }
 
 export function fetchHealth(signal: AbortSignal): Promise<HealthResponse> {
@@ -509,6 +539,8 @@ export function deleteRecipe(recipeId: string, signal?: AbortSignal): Promise<vo
 // --- Full backup/restore (Lot 8, specification §7.5) -----------------------
 
 export interface ApiBackupRestoreSummary {
+  /** 0 for a backup made before profiles (format version 1, Lot 10). */
+  users_count: number;
   patterns_count: number;
   recipes_count: number;
   progress_events_count: number;
@@ -527,16 +559,12 @@ export function backupExportUrl(): string {
  * serialised JSON to send as is, `postJson` would serialise it a second time
  * (`JSON.stringify` of a string that is already JSON).
  */
-export async function restoreBackup(fileText: string): Promise<ApiBackupRestoreSummary> {
-  const response = await fetch("/api/backup/restore", {
+export function restoreBackup(fileText: string): Promise<ApiBackupRestoreSummary> {
+  return request<ApiBackupRestoreSummary>("/backup/restore", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: fileText,
   });
-  if (!response.ok) {
-    throw await errorFrom(response);
-  }
-  return (await response.json()) as ApiBackupRestoreSummary;
 }
 
 export interface ApiAutoBackupSettings {
@@ -559,6 +587,97 @@ export function setAutoBackupSetting(
     body: JSON.stringify({ enabled }),
     ...(signal !== undefined && { signal }),
   });
+}
+
+// --- Profiles (Lot 10, issue #77) ------------------------------------------
+
+export type ApiRole = "admin" | "user";
+
+/** What the login screen shows about a profile — `ProfileCard` on the server. */
+export interface ApiProfileCard {
+  id: string;
+  first_name: string;
+  initials: string;
+  /** 0-359, stable per profile: the avatar colour. */
+  avatar_hue: number;
+}
+
+export interface ApiUser extends ApiProfileCard {
+  email: string;
+  last_name: string;
+  role: ApiRole;
+  created_at: string;
+}
+
+/** A profile as listed for admins, with the size of its personal library. */
+export interface ApiAdminUser extends ApiUser {
+  pattern_count: number;
+}
+
+export interface ApiAuthStatus {
+  setup_required: boolean;
+  user: ApiUser | null;
+}
+
+export interface ApiProfileFields {
+  email: string;
+  first_name: string;
+  last_name: string;
+}
+
+export function fetchAuthStatus(signal?: AbortSignal): Promise<ApiAuthStatus> {
+  return request<ApiAuthStatus>("/auth/status", withSignal(signal));
+}
+
+export function setupFirstAdmin(
+  payload: ApiProfileFields & { password: string },
+): Promise<ApiUser> {
+  return postJson<ApiUser>("/auth/setup", payload);
+}
+
+export function fetchProfiles(signal?: AbortSignal): Promise<ApiProfileCard[]> {
+  return request<ApiProfileCard[]>("/auth/profiles", withSignal(signal));
+}
+
+export function login(userId: string, password: string): Promise<ApiUser> {
+  return postJson<ApiUser>("/auth/login", { user_id: userId, password });
+}
+
+export function logout(): Promise<void> {
+  return requestNoContent("/auth/logout", { method: "POST" });
+}
+
+export function updateMe(changes: Partial<ApiProfileFields>): Promise<ApiUser> {
+  return patchJson<ApiUser>("/auth/me", changes);
+}
+
+export function changeMyPassword(currentPassword: string, newPassword: string): Promise<void> {
+  return requestNoContent("/auth/me/password", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+  });
+}
+
+export function listUsers(signal?: AbortSignal): Promise<ApiAdminUser[]> {
+  return request<ApiAdminUser[]>("/users", withSignal(signal));
+}
+
+export function createUser(
+  payload: ApiProfileFields & { role: ApiRole; password: string },
+): Promise<ApiAdminUser> {
+  return postJson<ApiAdminUser>("/users", payload);
+}
+
+export function updateUser(
+  userId: string,
+  changes: Partial<ApiProfileFields> & { role?: ApiRole; password?: string },
+): Promise<ApiAdminUser> {
+  return patchJson<ApiAdminUser>(`/users/${userId}`, changes);
+}
+
+export function deleteUser(userId: string): Promise<void> {
+  return deleteRequest(`/users/${userId}`);
 }
 
 export type ServerState = "checking" | "ok" | "unreachable";

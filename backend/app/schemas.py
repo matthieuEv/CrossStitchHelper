@@ -564,21 +564,42 @@ class BackupRecipe(BaseModel):
     usage_count: int = 0
 
 
+class BackupUser(BaseModel):
+    """A profile (format version 2, Lot 10) — with its password hash, so a
+    restored instance can be logged into with the same passwords. Never its
+    sessions: a restore logs out every device of a profile it removes."""
+
+    id: str
+    email: str
+    first_name: str
+    last_name: str
+    role: Literal["admin", "user"]
+    password_hash: str
+    created_at: datetime
+    updated_at: datetime
+
+
 class BackupDocument(BaseModel):
     """The exported/restored document as a whole.
 
     Deliberately out of scope (`app/backup.py`): ``ImportJob`` (transient
-    state of an import wizard in progress, never durable data) and
-    ``AppMeta`` (internal bookkeeping, not user data)."""
+    state of an import wizard in progress, never durable data),
+    ``AppMeta`` (internal bookkeeping, not user data) and sessions.
+
+    ``users`` is ``None`` in a version 1 document (made before profiles,
+    Lot 10): restoring one keeps the instance's profiles and hands every
+    pattern to the admin who restores it."""
 
     format: Literal["csh-backup"] = "csh-backup"
-    format_version: int = 1
+    format_version: int = 2
     generated_at: datetime
+    users: list[BackupUser] | None = None
     patterns: list[BackupPattern] = Field(default_factory=list)
     recipes: list[BackupRecipe] = Field(default_factory=list)
 
 
 class BackupRestoreSummary(BaseModel):
+    users_count: int
     patterns_count: int
     recipes_count: int
     progress_events_count: int
@@ -596,3 +617,99 @@ class ThreadShadeOut(BaseModel):
     code: str
     name: str
     rgb_hex: str
+
+
+# --- Profiles (Lot 10, issue #77) -------------------------------------------
+
+# Deliberately loose: an address is only a contact detail and a future OpenID
+# Connect link (no email is ever sent), so anything with one `@` will do —
+# no extra dependency (`email-validator`) for a stricter check nobody needs.
+_EMAIL_PATTERN = r"^[^@\s]+@[^@\s]+$"
+Role = Literal["admin", "user"]
+
+
+class SetupRequest(BaseModel):
+    """First-launch setup: the first admin's profile."""
+
+    email: str = Field(max_length=254, pattern=_EMAIL_PATTERN)
+    first_name: str = Field(min_length=1, max_length=100)
+    last_name: str = Field(min_length=1, max_length=100)
+    password: str = Field(min_length=8, max_length=256)
+
+
+class LoginRequest(BaseModel):
+    """The login screen lists the profiles ("Who's stitching?"): the profile
+    is picked from that list, not typed, so its id identifies it."""
+
+    user_id: str = Field(max_length=32)
+    password: str = Field(max_length=256)
+
+
+class ProfileCard(BaseModel):
+    """What the login screen may show about a profile to anyone who opens
+    the app — first name, initials and a colour, never the email or the
+    role."""
+
+    id: str
+    first_name: str
+    initials: str
+    avatar_hue: int = Field(description="0-359, derived from the id: stable per profile.")
+
+
+class UserOut(BaseModel):
+    id: str
+    email: str
+    first_name: str
+    last_name: str
+    role: Role
+    initials: str
+    avatar_hue: int
+    created_at: datetime
+
+
+class AdminUserOut(UserOut):
+    """A profile as listed for admins: with the size of its personal
+    library, shown before a deletion (it is deleted along with the
+    profile)."""
+
+    pattern_count: int
+
+
+class AuthStatus(BaseModel):
+    setup_required: bool = Field(description="True while the instance has no profile at all.")
+    user: UserOut | None = None
+
+
+class MeUpdate(BaseModel):
+    """A profile editing its own information — never its role."""
+
+    email: str | None = Field(default=None, max_length=254, pattern=_EMAIL_PATTERN)
+    first_name: str | None = Field(default=None, min_length=1, max_length=100)
+    last_name: str | None = Field(default=None, min_length=1, max_length=100)
+
+
+class PasswordChange(BaseModel):
+    current_password: str = Field(max_length=256)
+    new_password: str = Field(min_length=8, max_length=256)
+
+
+class UserCreate(BaseModel):
+    """An admin adding a profile, with the initial password they chose
+    (issue #77 — no email is sent, no self-registration)."""
+
+    email: str = Field(max_length=254, pattern=_EMAIL_PATTERN)
+    first_name: str = Field(min_length=1, max_length=100)
+    last_name: str = Field(min_length=1, max_length=100)
+    role: Role = "user"
+    password: str = Field(min_length=8, max_length=256)
+
+
+class UserUpdate(BaseModel):
+    """An admin editing a profile: each field given replaces the stored one.
+    `password` is a reset (ends every session of that profile)."""
+
+    email: str | None = Field(default=None, max_length=254, pattern=_EMAIL_PATTERN)
+    first_name: str | None = Field(default=None, min_length=1, max_length=100)
+    last_name: str | None = Field(default=None, min_length=1, max_length=100)
+    role: Role | None = None
+    password: str | None = Field(default=None, min_length=8, max_length=256)

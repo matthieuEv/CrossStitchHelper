@@ -45,7 +45,13 @@ def test_export_backup_empty_by_default(client: TestClient) -> None:
     assert ".json" in response.headers["content-disposition"]
     body = response.json()
     assert body["format"] == "csh-backup"
-    assert body["format_version"] == 1
+    assert body["format_version"] == 2
+    # Lot 10: the profiles travel with the backup — here only the admin
+    # created by the `client` fixture.
+    [admin] = body["users"]
+    assert admin["email"] == "admin@example.com"
+    assert admin["role"] == "admin"
+    assert admin["password_hash"].startswith("$argon2id$")
     assert body["patterns"] == []
     assert body["recipes"] == []
 
@@ -165,7 +171,7 @@ def test_restore_rejects_unsupported_format_version(seeded_client: TestClient) -
     assert response.status_code == 400
     detail = response.json()["detail"]
     assert detail["code"] == "backup_unsupported_version"
-    assert detail["params"] == {"got": 99, "expected": 1}
+    assert detail["params"] == {"got": 99, "expected": 2}
 
 
 def test_auto_backup_setting_defaults_enabled_and_is_toggleable(client: TestClient) -> None:

@@ -23,6 +23,8 @@ test-results/
 playwright-report/
 blob-report/
 playwright/.cache/
+# Session saved by the e2e global setup (Lot 10) — test profile only.
+frontend/e2e/.auth/
 
 # Env / secrets
 .env

@@ -9,6 +9,9 @@ interface AppShellProps {
   navigate: (screen: Screen) => void;
   wide: boolean;
   version: string;
+  /** The logged-in profile's menu (Lot 10), at the foot of the sidebar —
+   * on a narrow screen, the Library header shows it instead. */
+  profile?: ReactNode;
   children: ReactNode;
 }
 
@@ -22,7 +25,7 @@ const NAV_ITEMS = ["library", "track", "stats", "settings"] as const;
  * width rather than the device model, so that an iPad's Split View is treated
  * as what it is — a narrow screen.
  */
-export function AppShell({ screen, navigate, wide, version, children }: AppShellProps) {
+export function AppShell({ screen, navigate, wide, version, profile, children }: AppShellProps) {
   const t = useT();
 
   const label = (item: (typeof NAV_ITEMS)[number], short: boolean): string => {
@@ -86,7 +89,16 @@ export function AppShell({ screen, navigate, wide, version, children }: AppShell
                 </button>
               ))}
             </div>
-            <div className="text-faint" style={{ marginTop: "auto", padding: "0 10px", fontSize: 11, lineHeight: 1.5 }}>
+            {profile !== undefined && <div style={{ marginTop: "auto" }}>{profile}</div>}
+            <div
+              className="text-faint"
+              style={{
+                marginTop: profile === undefined ? "auto" : 0,
+                padding: "0 10px",
+                fontSize: 11,
+                lineHeight: 1.5,
+              }}
+            >
               {t("app.tagline")}
               <br />
               {version}

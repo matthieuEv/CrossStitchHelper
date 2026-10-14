@@ -16,15 +16,18 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException
 from fastapi.responses import FileResponse
 
+from app.api.auth import router as auth_router
 from app.api.backup import router as backup_router
 from app.api.health import router as health_router
 from app.api.imports import router as imports_router
 from app.api.patterns import router as patterns_router
 from app.api.recipes import router as recipes_router
 from app.api.threads import router as threads_router
+from app.api.users import router as users_router
+from app.auth import current_user
 from app.auto_backup import run_auto_backup_loop
 from app.config import get_settings
 from app.db import get_session_factory
@@ -114,12 +117,20 @@ def create_app() -> FastAPI:
         redoc_url=None,
     )
 
+    # Reachable without a session: the health check, and what the login
+    # screen needs before anyone is logged in (Lot 10).
     app.include_router(health_router, prefix="/api")
-    app.include_router(patterns_router, prefix="/api")
-    app.include_router(imports_router, prefix="/api")
-    app.include_router(recipes_router, prefix="/api")
-    app.include_router(backup_router, prefix="/api")
-    app.include_router(threads_router, prefix="/api")
+    app.include_router(auth_router, prefix="/api")
+
+    # Everything else requires a logged-in profile — declared once here, so a
+    # new route can never be forgotten unprotected.
+    logged_in = [Depends(current_user)]
+    app.include_router(patterns_router, prefix="/api", dependencies=logged_in)
+    app.include_router(imports_router, prefix="/api", dependencies=logged_in)
+    app.include_router(recipes_router, prefix="/api", dependencies=logged_in)
+    app.include_router(backup_router, prefix="/api", dependencies=logged_in)
+    app.include_router(users_router, prefix="/api", dependencies=logged_in)
+    app.include_router(threads_router, prefix="/api", dependencies=logged_in)
 
     # Registered last: the catch-all route must never shadow an API route.
     if settings.frontend_dist is not None:

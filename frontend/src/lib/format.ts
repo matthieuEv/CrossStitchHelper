@@ -46,7 +46,8 @@ export function percent(value: number): string {
 }
 
 /**
- * Formats an age ("3 days ago").
+ * Formats an age ("12 min ago", "3 days ago"): minutes within the first
+ * hour, then hours, days and months.
  *
  * The mockups showed hard-coded dates; a relative date stays correct without
  * depending on when you look at the screen, and translates itself.
@@ -56,7 +57,12 @@ export function useRelativeTime(): (hoursAgo: number) => string {
   return useMemo(() => {
     const formatter = new Intl.RelativeTimeFormat(localeTag(language), { numeric: "auto" });
     return (hoursAgo: number) => {
-      if (hoursAgo < 24) return formatter.format(-Math.max(1, Math.round(hoursAgo)), "hour");
+      // Rounded before choosing the unit, so 59.7 minutes reads "1 hour ago",
+      // never "60 minutes ago".
+      const minutes = Math.round(hoursAgo * 60);
+      if (minutes < 60) return formatter.format(-Math.max(1, minutes), "minute");
+      const hours = Math.round(hoursAgo);
+      if (hours < 24) return formatter.format(-hours, "hour");
       const days = Math.round(hoursAgo / 24);
       if (days < 30) return formatter.format(-days, "day");
       return formatter.format(-Math.round(days / 30), "month");
@@ -73,23 +79,5 @@ export function useWeekdayLabel(): (index: number) => string {
     return (index: number) =>
       // 2024-01-01 was a Monday: a stable offset whatever the locale.
       formatter.format(new Date(Date.UTC(2024, 0, 1 + index)));
-  }, [language]);
-}
-
-/**
- * Age of a stitching session ("12 min ago") — finer granularity than
- * `useRelativeTime` (minutes within the first hour), useful for a session
- * that has only just ended; deliberately distinct from `useRelativeTime`,
- * which starts at hours for a broader history.
- */
-export function useSessionRelativeTime(): (hoursAgo: number) => string {
-  const { language } = useI18n();
-  return useMemo(() => {
-    const formatter = new Intl.RelativeTimeFormat(localeTag(language), { numeric: "auto" });
-    return (hoursAgo: number) => {
-      if (hoursAgo < 1) return formatter.format(-Math.max(1, Math.round(hoursAgo * 60)), "minute");
-      if (hoursAgo < 24) return formatter.format(-Math.round(hoursAgo), "hour");
-      return formatter.format(-Math.round(hoursAgo / 24), "day");
-    };
   }, [language]);
 }

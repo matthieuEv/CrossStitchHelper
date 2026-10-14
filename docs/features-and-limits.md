@@ -35,10 +35,16 @@
 - Estimate of the number of thread skeins needed (and those still to be used), depending on the chosen fabric.
 - Progress history over time.
 
+### Stitch as a household or group
+
+- Several profiles on one instance, each with its own private library and progress: nobody sees the patterns of another profile.
+- "Who's stitching?" on opening the app: pick your profile, enter your password — on a shared iPad, switching person takes two taps.
+- An administrator adds the people (with an initial password they choose), edits them, resets a forgotten password, removes them. There is always at least one administrator.
+
 ### Stay at home
 
 - The application is installed on your own hardware (computer, NAS, personal mini-server) — no data is sent to an external service.
-- Imported patterns and progress are never shared with other users or stored anywhere other than with the user.
+- Imported patterns and progress are never shared with other users or stored anywhere other than with the user — each profile's library is private to it.
 - The app is free and the code is open: nothing to pay, nothing that could shut down or become paid overnight.
 - Usable like a real app on iPhone/iPad (home screen icon, full screen), without going through the App Store.
 
@@ -53,7 +59,7 @@ These are deliberate scope choices, not features still missing — they remain t
 - **It neither offers nor sells patterns.** No library of charts to download in the app: everyone imports the files they already own.
 - **It shares nothing between users.** No "see what others are stitching" feature, no pooled patterns, no social network around the app.
 - **It will not be a "native" iPhone/iPad app** downloadable from the App Store — it will be a web page you install on the home screen, which amounts to the same thing in use but avoids Apple's fees and constraints. *(To be validated together: this is a deliberate trade-off to stay free, not a technical limitation that could not be lifted later if needed.)*
-- **It does not handle several separate accounts/users.** One instance = personal use (or shared with no distinction between the people using it).
+- **It has no sign-up and sends no email.** Profiles are created by an administrator of the instance; a forgotten password is reset by an administrator, not by an email link.
 - **It does not sync with a public cloud** (no iCloud, no Google Drive) — backup and synchronisation stay internal to the app, on the server you host yourself.
 
 ---
@@ -66,7 +72,7 @@ These are not unfinished features: they are limits inherent to the problem, whic
 - **Automatic recognition (colour and symbol) remains probabilistic, never 100% guaranteed.** On PDFs hand-drawn for publication, the app aims for high reliability, but a small proportion of cells — flagged as such — may need manual checking or correction. This is not a teething problem to fix over time: it is a limit inherent to automatically recognising shapes and colours from a document, however much care goes into development.
 - **Smoothness on a very large pattern depends on the device used.** An old iPhone will always be less smooth than a recent model on a pattern of several tens of thousands of cells.
 - **Accessing your app from outside your home** requires a little technical setup (a tunnel or remote access to set up), by design — it is not automatic like a typical cloud service, and that will not change.
-- **An instance remains designed for personal or household use**, with no distinction between several people using it (progress, statistics and patterns are shared by everyone who accesses the instance).
+- **An instance remains designed for a household or a small group**: profiles keep libraries apart, but anyone who opens the app sees the list of profile first names on the login screen.
 
 ---
 
@@ -74,7 +80,6 @@ These are not unfinished features: they are limits inherent to the problem, whic
 
 This document is precisely meant to check together whether an important feature is missing before starting to build. A few open questions, not yet settled one way or the other:
 
-- Should tracking handle several distinct people on the same instance (for example, a couple each stitching their own patterns on the same server, with fully separate progress)?
 - Should the Apple Pencil be usable on iPad to mark cells or annotate the grid?
 - Is a "print" mode needed to output a paper version of the pattern or the legend?
 - Should it be possible to share a pattern (just the file, not via the app) with another person who has their own instance?

@@ -49,6 +49,12 @@ curl http://localhost:8765/api/health
 Migrations run automatically on every startup, no manual step needed after an
 update.
 
+**5. Create the first profile:** open the instance in a browser. On first
+launch it asks for the first profile — an administrator. Patterns already on
+the server (an instance updated from a version without profiles) are given to
+it. That administrator then adds the other people from Settings → Profile
+management, each with their own private library and an initial password.
+
 That's it. Everything below is optional detail.
 
 ### Add it to your home screen (iPhone / iPad)
@@ -84,6 +90,23 @@ docker compose up -d --build
 
 ---
 
+### Forgotten password
+
+No email is ever sent: an administrator resets a forgotten password from
+Settings → Profile management. If the only administrator is the one who
+forgot it, do it from the server:
+
+```bash
+docker exec crossstitchhelper python -m app.cli list-profiles
+```
+
+```bash
+docker exec crossstitchhelper python -m app.cli reset-password someone@example.com
+```
+
+`reset-password` prints a new password to log in with (change it right after
+from Settings → My account) and logs that profile out of every device.
+
 ## Updating
 
 ```bash
@@ -117,8 +140,9 @@ If stopping the service isn't an option, `sqlite3 data/crossstitchhelper.db
 ".backup backup.db"` takes a consistent copy while it's running.
 
 Without server access, the app also offers its own backup from Settings →
-Data: a downloadable JSON export you can use to restore later (replaces all
-existing data). A daily automatic backup, toggled in the same place, writes a
+Data (administrators only): a downloadable JSON export of the whole instance —
+every profile, with its password hash, and every library — you can use to
+restore later (replaces all existing data, profiles included). A daily automatic backup, toggled in the same place, writes a
 snapshot to `data/backups/` (last 14 kept), already covered by the procedure
 above since it's in the same `./data` volume.
 

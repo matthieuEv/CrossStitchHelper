@@ -4,6 +4,7 @@ import io
 import json
 import zipfile
 from collections.abc import Iterator
+from datetime import UTC, datetime, timedelta, timezone
 
 import pytest
 from fastapi.testclient import TestClient
@@ -11,6 +12,7 @@ from sqlalchemy import text
 
 from app.codec import base64_to_bytes, decode_uint16_layer, get_bit
 from app.db import get_session_factory
+from app.models import Pattern
 from app.seed import DEMO_PATTERN_ID, HEIGHT, WIDTH, seed_demo_pattern
 
 
@@ -38,6 +40,35 @@ def test_list_patterns_includes_seeded_demo(seeded_client: TestClient) -> None:
     # The border is pre-checked by the seed: neither 0% nor 100%.
     assert 0 < summary["percent"] < 100
     assert summary["stitched_count"] > 0
+
+
+def test_timestamps_carry_their_utc_offset(seeded_client: TestClient) -> None:
+    """SQLite keeps no time zone: without one in the API, a browser reads the
+    time as its own local time ("2 hours ago" for a pattern just changed)."""
+    [summary] = seeded_client.get("/api/patterns").json()
+    updated_at = datetime.fromisoformat(summary["updated_at"])
+    assert updated_at.utcoffset() == timedelta(0)
+    assert abs(datetime.now(UTC) - updated_at) < timedelta(minutes=1)
+
+
+def test_timestamps_are_stored_in_utc_as_before(seeded_client: TestClient) -> None:
+    paris_summer = timezone(timedelta(hours=2))
+    with get_session_factory()() as session:
+        pattern = session.get(Pattern, DEMO_PATTERN_ID)
+        assert pattern is not None
+        pattern.created_at = datetime(2026, 10, 14, 10, 0, tzinfo=paris_summer)
+        session.commit()
+        # Same text as the naive UTC values already in existing databases.
+        stored = session.execute(
+            text("SELECT created_at FROM patterns WHERE id = :id"), {"id": DEMO_PATTERN_ID}
+        ).scalar_one()
+        assert stored == "2026-10-14 08:00:00.000000"
+        session.expire_all()
+        pattern = session.get(Pattern, DEMO_PATTERN_ID)
+        assert pattern is not None
+        assert pattern.created_at == datetime(2026, 10, 14, 8, 0, tzinfo=UTC)
+        assert pattern.created_at.tzinfo is UTC
+
 
 
 def test_get_pattern_detail_exposes_palette(seeded_client: TestClient) -> None:

@@ -21,6 +21,7 @@ from datetime import UTC, datetime
 
 from sqlalchemy.orm import Session
 
+from app.accounts import first_admin_id
 from app.codec import bitmap_byte_length, bitmap_from_indices, encode_uint16_layer, set_bit
 from app.models import Grid, PaletteEntry, Pattern, Progress
 
@@ -167,6 +168,10 @@ def seed_demo_pattern(session: Session, *, force: bool = False) -> Pattern:
     Idempotent by default: if the pattern already exists, it is returned as
     is — a re-import must never overwrite progress already checked
     (structural constraint from `CLAUDE.md`).
+
+    Owner (Lot 10): the oldest admin when the instance already has profiles;
+    otherwise none yet — the first-launch setup then hands it to the first
+    admin, like any data that predates profiles.
     """
     existing = session.get(Pattern, DEMO_PATTERN_ID)
     if existing is not None and not force:
@@ -182,7 +187,7 @@ def seed_demo_pattern(session: Session, *, force: bool = False) -> Pattern:
 
     pattern = Pattern(
         id=DEMO_PATTERN_ID,
-        owner_id=None,
+        owner_id=first_admin_id(session),
         name="Démonstration — anneaux 255×180",
         source_filename=None,
         source_sha256=None,
