@@ -181,6 +181,10 @@ export interface ApiPatternSummary {
   labels: string[];
   created_at: string;
   updated_at: string;
+  /** The shared pattern this one is a copy of (Lot 11). */
+  origin_pattern_id?: string | null;
+  /** That shared pattern's content changed since it was copied. */
+  update_available?: boolean;
 }
 
 export interface ApiPatternDetail {
@@ -492,12 +496,22 @@ export function extractImport(jobId: string, signal?: AbortSignal): Promise<ApiI
 }
 
 export interface ApiImportCommitResponse {
-  pattern_id: string;
+  /** The personal pattern — null when imported into the shared library only. */
+  pattern_id: string | null;
+  shared_pattern_id: string | null;
 }
+
+/** Where an import goes (Lot 11): one's library, the shared one, or both. */
+export type ApiLibraryChoice = "personal" | "shared" | "both";
 
 export function commitImport(
   jobId: string,
-  payload: { name: string; fabric_count?: number; labels?: string[] },
+  payload: {
+    name: string;
+    fabric_count?: number;
+    labels?: string[];
+    library?: ApiLibraryChoice;
+  },
   signal?: AbortSignal,
 ): Promise<ApiImportCommitResponse> {
   return postJson<ApiImportCommitResponse>(`/imports/${jobId}/commit`, payload, signal);
@@ -678,6 +692,121 @@ export function updateUser(
 
 export function deleteUser(userId: string): Promise<void> {
   return deleteRequest(`/users/${userId}`);
+}
+
+// --- Shared library (Lot 11, issue #78) ------------------------------------
+
+export interface ApiSharedPattern {
+  id: string;
+  name: string;
+  width: number;
+  height: number;
+  palette_count: number;
+  cell_count: number;
+  labels: string[];
+  revision: number;
+  /** Null once the profile that added it has been deleted. */
+  contributed_by_name: string | null;
+  created_at: string;
+  updated_at: string;
+  /** The logged-in profile's copies of it. */
+  my_copy_ids: string[];
+}
+
+export type ApiSharedRequestKind = "removal" | "replacement";
+export type ApiSharedRequestStatus = "pending" | "accepted" | "rejected" | "cancelled";
+
+export interface ApiSharedRequest {
+  id: string;
+  kind: ApiSharedRequestKind;
+  status: ApiSharedRequestStatus;
+  /** Null once the shared pattern is gone — `pattern_name` remains. */
+  shared_pattern_id: string | null;
+  pattern_name: string;
+  requested_by_name: string | null;
+  mine: boolean;
+  message: string | null;
+  /** For a pending replacement: the frozen proposed content. */
+  proposal_pattern_id: string | null;
+  created_at: string;
+  resolved_at: string | null;
+}
+
+export interface ApiSharedLibrary {
+  patterns: ApiSharedPattern[];
+  /** Every pending request for an admin; one's own, settled ones included. */
+  requests: ApiSharedRequest[];
+}
+
+export function fetchSharedLibrary(signal?: AbortSignal): Promise<ApiSharedLibrary> {
+  return request<ApiSharedLibrary>("/shared", withSignal(signal));
+}
+
+/** A shared pattern, or a proposal (admins and its author). */
+export function fetchSharedPatternDetail(id: string, signal?: AbortSignal): Promise<ApiPatternDetail> {
+  return request<ApiPatternDetail>(`/shared/patterns/${encodeURIComponent(id)}`, withSignal(signal));
+}
+
+export function fetchSharedGrid(id: string, signal?: AbortSignal): Promise<ApiGrid> {
+  return request<ApiGrid>(`/shared/patterns/${encodeURIComponent(id)}/grid`, withSignal(signal));
+}
+
+/** Copies a shared pattern into one's library under `name`. */
+export function copySharedPattern(id: string, name: string): Promise<{ id: string }> {
+  return postJson<{ id: string }>(`/shared/patterns/${encodeURIComponent(id)}/copy`, { name });
+}
+
+/** Puts a copy of one of my patterns in the shared library. */
+export function sharePattern(id: string): Promise<{ id: string }> {
+  return postJson<{ id: string }>(`/patterns/${encodeURIComponent(id)}/share`, {});
+}
+
+/** Brings a copy up to its shared original: in place, or as a new copy
+ * named `name` when the progress would not survive (`in_place: false`). */
+export function updateFromOrigin(
+  id: string,
+  name: string,
+): Promise<{ pattern_id: string; in_place: boolean }> {
+  return postJson<{ pattern_id: string; in_place: boolean }>(
+    `/patterns/${encodeURIComponent(id)}/update-from-origin`,
+    { name },
+  );
+}
+
+/** Admins: rename a shared pattern, edit its labels. */
+export function updateSharedPattern(
+  id: string,
+  changes: { name?: string; labels?: string[] },
+): Promise<ApiPatternDetail> {
+  return patchJson<ApiPatternDetail>(`/shared/patterns/${encodeURIComponent(id)}`, changes);
+}
+
+/** Admins: replace a shared pattern's content with one of their patterns. */
+export function replaceSharedPattern(id: string, sourcePatternId: string): Promise<{ id: string }> {
+  return postJson<{ id: string }>(`/shared/patterns/${encodeURIComponent(id)}/replace`, {
+    source_pattern_id: sourcePatternId,
+  });
+}
+
+/** Admins: remove a shared pattern (copies keep theirs). */
+export function deleteSharedPattern(id: string): Promise<void> {
+  return deleteRequest(`/shared/patterns/${encodeURIComponent(id)}`);
+}
+
+export function createSharedRequest(payload: {
+  kind: ApiSharedRequestKind;
+  shared_pattern_id: string;
+  message?: string;
+  proposal_pattern_id?: string;
+}): Promise<ApiSharedRequest> {
+  return postJson<ApiSharedRequest>("/shared/requests", payload);
+}
+
+export function settleSharedRequest(
+  id: string,
+  action: "accept" | "reject" | "cancel",
+): Promise<ApiSharedRequest> {
+  return postJson<ApiSharedRequest>(`/shared/requests/${encodeURIComponent(id)}/${action}`, {});
 }
 
 export type ServerState = "checking" | "ok" | "unreachable";

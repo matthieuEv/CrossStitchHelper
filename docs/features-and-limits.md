@@ -41,10 +41,16 @@
 - "Who's stitching?" on opening the app: pick your profile, enter your password — on a shared iPad, switching person takes two taps.
 - An administrator adds the people (with an initial password they choose), edits them, resets a forgotten password, removes them. There is always at least one administrator.
 
+### Share patterns within the group
+
+- A shared library next to everyone's own: anyone in the group can add a pattern to it (when importing, or from one of their patterns) and copy a shared pattern into their library to stitch it — progress always stays personal.
+- Only administrators rename, replace or remove a shared pattern. Anyone else asks them: a removal request, or a proposal to replace a pattern with their own version. Everyone sees what became of their requests.
+- When a shared pattern is replaced, everyone who copied it sees "Update" on their copy; updating is their choice and never loses the stitching already done.
+
 ### Stay at home
 
 - The application is installed on your own hardware (computer, NAS, personal mini-server) — no data is sent to an external service.
-- Imported patterns and progress are never shared with other users or stored anywhere other than with the user — each profile's library is private to it.
+- Patterns and progress are never stored anywhere other than on your server. Each profile's library is private; a pattern is shared with the group only when someone shares it, and progress never is.
 - The app is free and the code is open: nothing to pay, nothing that could shut down or become paid overnight.
 - Usable like a real app on iPhone/iPad (home screen icon, full screen), without going through the App Store.
 
@@ -57,7 +63,7 @@ These are deliberate scope choices, not features still missing — they remain t
 - **It does not create patterns.** It does not turn a personal photo into a chart to stitch (it is not a creation tool, only a tool for reading/tracking an existing pattern).
 - **It does not offer photo capture or automatic recognition from a free-form photo of a paper chart.** A decision made along the way (not in the initial plan): with no real reference file to verify such detection, and full-frame computer vision too uncertain to be honestly automated in this application — see specification §13 (decision log). The universal manual import (cropping, dimensions, palette and painting by hand) remains available for any file, images included, if you drop one yourself.
 - **It neither offers nor sells patterns.** No library of charts to download in the app: everyone imports the files they already own.
-- **It shares nothing between users.** No "see what others are stitching" feature, no pooled patterns, no social network around the app.
+- **It is not a social network.** Sharing stays within the instance's group (and, later, one paired instance): no public catalogue, no "see what others are stitching", nothing ever sent to a third-party service. Whoever shares a pattern remains responsible for having the right to share it.
 - **It will not be a "native" iPhone/iPad app** downloadable from the App Store — it will be a web page you install on the home screen, which amounts to the same thing in use but avoids Apple's fees and constraints. *(To be validated together: this is a deliberate trade-off to stay free, not a technical limitation that could not be lifted later if needed.)*
 - **It has no sign-up and sends no email.** Profiles are created by an administrator of the instance; a forgotten password is reset by an administrator, not by an email link.
 - **It does not sync with a public cloud** (no iCloud, no Google Drive) — backup and synchronisation stay internal to the app, on the server you host yourself.

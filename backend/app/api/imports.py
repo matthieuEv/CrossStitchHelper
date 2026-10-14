@@ -35,6 +35,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, Query, UploadFile
 from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
+from app import shared as shared_library
 from app.api.recipes import find_matching_recipe
 from app.auth import CurrentUser
 from app.codec import bytes_to_base64, encode_uint16_layer
@@ -671,9 +672,14 @@ def commit(
     backstitch = _detected_special_items(config, "detected_backstitch", palette_size)
     french_knots = _detected_special_items(config, "detected_french_knots", palette_size)
 
+    # Lot 11: straight into the shared library (no owner, no progress), or
+    # into one's own library — then shared too for "both", below.
+    straight_to_shared = payload.library == "shared"
     pattern = Pattern(
         id=pattern_id,
-        owner_id=user.id,
+        owner_id=None if straight_to_shared else user.id,
+        library="shared" if straight_to_shared else "personal",
+        contributed_by=user.id if straight_to_shared else None,
         name=payload.name,
         source_filename=result["source_filename"],
         source_sha256=result["source_sha256"],
@@ -742,15 +748,16 @@ def commit(
             version=1,
         )
     )
-    session.add(
-        Progress(
-            pattern_id=pattern_id,
-            bitmap=codec_empty_bitmap(columns * rows),
-            version=1,
-            stitched_count=0,
-            updated_at=now,
+    if not straight_to_shared:
+        session.add(
+            Progress(
+                pattern_id=pattern_id,
+                bitmap=codec_empty_bitmap(columns * rows),
+                version=1,
+                stitched_count=0,
+                updated_at=now,
+            )
         )
-    )
 
     # `import_jobs.pattern_id` references `patterns.id`: the pattern (and its
     # dependent rows) must exist in the database before this update runs,
@@ -758,6 +765,11 @@ def commit(
     # `relationship()` links the two tables for SQLAlchemy to infer this
     # order on its own.
     session.flush()
+
+    shared_pattern_id = pattern_id if straight_to_shared else None
+    if payload.library == "both":
+        session.refresh(pattern)
+        shared_pattern_id = shared_library.share(session, user, pattern).id
 
     job.status = "committed"
     job.pattern_id = pattern_id
@@ -768,4 +780,7 @@ def commit(
     # pattern is created, the original PDF or photo is no longer needed.
     shutil.rmtree(_job_dir(settings, job_id), ignore_errors=True)
 
-    return ImportCommitResponse(pattern_id=pattern_id)
+    return ImportCommitResponse(
+        pattern_id=None if straight_to_shared else pattern_id,
+        shared_pattern_id=shared_pattern_id,
+    )

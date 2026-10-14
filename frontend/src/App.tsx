@@ -2,21 +2,31 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 
 import { AppShell } from "./components/AppShell";
 import { ProfileMenu } from "./components/ProfileMenu";
+import { SharedLibraryView } from "./components/SharedLibraryView";
 import { createDemoPattern, createDemoProgress } from "./demo/lavender";
 import { createDemoVariants } from "./demo/variants";
 import { useT } from "./i18n";
-import { deletePattern, duplicatePattern, updatePattern, useServerHealth } from "./lib/api";
+import {
+  deletePattern,
+  duplicatePattern,
+  sharePattern,
+  updateFromOrigin,
+  updatePattern,
+  useServerHealth,
+} from "./lib/api";
 import { forgetCachedPattern } from "./lib/db";
 import { useWideLayout } from "./lib/hooks";
 import { useRouter } from "./lib/router";
 import { emptySpecialProgress } from "./pattern/types";
 import { ImportScreen } from "./screens/ImportScreen";
-import { LibraryScreen, type LibraryEntry } from "./screens/LibraryScreen";
+import { LibraryScreen, type LibraryEntry, type LibraryTab } from "./screens/LibraryScreen";
 import { SettingsScreen } from "./screens/SettingsScreen";
 import { StatsScreen } from "./screens/StatsScreen";
 import { TrackScreen } from "./screens/TrackScreen";
 import { usePatternActivity } from "./state/usePatternActivity";
+import { useCurrentUser } from "./state/auth";
 import { usePatternLibrary } from "./state/usePatternLibrary";
+import { useSharedLibrary } from "./state/useSharedLibrary";
 import { useSyncedTracker, type SyncedTracker } from "./state/useSyncedTracker";
 
 // Offline fallback (server unreachable): same default value as
@@ -82,6 +92,15 @@ export function App() {
   const library = usePatternLibrary();
   const entries: LibraryEntry[] = library.entries ?? demoEntries;
 
+  // Shared library (Lot 11, issue #78): loaded with the app, so an admin
+  // sees pending requests on the Library's "Shared" tab without opening it.
+  const isAdmin = useCurrentUser().role === "admin";
+  const shared = useSharedLibrary();
+  const [libraryTab, setLibraryTab] = useState<LibraryTab>("mine");
+  const pendingForMe = isAdmin
+    ? shared.requests.filter((request) => request.status === "pending").length
+    : 0;
+
   // The URL (`/track/{id}`) is the source of truth when it carries one —
   // that is what lets a page reload reopen the same pattern instead of
   // falling back to the first one in the list (see `lib/router.ts`).
@@ -142,6 +161,28 @@ export function App() {
           {...(!wide && {
             headerAccessory: <ProfileMenu compact onOpenAccount={() => navigate("settings")} />,
           })}
+          tab={libraryTab}
+          onTabChange={(tab) => {
+            setLibraryTab(tab);
+            if (tab === "shared") void shared.refresh();
+          }}
+          sharedBadge={pendingForMe}
+          sharedCount={shared.entries.length}
+          sharedView={
+            <SharedLibraryView
+              shared={shared}
+              isAdmin={isAdmin}
+              myPatterns={(library.source === "server" ? (library.entries ?? []) : []).map((entry) => ({
+                id: entry.pattern.id,
+                name: entry.pattern.name,
+              }))}
+              onCopied={async () => {
+                await library.refresh();
+                setLibraryTab("mine");
+              }}
+              onOriginsChanged={library.refresh}
+            />
+          }
           // Only on patterns that really live on the server: neither the
           // built-in demo nor a library read from the offline cache.
           {...(library.source === "server" && {
@@ -158,6 +199,15 @@ export function App() {
               await updatePattern(patternId, changes);
               await library.refresh();
             },
+            onShare: async (patternId: string) => {
+              await sharePattern(patternId);
+              await Promise.all([library.refresh(), shared.refresh()]);
+            },
+            onUpdateFromOrigin: async (patternId: string, newCopyName: string) => {
+              const result = await updateFromOrigin(patternId, newCopyName);
+              await library.refresh();
+              return result.in_place;
+            },
           })}
         />
       )}
@@ -166,7 +216,14 @@ export function App() {
         <ImportScreen
           onCancel={() => navigate("library")}
           onFinish={(patternId) => {
-            void library.refresh().then(() => {
+            void Promise.all([library.refresh(), shared.refresh()]).then(() => {
+              if (patternId === null) {
+                // Imported into the shared library only: nothing to stitch,
+                // show it where it went.
+                setLibraryTab("shared");
+                navigate("library");
+                return;
+              }
               setActiveId(patternId);
               navigate("track", patternId);
             });

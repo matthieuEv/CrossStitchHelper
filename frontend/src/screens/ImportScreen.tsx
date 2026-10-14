@@ -30,6 +30,7 @@ import {
   type ApiImportConfigPatch,
   fetchDmcShades,
   type ApiThreadShade,
+  type ApiLibraryChoice,
   translateApiError,
   translateDetectionWarning,
   type ApiImportConfig,
@@ -62,7 +63,9 @@ function nextPaletteEntry(existing: readonly ApiImportPaletteEntry[]): ApiImport
 
 interface ImportScreenProps {
   onCancel: () => void;
-  onFinish: (patternId: string) => void;
+  /** `null` when the pattern went to the shared library only (Lot 11):
+   * there is nothing of one's own to open. */
+  onFinish: (patternId: string | null) => void;
 }
 
 /**
@@ -135,6 +138,8 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
   // already uses, offered with one tap. A failure to list them only means
   // no suggestions: labels can still be typed.
   const [labels, setLabels] = useState<string[]>([]);
+  // Where the pattern goes (Lot 11, issue #78).
+  const [destination, setDestination] = useState<ApiLibraryChoice>("personal");
   const [knownLabels, setKnownLabels] = useState<string[]>([]);
   const compareText = useCompareText();
   useEffect(() => {
@@ -455,6 +460,7 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
       const response = await commitImport(job.id, {
         name: name.trim(),
         labels,
+        library: destination,
         ...(Number.isFinite(fabric) && fabric > 0 && { fabric_count: fabric }),
       });
       onFinish(response.pattern_id);
@@ -1017,6 +1023,32 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
                     {t("labels.title")}
                   </span>
                   <LabelPicker labels={labels} onChange={setLabels} known={knownLabels} />
+                </div>
+                <div
+                  role="group"
+                  aria-labelledby="import-destination"
+                  style={{ display: "flex", flexDirection: "column", gap: 4 }}
+                >
+                  <span id="import-destination" className="text-muted" style={{ fontSize: 12 }}>
+                    {t("import.recap.destination")}
+                  </span>
+                  <div className="seg seg-compact" style={{ alignSelf: "flex-start" }}>
+                    {(["personal", "shared", "both"] as const).map((choice) => (
+                      <button
+                        key={choice}
+                        type="button"
+                        aria-pressed={destination === choice}
+                        onClick={() => setDestination(choice)}
+                      >
+                        {t(`import.recap.destination.${choice}`)}
+                      </button>
+                    ))}
+                  </div>
+                  {destination !== "personal" && (
+                    <span className="text-muted" style={{ fontSize: 12, lineHeight: 1.5 }}>
+                      {t("shared.rightsNotice")}
+                    </span>
+                  )}
                 </div>
                 <label style={{ display: "flex", flexDirection: "column", gap: 4, maxWidth: 160 }}>
                   <span className="text-muted" style={{ fontSize: 12 }}>

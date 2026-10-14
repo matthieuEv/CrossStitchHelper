@@ -190,9 +190,13 @@ Two stages, two PRs, in this order:
 
 **11a — on one instance.** A shared library next to each profile's personal one: everybody sees and adds, only admins rename, replace or remove; removal requests and replacement proposals reviewed by an admin; a personal copy is notified (never overwritten) when its original changes.
 
-- [ ] Shared and personal libraries (`patterns.library`), copy into one's library, share a personal pattern
-- [ ] Removal requests and replacement proposals, reviewed by admins
-- [ ] "Update available" on copies, update that never loses progress
+- [x] Shared and personal libraries (`patterns.library`), copy into one's library, share a personal pattern, import straight into the shared library or both
+- [x] Removal requests and replacement proposals, reviewed by admins
+- [x] "Update available" on copies, update that never loses progress
+
+**Done when:** a profile shares a pattern, another copies it into its library and stitches it; a removal request or a replacement proposal is decided by an admin and its author sees the outcome; replacing a shared pattern's content shows "Update" on its copies, and updating keeps the stitching done.
+
+**11a closed.** `backend/app/shared.py` (rules), `backend/app/api/shared.py` (routes), migration `0008_shared_library`, backup format version 3. Verified by `backend/tests/test_shared.py` (14 tests: sharing, copying, import destinations, admin-only actions, renaming without notifying, in-place update keeping progress, new copy when the shape changes, removal and replacement requests, frozen proposals, rejection and withdrawal, direct removal settling pending requests, a departed contributor's patterns staying, backup round trip), the 0006→head migration test (existing patterns become personal), a real upgrade of the throw-away instance (10 patterns, progress identical), in the browser on that instance (375 px, dark theme: share, copy, proposal, the admin's counter and queue with current/proposed thumbnails, acceptance, "Update" badge and in-place update), and `frontend/e2e/issue-78-shared-library.spec.ts`.
 
 **11b — between two instances.** Each shared pattern has a single home instance; a paired instance mirrors it read-only by pull, and forwards its users' writes to that home instance. Only the home instance needs to be reachable from the other.
 
