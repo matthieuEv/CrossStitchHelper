@@ -1,6 +1,7 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 
 import { AppShell } from "./components/AppShell";
+import { ProfileMenu } from "./components/ProfileMenu";
 import { createDemoPattern, createDemoProgress } from "./demo/lavender";
 import { createDemoVariants } from "./demo/variants";
 import { useT } from "./i18n";
@@ -49,6 +50,12 @@ function PatternSession({
     entry.version ?? 0,
     entry.special ?? emptySpecialProgress(entry.pattern),
   );
+  // The library is not reloaded after stitching. Like the progress, which the
+  // tracker updates in place, the card's "last stitched" time moves on here,
+  // or going back to the library would show the time it was loaded.
+  useEffect(() => {
+    if (tracker.version > 0) entry.lastActivityAt = Date.now();
+  }, [entry, tracker.version]);
   return <>{children(tracker)}</>;
 }
 
@@ -67,7 +74,7 @@ export function App() {
     const main: LibraryEntry = {
       pattern,
       progress: createDemoProgress(pattern),
-      hoursAgo: 14,
+      lastActivityAt: Date.now() - 14 * 3_600_000,
     };
     return [main, ...createDemoVariants()];
   }, []);
@@ -108,7 +115,13 @@ export function App() {
   };
 
   return (
-    <AppShell screen={screen} navigate={navigate} wide={wide} version={version}>
+    <AppShell
+      screen={screen}
+      navigate={navigate}
+      wide={wide}
+      version={version}
+      {...(wide && { profile: <ProfileMenu up onOpenAccount={() => navigate("settings")} /> })}
+    >
       {serverState === "unreachable" && (
         <div
           role="status"
@@ -126,6 +139,9 @@ export function App() {
           wide={wide}
           onOpen={openPattern}
           onImport={() => navigate("import")}
+          {...(!wide && {
+            headerAccessory: <ProfileMenu compact onOpenAccount={() => navigate("settings")} />,
+          })}
           // Only on patterns that really live on the server: neither the
           // built-in demo nor a library read from the offline cache.
           {...(library.source === "server" && {

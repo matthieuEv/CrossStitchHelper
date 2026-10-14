@@ -41,7 +41,7 @@ CrossStitchHelper differentiates itself with a **transparent semi-automatic impo
 - **Creating** patterns (photo → chart conversion): that is the job of Stitch Fiddle and the like, not ours.
 - **Shared pattern library**: no pattern is distributed, stored with a third party or shared between users (see §3.3).
 - **Native** iOS/Android apps: deliberately ruled out (paid Apple developer account, contrary to the free goal).
-- **Multi-user with accounts and permissions**: out of V1. The data model must not preclude it, though.
+- **Multi-user with accounts and permissions**: out of V1 — added in Lot 10 as *profiles* of one household or group (issue #77): each profile has its own private library, an admin manages the profiles. Still excluded: self-registration, sending email, any account on a third-party service.
 - **Marketplace, payment, advertising**: none.
 
 ---
@@ -148,7 +148,7 @@ This last case justifies adding a **type E** to the typology (§4.4): grids comp
 - **Vision (lot 7 only): `opencv-python-headless` + `numpy`.**
 - **SQLite + SQLAlchemy + Alembic** (migrations). No separate database server.
 - **Long-running tasks: FastAPI `BackgroundTasks` + a jobs table in the database**, polled by the client. Deliberately no Celery/Redis: one fewer service to self-host.
-- **V1 authentication**: single-user instance, optional single password (environment variable) protecting the whole API. The data model provides a nullable `owner_id` so as not to close the door on multi-user.
+- **Authentication (Lot 10, issue #77)**: profiles (first name, last name, email, role `admin`/`user`) logged in by password. The V1 plan (single-user instance, optional single password in an environment variable) was never built; `patterns.owner_id`, nullable since V1, now holds the owning profile. Password hashing is delegated to `pwdlib` (Argon2id); the session is an opaque random token in an HttpOnly, `SameSite=Lax` cookie (`Secure` behind HTTPS), stored hashed in `user_sessions` — server-side so that a password change, a reset or a deleted profile ends sessions at once. Every API route except health and the login screen's own routes requires a session; state-changing requests must also carry the `X-CSH-Client` header the frontend adds (cross-site request forgery). A pattern or import job of another profile answers 404, like one that does not exist. No email is ever sent: an admin resets forgotten passwords, or the server owner does from the command line (`python -m app.cli`). OpenID Connect (issue #77, future) would add a second way into the same session.
 
 ### 5.3 Frontend
 
@@ -177,7 +177,8 @@ Essential corollary: **progress is stored separately from the grid**, so that a 
 
 ```sql
 patterns (
-  id, owner_id NULL, name, source_filename, source_sha256,
+  id, owner_id NULL,         -- users.id (Lot 10); NULL only before the first admin exists
+  name, source_filename, source_sha256,
   width, height, fabric_count, created_at, updated_at,
   import_config_json,        -- configuration validated in the wizard
   recipe_id NULL,
@@ -225,10 +226,26 @@ recipes (
 )
 
 import_jobs (
-  id, status, kind, pattern_id NULL, progress_pct,
+  id, owner_id NULL,         -- users.id (Lot 10), the profile running the wizard
+  status, kind, pattern_id NULL, progress_pct,
   result_json, error, created_at, finished_at
 )
+
+users (                      -- Lot 10, issue #77
+  id, email UNIQUE,          -- lowercased; a contact detail, not the login identifier
+  first_name, last_name,
+  role,                      -- 'admin' | 'user' — at least one admin, always
+  password_hash,             -- Argon2id (pwdlib)
+  created_at, updated_at
+)
+
+user_sessions (              -- one row per logged-in device
+  id, user_id, token_hash UNIQUE,   -- SHA-256 of the cookie's random token
+  created_at, last_seen_at, expires_at, user_agent
+)
 ```
+
+Deleting a profile deletes its patterns with it (its library is private: no admin inherits it). Patterns and import jobs left without an owner — an instance upgraded from a version without profiles, the demo pattern seeded before setup — are handed to the first admin at first-launch setup.
 
 ### 6.3 Grid exchange format
 
@@ -289,6 +306,8 @@ Overall and per-colour progress (done / remaining / percentage), stitch counts b
 
 Default thread brand, default fabric, retention or deletion of source PDFs, light/dark theme, language (French and English), data backup and restore.
 
+Since Lot 10: **My account** for every profile (own name, email and password, "switch profile"); **Profile management** for admins (add a profile with an initial password, edit any profile including its role, reset a password, delete a profile and its library). Backup, restore, clearing all data and the daily backup setting act on every profile's data: admins only.
+
 ---
 
 ## 8. Extraction engine (backend)
@@ -347,7 +366,15 @@ This library stays strictly local. Community sharing had been considered as an o
 | POST | `/api/patterns/{id}/progress` | Apply a batch of changes (with version for conflict detection) |
 | GET | `/api/patterns/{id}/stats` | Computed statistics |
 | GET | `/api/patterns/{id}/export` | `.cshp` export |
-| GET/POST/DELETE | `/api/recipes` | Recipe library |
+| GET/POST/DELETE | `/api/recipes` | Recipe library (shared by all profiles; deleting: admins only) |
+| GET | `/api/auth/status` | Whether the instance still needs its first admin, and the logged-in profile |
+| POST | `/api/auth/setup` | First launch: create the first admin (only while no profile exists) |
+| GET | `/api/auth/profiles` | Login screen: first name, initials and avatar colour of each profile |
+| POST | `/api/auth/login`, `/api/auth/logout` | Open / close this device's session |
+| GET/PATCH | `/api/auth/me` | My profile (never its role) |
+| POST | `/api/auth/me/password` | Change my password (ends my other sessions) |
+| GET/POST | `/api/users` | Admins: list profiles (with their library size), add a profile |
+| PATCH/DELETE | `/api/users/{id}` | Admins: edit a profile (role, password reset), delete it with its library |
 
 Progress synchronisation works with **versioned deltas**: the client sends the changed cells along with the version it knows; on divergence, the server returns the missing operations and the client replays them. Checking a cell is an idempotent operation, which makes conflicts trivial to resolve. Since Lot 8, each operation also carries a stitch category (`layer`: full, 1/2, 1/4, backstitch, knot) — a single version index for the whole pattern, but an index space specific to each category (never shared, see §6.2).
 
@@ -431,7 +458,7 @@ Spotted while testing Lot 5 for real: some PDFs (including "Cafe Brasserie") dra
 
 ### Recommended sequencing
 
-Lots 0 to 3 make up the **usable V1** and should be carried out in one go. Lots 4 and 5 form the **differentiating V2** — this is where the application surpasses the free competition. Lots 6 to 9 are amplifiers, to be prioritised according to real use.
+Lots 0 to 3 make up the **usable V1** and should be carried out in one go. Lots 4 and 5 form the **differentiating V2** — this is where the application surpasses the free competition. Lots 6 to 9 are amplifiers, to be prioritised according to real use. Lots 10 (profiles) and 11 (shared libraries, within an instance then between two paired instances) come from issues #77 and #78 — see `docs/roadmap.md`.
 
 ---
 
@@ -464,3 +491,4 @@ Lots 0 to 3 make up the **usable V1** and should be carried out in one go. Lots 
 | 2026-09-23 | **MIT licence** chosen over AGPL — priority on distribution and adoption for a small project, no identified need to prevent a closed fork. See `LICENSE` at the root. |
 | 2026-09-18 | **Community recipe sharing removed from scope** — mentioned as a possible avenue in §8.7, never a commitment; the intended use does not need it |
 | 2026-09-24 | **All documentation, code comments and docstrings are written in English.** French doc filenames renamed (`docs/specification.md`, `docs/features-and-limits.md`). User-facing strings are unaffected: they stay in i18n, French and English |
+| 2026-10-14 | **Profiles (Lot 10, issue #77)** — the household instance becomes a group of profiles, each with a private library; at least one admin, always. Login delegated where it is risky (`pwdlib`/Argon2id for passwords; Authlib for OpenID Connect later), sessions in a small table of our own: `fastapi-users`, the only library covering user management, requires an asynchronous database layer (the whole backend is synchronous) and is in maintenance mode. Login screen lists the profiles ("Who's stitching?") then asks for the password — profile names are visible to anyone who opens the app, accepted for a household. Deleting a profile deletes its library |

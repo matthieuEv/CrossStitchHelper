@@ -217,6 +217,59 @@ export const en: Record<TranslationKey, string> = {
   "settings.about":
     "CrossStitchHelper {version} — free software, self-hosted. No data leaves your server. Add the app to your home screen to use it offline.",
 
+  "auth.loading": "Loading…",
+  "auth.unreachable":
+    "Server unreachable, and no profile has been used on this device yet. Check the connection, then try again.",
+  "auth.retry": "Try again",
+  "auth.who.title": "Who's stitching?",
+  "auth.who.password": "{name}'s password",
+  "auth.who.submit": "Enter",
+  "auth.setup.title": "Welcome",
+  "auth.setup.intro":
+    "Create this instance's first profile: it will be an administrator and can then add the others. Any patterns already on this server will be given to it.",
+  "auth.setup.submit": "Create the administrator profile",
+
+  "account.title": "My account",
+  "account.role.admin": "Administrator",
+  "account.role.user": "User",
+  "account.firstName": "First name",
+  "account.lastName": "Last name",
+  "account.email": "Email address",
+  "account.password": "Password",
+  "account.password.confirm": "Confirm the password",
+  "account.password.tooShort": "The password must be at least {min} characters long.",
+  "account.password.mismatch": "The two passwords do not match.",
+  "account.save": "Save",
+  "account.saved": "Changes saved.",
+  "account.password.change": "Change password",
+  "account.password.current": "Current password",
+  "account.password.new": "New password",
+  "account.password.submit": "Change the password",
+  "account.password.changed": "Password changed. Your other devices will have to log in again.",
+
+  "profile.menu": "{name}'s profile",
+  "profile.account": "My account",
+  "profile.switch": "Switch profile",
+  "profile.switch.pending":
+    "{count} checked cell(s) could not be sent to the server yet. They stay on this device and will go out the next time this profile logs in. Switch profile anyway?",
+
+  "profiles.title": "Profile management",
+  "profiles.hint":
+    "Each profile has its own library, invisible to the others. There is always at least one administrator.",
+  "profiles.role": "Role",
+  "profiles.initialPassword": "Initial password",
+  "profiles.resetPassword": "New password (leave empty to keep it)",
+  "profiles.create": "Add",
+  "profiles.add": "Add a profile",
+  "profiles.you": "(you)",
+  "profiles.patternCount": "{count} pattern(s)",
+  "profiles.edit": "Edit",
+  "profiles.editLabel": "Edit {name}'s profile",
+  "profiles.delete": "Delete",
+  "profiles.deleteLabel": "Delete {name}'s profile",
+  "profiles.deleteConfirm":
+    "Delete {name}'s profile? Their {count} personal pattern(s) and progress will be deleted with it, for good.",
+
   "server.ok": "Server reachable",
   "server.unreachable": "Server unreachable — changes will stay on this device.",
   "server.checking": "Connecting to the server…",
@@ -248,6 +301,19 @@ export const en: Record<TranslationKey, string> = {
   "error.pattern_grid_or_progress_not_found": "Grid or progress not found.",
   "error.pattern_progress_index_out_of_range":
     'Index out of range for category "{layer}": {index} >= {bound}.',
+  "error.auth_required": "Session expired: please log in again.",
+  "error.admin_required": "Administrators only.",
+  "error.client_header_missing": "Request refused (it does not come from the app).",
+  "error.login_failed": "Wrong password.",
+  "error.login_throttled": "Too many attempts. Try again in {seconds} s.",
+  "error.setup_already_done": "This instance already has an administrator.",
+  "error.email_taken": "This email address is already used by another profile.",
+  "error.last_admin":
+    "Not possible: there must always be at least one administrator. Make someone else an administrator first.",
+  "error.current_password_wrong": "The current password is wrong.",
+  "error.user_not_found": "Profile not found.",
+  "error.backup_without_admin":
+    "This backup has no administrator: restoring it would leave nobody able to manage profiles.",
 
   "import.warning.unknown": "Something here is worth double-checking (details unavailable).",
 

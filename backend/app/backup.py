@@ -12,8 +12,14 @@ same base64 convention as the rest of the API (`app/codec.py`), never the
 raw bytes of a ZIP.
 
 Deliberately out of scope: ``ImportJob`` (transient state of an import
-wizard in progress, never durable data — see `app/models.py`) and
-``AppMeta`` (internal bookkeeping, not user data).
+wizard in progress, never durable data — see `app/models.py`), ``AppMeta``
+(internal bookkeeping, not user data) and sessions.
+
+Since format version 2 (Lot 10), the document also carries the profiles,
+password hashes included — a backup is therefore an admin-only download
+(`app/api/backup.py`). A version 1 document (before profiles) still
+restores: the instance keeps its profiles and every pattern goes to the
+admin who restores it.
 
 A restore is a **full replacement**, never a merge: that is the expected
 semantics of a "restore" (as opposed to an "import"), and it avoids any
@@ -30,7 +36,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.codec import base64_to_bytes, bytes_to_base64
 from app.labels import labels_from_json, labels_to_json
-from app.models import Grid, PaletteEntry, Pattern, Progress, ProgressEvent, Recipe
+from app.models import Grid, PaletteEntry, Pattern, Progress, ProgressEvent, Recipe, User
 from app.schemas import (
     BackupDocument,
     BackupGrid,
@@ -40,10 +46,12 @@ from app.schemas import (
     BackupProgressEvent,
     BackupRecipe,
     BackupRestoreSummary,
+    BackupUser,
 )
 
 FORMAT: Literal["csh-backup"] = "csh-backup"
-FORMAT_VERSION = 1
+FORMAT_VERSION = 2
+SUPPORTED_VERSIONS = (1, 2)
 
 
 class BackupFormatError(ValueError):
@@ -78,15 +86,30 @@ def build_backup(session: Session) -> BackupDocument:
         events_by_pattern.setdefault(event.pattern_id, []).append(event)
 
     recipes = session.execute(select(Recipe).order_by(Recipe.created_at)).scalars().all()
+    users = session.execute(select(User).order_by(User.created_at)).scalars().all()
 
     return BackupDocument(
         format=FORMAT,
         format_version=FORMAT_VERSION,
         generated_at=datetime.now(UTC),
+        users=[_dump_user(user) for user in users],
         patterns=[
             _dump_pattern(pattern, events_by_pattern.get(pattern.id, [])) for pattern in patterns
         ],
         recipes=[_dump_recipe(recipe) for recipe in recipes],
+    )
+
+
+def _dump_user(user: User) -> BackupUser:
+    return BackupUser(
+        id=user.id,
+        email=user.email,
+        first_name=user.first_name,
+        last_name=user.last_name,
+        role="admin" if user.role == "admin" else "user",
+        password_hash=user.password_hash,
+        created_at=user.created_at,
+        updated_at=user.updated_at,
     )
 
 
@@ -187,15 +210,25 @@ def _dump_recipe(recipe: Recipe) -> BackupRecipe:
     )
 
 
-def restore_backup(session: Session, document: BackupDocument) -> BackupRestoreSummary:
+def restore_backup(
+    session: Session, document: BackupDocument, *, restored_by: User
+) -> BackupRestoreSummary:
+    """Replace the instance's data with `document`.
+
+    `restored_by` is the admin running the restore: owner of every pattern of
+    a version 1 document, and of any pattern whose owner the document does
+    not contain."""
     if document.format != FORMAT:
         raise BackupFormatError("backup_unexpected_format", got=document.format, expected=FORMAT)
-    if document.format_version != FORMAT_VERSION:
+    if document.format_version not in SUPPORTED_VERSIONS:
         raise BackupFormatError(
             "backup_unsupported_version",
             got=document.format_version,
             expected=FORMAT_VERSION,
         )
+    if document.users is not None and not any(u.role == "admin" for u in document.users):
+        # Restoring it would leave nobody able to manage profiles.
+        raise BackupFormatError("backup_without_admin")
 
     # Deleting the patterns cascades in SQLite (`PRAGMA foreign_keys=ON`,
     # `app/db.py`) to their palette, grid, progress and associated event log
@@ -203,10 +236,23 @@ def restore_backup(session: Session, document: BackupDocument) -> BackupRestoreS
     session.execute(delete(Pattern))
     session.execute(delete(Recipe))
 
+    if document.users is not None:
+        _replace_users(session, document.users)
+    known_owners = {user_id for (user_id,) in session.execute(select(User.id))}
+    if restored_by.id in known_owners:
+        default_owner: str | None = restored_by.id
+    else:
+        default_owner = session.execute(
+            select(User.id).where(User.role == "admin").order_by(User.created_at).limit(1)
+        ).scalar_one_or_none()
+
     for pattern_data in document.patterns:
+        owner_id = pattern_data.owner_id
+        if owner_id is None or owner_id not in known_owners:
+            owner_id = default_owner
         pattern = Pattern(
             id=pattern_data.id,
-            owner_id=pattern_data.owner_id,
+            owner_id=owner_id,
             name=pattern_data.name,
             source_filename=pattern_data.source_filename,
             source_sha256=pattern_data.source_sha256,
@@ -315,7 +361,33 @@ def restore_backup(session: Session, document: BackupDocument) -> BackupRestoreS
     session.commit()
 
     return BackupRestoreSummary(
+        users_count=len(document.users) if document.users is not None else 0,
         patterns_count=len(document.patterns),
         recipes_count=len(document.recipes),
         progress_events_count=sum(len(p.progress_events) for p in document.patterns),
     )
+
+
+def _replace_users(session: Session, users: list[BackupUser]) -> None:
+    """Make the profiles exactly those of the document. Profiles present on
+    both sides are updated in place rather than deleted and re-created, so
+    their sessions survive — the admin restoring a backup that contains
+    them stays logged in. Removed profiles lose their sessions with them."""
+    wanted = {user.id: user for user in users}
+    for existing in session.execute(select(User)).scalars().all():
+        if existing.id not in wanted:
+            session.delete(existing)
+    session.flush()
+    for data in users:
+        user = session.get(User, data.id)
+        if user is None:
+            user = User(id=data.id)
+            session.add(user)
+        user.email = data.email
+        user.first_name = data.first_name
+        user.last_name = data.last_name
+        user.role = data.role
+        user.password_hash = data.password_hash
+        user.created_at = data.created_at
+        user.updated_at = data.updated_at
+    session.flush()

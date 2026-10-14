@@ -2,7 +2,7 @@
 
 *Actionable extract of `docs/specification.md` §11. This is the file that gets checked off as work progresses; the specification remains the narrative reference — in case of divergence, it is authoritative on substance, and this file on sequencing.*
 
-Each lot is independently deliverable and usable: there is no lot that is "useless until the next one is done". Lots 0 to 3 form the usable V1. Lots 4 and 5 form the differentiating V2. Lots 6 to 9 are amplifiers.
+Each lot is independently deliverable and usable: there is no lot that is "useless until the next one is done". Lots 0 to 3 form the usable V1. Lots 4 and 5 form the differentiating V2. Lots 6 to 9 are amplifiers. Lots 10 and 11 turn the single-household instance into a group of profiles, then into libraries shared within that group and with a second instance (issues #77 and #78, decision of 2026-10-14).
 
 ---
 
@@ -165,3 +165,38 @@ Spotted while testing Lot 5 for real on `cafe-brasserie-charting-export`: some P
 **Done when:** the backstitches and French knots documented in the legend of `cafe-brasserie-charting-export` are extracted with counts consistent with that legend, checkable in tracking (Lot 8), without any decorative off-grid backstitch being imported as part of the pattern to stitch.
 
 **Lot 9 done.** Third and final stage of the type A extraction engine (`backend/app/type_a.py`): all five legend sections ("Full/Half/Quarter Stitches", "French Knots", "Back Stitches") are now parsed, not just the first — a colour declared in several sections (e.g. DMC 742: full stitch + backstitch + knot) keeps a single palette index. Colour→DMC matching by **exact colour** of the legend's vector swatch (measured identical to the pattern's stroke, RGB to RGB — a Lab-distance fallback exists but proved measurably unreliable: 938/3031 confusions, never assigning 310) rather than by symbol font, since those two sections have none. Backstitch/grid-ruling distinction generalised in `backend/app/grid_lines.py` (extracted from `type_bc.py::_is_grid_ruling`, Lot 5 behaviour preserved bit for bit with no length criterion): a backstitch also starts from a cell corner like a ruling, only length and orientation (diagonal, never possible for a ruling) really tell them apart. A backstitch is drawn twice in this fixture (dark pass + lighter pass): deduplicated. Each grid page also carries washed-out shades from the overlap strip duplicated with the neighbouring page — never counted, exact-colour matching naturally excludes them since they match no legend swatch. Quarter stitches (4 cases, DMC 3031) cannot be told apart by glyph+background colour (identical to those of the full stitch): only their off-centre position in the cell (measured, never an assumed tiling) identifies them. Backstitch length converted to cm only when the user has entered a fabric count at validation (`ImportRecapForm`) — never a conversion invented without it; the fabric count read from the PDF text ("Fabric: Aida 16") pre-fills this field without ever imposing it (`ImportConfig.detected_fabric_count`, `frontend/src/screens/ImportScreen.tsx`). No manual correction UI for these four detected layers (unlike `detected_cells`+`fills` since Lot 2): out of scope for this lot, which covers detection only — a manual correction after import is still done directly by checking/unchecking from tracking (Lot 8). Verified against the reference fixture (`backend/tests/test_type_a.py`, values re-parsed independently from page 11 "Usage Summary" — including the "Back(cm)" column, actually in **inches**, measured at under 0.1% deviation over the 8 codes) and against the other five fixtures (no regression, `backend/tests/test_type_bc.py`/`test_type_e.py`/`test_grid_lines.py`, 82 extraction tests). Work delegated to the `pdf-extraction-specialist` agent for the extraction engine proper (`type_a.py`, `grid_lines.py`), verified independently (diff fully reviewed, `ruff`/`mypy`/six fixtures re-measured); wiring into the validation pipeline (`backend/app/api/imports.py::commit`, `ImportConfig`/`ImportConfigPatch`) and pre-filling the fabric count in the wizard were done separately, verified by an end-to-end test (`frontend/e2e/lot9-special-stitches-extraction.spec.ts`) against the real fixture.
+
+---
+
+## Lot 10 — Profiles (issue #77)
+
+- [x] Profiles (first name, last name, email, role user/admin) and server-side sessions — `backend/app/models.py::User`/`UserSession`, migration `0007_profiles`
+- [x] First launch: the first profile is necessarily an admin and receives every pattern that predates profiles (`backend/app/accounts.py::create_first_admin`)
+- [x] Login screen "Who's stitching?" (profile picker, then password) — `frontend/src/screens/LoginScreen.tsx`, `frontend/src/state/auth.tsx`
+- [x] Every API route but health and login requires a profile; a pattern or import of another profile answers 404 (`backend/app/api/patterns.py::_get_pattern`, `backend/app/api/imports.py::_get_job`)
+- [x] Settings → My account (own information and password) for every profile; Settings → Profile management for admins (add with an initial password, edit including the role, reset a password, delete with the personal library) — always at least one admin (`backend/app/accounts.py::ensure_an_admin_remains`)
+- [x] Backup (format version 2, profiles included), restore, clearing and the daily backup setting: admins only; deleting a recipe: admins only
+- [x] One offline database per profile on each device (`frontend/src/lib/db.ts`)
+
+**Done when:** an admin adds a profile, that profile logs in from "Who's stitching?" and sees only its own library, never the admin's; the last admin can neither step down nor be deleted; an instance upgraded from a version without profiles keeps all its patterns and progress, handed to its first admin.
+
+**Lot closed.** Verified by `backend/tests/test_auth.py` (access rules, last admin, sessions, backups, command line), `backend/tests/test_migration_profiles.py` (a database at revision 0006 with a pattern, its palette, grid, progress and activity log upgrades with everything intact — `patterns` is recreated by the migration to gain its foreign key, which must never cascade), a real upgrade of a throw-away instance holding 10 patterns (palette, progress and activity log compared before/after: identical), and `frontend/e2e/issue-77-profiles.spec.ts`. Choices, recorded in `docs/specification.md` §13: password hashing delegated to `pwdlib` (Argon2id), sessions in a small table of our own rather than `fastapi-users` (asynchronous database layer only, maintenance mode); `X-CSH-Client` header rather than an `Origin` check against cross-site requests (reverse proxies rewrite `Host`); no email ever sent — a forgotten password is reset by an admin, or from the server (`python -m app.cli reset-password`, `README.md`). Side fix found while testing a brand-new profile: a server answering with an empty library now shows an empty library, no longer the client-made demo patterns as if they were the profile's own (`frontend/src/state/usePatternLibrary.ts`). Not covered: OpenID Connect login (issue #77 "future improvement" — the login path is a single `open_session` call an Authlib client can reuse).
+
+---
+
+## Lot 11 — Shared pattern libraries (issue #78)
+
+Two stages, two PRs, in this order:
+
+**11a — on one instance.** A shared library next to each profile's personal one: everybody sees and adds, only admins rename, replace or remove; removal requests and replacement proposals reviewed by an admin; a personal copy is notified (never overwritten) when its original changes.
+
+- [ ] Shared and personal libraries (`patterns.library`), copy into one's library, share a personal pattern
+- [ ] Removal requests and replacement proposals, reviewed by admins
+- [ ] "Update available" on copies, update that never loses progress
+
+**11b — between two instances.** Each shared pattern has a single home instance; a paired instance mirrors it read-only by pull, and forwards its users' writes to that home instance. Only the home instance needs to be reachable from the other.
+
+- [ ] Pairing by invitation code, revocable from either side
+- [ ] Changes feed (cursor, revisions, tombstones) and pull loop
+- [ ] Forwarded contributions, requests and (if trusted) admin actions
+

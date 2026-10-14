@@ -69,4 +69,11 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
     CMD python -c "import urllib.request, sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=4).status == 200 else 1)"
 
 ENTRYPOINT ["docker-entrypoint.sh"]
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# `--proxy-headers` + `FORWARDED_ALLOW_IPS`: behind a reverse proxy serving
+# HTTPS, the request scheme comes from its `X-Forwarded-Proto`, so the session
+# cookie is marked `Secure` (`app/auth.py`). Any proxy address is trusted (the
+# proxy's container address is unknown in advance): a spoofed header can only
+# make a client's own cookie stricter, and the login throttle does not rely
+# on the client address alone (`app/auth.py::LoginThrottle`).
+ENV FORWARDED_ALLOW_IPS="*"
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers"]

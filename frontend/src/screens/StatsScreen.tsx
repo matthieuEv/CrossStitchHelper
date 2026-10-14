@@ -1,6 +1,6 @@
 import { useT } from "../i18n";
 import { patternExportUrl } from "../lib/api";
-import { useNumberFormat, useSessionRelativeTime, useWeekdayLabel } from "../lib/format";
+import { useNumberFormat, useRelativeTime, useWeekdayLabel } from "../lib/format";
 import { STITCHES_PER_SKEIN, type ColorCount, type PatternTotals } from "../pattern/counts";
 import type { Pattern } from "../pattern/types";
 
@@ -28,7 +28,7 @@ export function StatsScreen({ pattern, counts, totals, activity, sessions }: Sta
   const t = useT();
   const formatNumber = useNumberFormat();
   const weekdayLabel = useWeekdayLabel();
-  const sessionLabel = useSessionRelativeTime();
+  const sessionLabel = useRelativeTime();
 
   const peak = activity.reduce((max, day) => Math.max(max, day.stitches), 0);
 
