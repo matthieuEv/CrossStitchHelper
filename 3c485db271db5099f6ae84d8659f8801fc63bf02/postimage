@@ -1,0 +1,570 @@
+"""SQLAlchemy models.
+
+Complete domain model from Lot 1 (see ``docs/roadmap.md`` and specification
+§6): ``patterns``, ``palette_entries``, ``grids``, ``progress``,
+``progress_events``. Structural constraint recalled in ``CLAUDE.md``:
+**progress is stored separately from the grid**, in distinct tables linked
+only by ``pattern_id`` — a re-import never touches ``progress``.
+
+``recipes`` (§6.2, Lot 6) completes this model: a file fingerprint
+(``app/fingerprint.py``) associated with a reusable import configuration.
+
+``users`` and ``user_sessions`` (Lot 10, issue #77) turn the instance into a
+group of profiles: every pattern and every import job belongs to one user
+(``owner_id``), and a user's personal library is never visible to another.
+"""
+
+from __future__ import annotations
+
+from datetime import UTC, datetime
+
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    Float,
+    ForeignKey,
+    Integer,
+    LargeBinary,
+    String,
+    Text,
+    TypeDecorator,
+    UniqueConstraint,
+)
+from sqlalchemy.engine import Dialect
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from app.db import Base
+
+
+def _utcnow() -> datetime:
+    return datetime.now(UTC)
+
+
+class UtcDateTime(TypeDecorator[datetime]):
+    """A timestamp stored in UTC and always read back time-zone aware.
+
+    SQLite has no time zone type: `DateTime(timezone=True)` alone writes the
+    wall-clock digits and reads them back *naive*. The API then sent
+    "2026-10-14T08:00:00" without an offset, which a browser reads as its own
+    local time — a pattern changed a minute ago showed "2 hours ago" in
+    Paris. Converting to UTC on write and re-attaching UTC on read keeps
+    every timestamp comparable with `datetime.now(UTC)` and serialised with
+    its offset. The storage format is unchanged: no migration.
+    """
+
+    impl = DateTime(timezone=True)
+    cache_ok = True
+
+    def process_bind_param(self, value: datetime | None, dialect: Dialect) -> datetime | None:
+        if value is None:
+            return None
+        # A naive value can only come from this column itself or from a
+        # backup written before this type existed: both are UTC already.
+        if value.tzinfo is None:
+            return value
+        return value.astimezone(UTC).replace(tzinfo=None)
+
+    def process_result_value(self, value: datetime | None, dialect: Dialect) -> datetime | None:
+        if value is None or value.tzinfo is not None:
+            return value
+        return value.replace(tzinfo=UTC)
+
+
+class AppMeta(Base):
+    """Instance metadata, as key/value pairs.
+
+    Serves two concrete needs: providing a non-empty first migration (hence
+    an Alembic chain really verified end to end), and letting the health
+    endpoint prove that the database responds to reads, not just that the
+    file exists.
+    """
+
+    __tablename__ = "app_meta"
+
+    key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    value: Mapped[str] = mapped_column(Text, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        UtcDateTime, nullable=False, default=_utcnow, onupdate=_utcnow
+    )
+
+    def __repr__(self) -> str:  # pragma: no cover - debugging convenience
+        return f"AppMeta(key={self.key!r}, value={self.value!r})"
+
+
+class Pattern(Base):
+    """An imported pattern (or, before Lot 2, injected directly into the
+    database).
+
+    ``library`` (Lot 11, issue #78) says where the pattern lives:
+
+    - ``"personal"``: in ``owner_id``'s library — the only kind that has a
+      progress row and can be stitched. ``owner_id`` is still nullable: a
+      pattern created before the first admin exists (the seed, an instance
+      upgraded from a single-user version) has no owner until the
+      first-launch setup hands it to that admin
+      (`app/accounts.py::create_first_admin`). An ownerless personal pattern
+      is visible to nobody.
+    - ``"shared"``: in the instance's shared library, owned by nobody (a
+      contributor's departure must not take it away); ``contributed_by`` only
+      credits who added it. ``revision`` counts its content replacements.
+    - ``"proposal"``: a frozen copy of the content a profile proposed to
+      replace a shared pattern with (`SharedRequest`), deleted once the
+      request is settled.
+
+    A personal copy of a shared pattern remembers it (``origin_pattern_id``)
+    and the ``revision`` it was copied at (``origin_revision``): a newer
+    revision of the original is what "update available" means — the copy is
+    never overwritten on its own.
+
+    Between two paired instances (Lot 11b, `app/federation.py`): a shared
+    pattern whose home is the other instance is mirrored here, read-only
+    (``source_peer_id`` + its id over there, ``remote_id``); a shared pattern
+    of this instance records when it last changed (``shared_seq``), which is
+    what the other instance pulls. ``contributed_by_name`` credits a
+    contributor who is not a profile of this instance.
+    """
+
+    __tablename__ = "patterns"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    owner_id: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    source_filename: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    source_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    width: Mapped[int] = mapped_column(Integer, nullable=False)
+    height: Mapped[int] = mapped_column(Integer, nullable=False)
+    fabric_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        UtcDateTime, nullable=False, default=_utcnow
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        UtcDateTime, nullable=False, default=_utcnow, onupdate=_utcnow
+    )
+    import_config_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    recipe_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Issue #57: JSON list of labels, see `app/labels.py`.
+    labels_json: Mapped[str] = mapped_column(
+        Text, nullable=False, default="[]", server_default="[]"
+    )
+    library: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="personal", server_default="personal", index=True
+    )
+    revision: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
+    contributed_by: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    origin_pattern_id: Mapped[str | None] = mapped_column(
+        ForeignKey("patterns.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    origin_revision: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    source_peer_id: Mapped[str | None] = mapped_column(
+        ForeignKey("peers.id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    remote_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    contributed_by_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    shared_seq: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+
+    palette_entries: Mapped[list[PaletteEntry]] = relationship(
+        back_populates="pattern",
+        cascade="all, delete-orphan",
+        order_by="PaletteEntry.index_in_grid",
+    )
+    grid: Mapped[Grid | None] = relationship(back_populates="pattern", cascade="all, delete-orphan")
+    progress: Mapped[Progress | None] = relationship(
+        back_populates="pattern", cascade="all, delete-orphan"
+    )
+
+    def __repr__(self) -> str:  # pragma: no cover - debugging convenience
+        return f"Pattern(id={self.id!r}, name={self.name!r}, {self.width}x{self.height})"
+
+
+class PaletteEntry(Base):
+    """A colour in a pattern's palette.
+
+    ``index_in_grid`` is the integer used in the grid blob (§6.3): 0 means
+    "empty cell", so real palette indices start at 1.
+    """
+
+    __tablename__ = "palette_entries"
+    __table_args__ = (UniqueConstraint("pattern_id", "index_in_grid"),)
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    pattern_id: Mapped[str] = mapped_column(
+        ForeignKey("patterns.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    index_in_grid: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    brand: Mapped[str] = mapped_column(String(32), nullable=False)
+    code: Mapped[str] = mapped_column(String(32), nullable=False)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    rgb_hex: Mapped[str] = mapped_column(String(7), nullable=False)
+    symbol_key: Mapped[str] = mapped_column(String(8), nullable=False)
+    symbol_svg: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    strands_full: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    strands_back: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    count_full: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    count_half: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    count_quarter: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    count_french: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    count_beads: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    backstitch_length_cm: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    pattern: Mapped[Pattern] = relationship(back_populates="palette_entries")
+
+    def __repr__(self) -> str:  # pragma: no cover - debugging convenience
+        return f"PaletteEntry(pattern_id={self.pattern_id!r}, code={self.code!r})"
+
+
+class Grid(Base):
+    """A pattern's grid layers, compacted (§6.1).
+
+    One row per pattern: ``pattern_id`` is both primary key and foreign key
+    (strict one-to-one relationship).
+
+    ``backstitch_json``/``french_knots_json`` (Lot 8): see
+    ``app/schemas.py::BackstitchSegment``/``FrenchKnot`` for the exact
+    coordinate convention (cell corners for one, cell centre for the other —
+    never pixels).
+    """
+
+    __tablename__ = "grids"
+
+    pattern_id: Mapped[str] = mapped_column(
+        ForeignKey("patterns.id", ondelete="CASCADE"), primary_key=True
+    )
+    layer_full: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    layer_half: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    layer_quarter: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    backstitch_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    french_knots_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    encoding: Mapped[str] = mapped_column(String(16), nullable=False, default="uint16le")
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+
+    pattern: Mapped[Pattern] = relationship(back_populates="grid")
+
+    def __repr__(self) -> str:  # pragma: no cover - debugging convenience
+        return f"Grid(pattern_id={self.pattern_id!r}, version={self.version})"
+
+
+class Progress(Base):
+    """A pattern's progress bitmap — separate from ``Grid`` (§6.1).
+
+    ``version`` is incremented on every applied delta (see
+    :mod:`app.api.patterns`); it is the value the client compares to detect
+    whether it missed changes made from another device.
+
+    ``bitmap`` covers full stitches only (``Grid.layer_full``) — it is
+    authoritative for ``stitched_count`` and the overall percentage (§7.1),
+    unchanged since Lot 1. The next four columns (Lot 8) follow the same
+    principle for the other stitch categories, each ``NULL`` as long as the
+    corresponding grid has no content in that category (same convention as
+    ``Grid.layer_half``/``layer_quarter``): ``bitmap_half``/``bitmap_quarter``
+    have the same shape as ``bitmap`` (1 bit per cell,
+    ``Grid.layer_half``/``layer_quarter``); ``bitmap_backstitch``/
+    ``bitmap_knots`` are sized on the number of elements of
+    ``Grid.backstitch_json``/``french_knots_json`` (1 bit per segment/knot,
+    never per cell — these are not grids)."""
+
+    __tablename__ = "progress"
+
+    pattern_id: Mapped[str] = mapped_column(
+        ForeignKey("patterns.id", ondelete="CASCADE"), primary_key=True
+    )
+    bitmap: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    bitmap_half: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    bitmap_quarter: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    bitmap_backstitch: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    bitmap_knots: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    stitched_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    updated_at: Mapped[datetime] = mapped_column(
+        UtcDateTime, nullable=False, default=_utcnow, onupdate=_utcnow
+    )
+
+    pattern: Mapped[Pattern] = relationship(back_populates="progress")
+
+    def __repr__(self) -> str:  # pragma: no cover - debugging convenience
+        return f"Progress(pattern_id={self.pattern_id!r}, version={self.version})"
+
+
+class ProgressEvent(Base):
+    """Log of applied progress deltas, for undo and multi-device resume
+    (§6.2).
+
+    ``version_after`` matches ``Progress.version`` immediately after this
+    event was applied: a client that knows an older version can therefore
+    fetch, in one request, all the events to replay to catch up with the
+    current state.
+    """
+
+    __tablename__ = "progress_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    pattern_id: Mapped[str] = mapped_column(
+        ForeignKey("patterns.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    ts: Mapped[datetime] = mapped_column(UtcDateTime, nullable=False, default=_utcnow)
+    ops_json: Mapped[str] = mapped_column(Text, nullable=False)
+    version_after: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    def __repr__(self) -> str:  # pragma: no cover - debugging convenience
+        return (
+            f"ProgressEvent(pattern_id={self.pattern_id!r}, version_after={self.version_after})"
+        )
+
+
+class Recipe(Base):
+    """A validated import configuration, reusable on a future file with the
+    same fingerprint (Lot 6, specification §8.7, §6.2).
+
+    ``config_json`` contains **only geometric and structural parameters**
+    (`CLAUDE.md`: "never the pattern's creative content") — currently only
+    ``crop_by_page`` (see `app/api/recipes.py`). Never the dimensions, the
+    palette or the painted areas: those are content specific to each pattern,
+    which always differs from one file to the next even within the same
+    publisher (specification §4.1, Winter Wreath/Summer Flight vs Botanical
+    Citrus/Cucurbit case).
+    """
+
+    __tablename__ = "recipes"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    fingerprint: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    label: Mapped[str] = mapped_column(String(200), nullable=False)
+    grid_type: Mapped[str] = mapped_column(String(8), nullable=False)
+    config_json: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        UtcDateTime, nullable=False, default=_utcnow
+    )
+    usage_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+    def __repr__(self) -> str:  # pragma: no cover - debugging convenience
+        return f"Recipe(id={self.id!r}, label={self.label!r}, fingerprint={self.fingerprint[:8]!r})"
+
+
+class ImportJob(Base):
+    """The state of an import in progress (wizard, Lot 2 — specification §6.2,
+    §9).
+
+    ``result_json`` carries both what the user entered in the wizard
+    (``config``: cropping, dimensions, palette, painted areas) and what was
+    computed from it (``preview``: the assembled grid). Lot 2 has no
+    automatic detection engine — ``config`` is therefore entirely manual,
+    never inferred from an analysis of the file.
+    """
+
+    __tablename__ = "import_jobs"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    owner_id: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="ready")
+    kind: Mapped[str] = mapped_column(String(8), nullable=False)
+    pattern_id: Mapped[str | None] = mapped_column(
+        ForeignKey("patterns.id", ondelete="SET NULL"), nullable=True
+    )
+    progress_pct: Mapped[int] = mapped_column(Integer, nullable=False, default=100)
+    result_json: Mapped[str] = mapped_column(Text, nullable=False)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        UtcDateTime, nullable=False, default=_utcnow
+    )
+    finished_at: Mapped[datetime | None] = mapped_column(UtcDateTime, nullable=True)
+
+    def __repr__(self) -> str:  # pragma: no cover - debugging convenience
+        return f"ImportJob(id={self.id!r}, status={self.status!r}, kind={self.kind!r})"
+
+
+class User(Base):
+    """A profile of the instance's group (Lot 10, issue #77).
+
+    ``role`` is ``"admin"`` or ``"user"``; there is always at least one admin
+    (`app/accounts.py::ensure_an_admin_remains`). ``email`` is stored
+    lowercased and unique, but is not the login identifier: the login screen
+    lists profiles by first name and asks only for the password. Passwords
+    are hashed with Argon2id by `pwdlib` (`app/auth.py`), never stored or
+    logged in clear.
+    """
+
+    __tablename__ = "users"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    email: Mapped[str] = mapped_column(String(254), nullable=False, unique=True)
+    first_name: Mapped[str] = mapped_column(String(100), nullable=False)
+    last_name: Mapped[str] = mapped_column(String(100), nullable=False)
+    role: Mapped[str] = mapped_column(String(16), nullable=False, default="user")
+    password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        UtcDateTime, nullable=False, default=_utcnow
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        UtcDateTime, nullable=False, default=_utcnow, onupdate=_utcnow
+    )
+
+    def __repr__(self) -> str:  # pragma: no cover - debugging convenience
+        return f"User(id={self.id!r}, role={self.role!r})"
+
+
+class UserSession(Base):
+    """A logged-in device (Lot 10).
+
+    The browser holds an opaque random token in an HttpOnly cookie; only its
+    SHA-256 is stored here, so a leaked database does not hand out live
+    sessions. Server-side rows (rather than a signed cookie) are what make a
+    password change, a password reset or a deleted profile end that
+    profile's sessions immediately.
+    """
+
+    __tablename__ = "user_sessions"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    user_id: Mapped[str] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    token_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    created_at: Mapped[datetime] = mapped_column(
+        UtcDateTime, nullable=False, default=_utcnow
+    )
+    last_seen_at: Mapped[datetime] = mapped_column(
+        UtcDateTime, nullable=False, default=_utcnow
+    )
+    expires_at: Mapped[datetime] = mapped_column(UtcDateTime, nullable=False)
+    user_agent: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+    user: Mapped[User] = relationship()
+
+    def __repr__(self) -> str:  # pragma: no cover - debugging convenience
+        return f"UserSession(id={self.id!r}, user_id={self.user_id!r})"
+
+
+class SharedRequest(Base):
+    """A profile asking the admins to remove a shared pattern, or to replace
+    its content with a version of their own (Lot 11, issue #78).
+
+    Kept once settled, so whoever asked can see the outcome.
+    ``pattern_name`` is the shared pattern's name when the request was made:
+    still readable once that pattern is gone (``shared_pattern_id`` then
+    becomes NULL). A replacement points to a frozen copy of the proposed
+    content (``proposal_pattern_id``, a ``"proposal"`` pattern), deleted
+    when the request is settled.
+    """
+
+    __tablename__ = "shared_requests"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    kind: Mapped[str] = mapped_column(String(16), nullable=False)  # "removal" | "replacement"
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="pending")
+    shared_pattern_id: Mapped[str | None] = mapped_column(
+        ForeignKey("patterns.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    pattern_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    requested_by: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    proposal_pattern_id: Mapped[str | None] = mapped_column(
+        ForeignKey("patterns.id", ondelete="SET NULL"), nullable=True
+    )
+    resolved_by: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        UtcDateTime, nullable=False, default=_utcnow
+    )
+    resolved_at: Mapped[datetime | None] = mapped_column(UtcDateTime, nullable=True)
+    # Lot 11b. Home side: a request made by a profile of a paired instance
+    # (``requester_peer_id``, that profile's id over there, its name).
+    # Mirror side: the copy of a request whose home is the paired instance
+    # (``source_peer_id`` + ``remote_id``).
+    requested_by_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    requester_peer_id: Mapped[str | None] = mapped_column(
+        ForeignKey("peers.id", ondelete="SET NULL"), nullable=True
+    )
+    requester_ref: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    source_peer_id: Mapped[str | None] = mapped_column(
+        ForeignKey("peers.id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    remote_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+
+    def __repr__(self) -> str:  # pragma: no cover - debugging convenience
+        return f"SharedRequest(id={self.id!r}, kind={self.kind!r}, status={self.status!r})"
+
+
+class Peer(Base):
+    """An instance paired with this one (Lot 11b, issue #78).
+
+    ``role`` says which way the shared library flows:
+
+    - ``"host"``: the other instance hosts a shared library this one mirrors.
+      This side calls it (``base_url``, presenting ``outbound_token``) and
+      remembers how far it has read its changes (``cursor``).
+    - ``"subscriber"``: the other instance mirrors this one's shared library.
+      It calls this side, presenting a token whose hash is
+      ``inbound_token_hash``; it never needs to be reachable from here.
+
+    ``trust_admins``: the host lets the subscriber's admins moderate its
+    shared library (chosen by the host's admin when inviting).
+    """
+
+    __tablename__ = "peers"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    instance_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    role: Mapped[str] = mapped_column(String(16), nullable=False)
+    base_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    outbound_token: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    inbound_token_hash: Mapped[str | None] = mapped_column(
+        String(64), nullable=True, unique=True
+    )
+    trust_admins: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    cursor: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    last_sync_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_error: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utcnow
+    )
+
+    def __repr__(self) -> str:  # pragma: no cover - debugging convenience
+        return f"Peer(id={self.id!r}, role={self.role!r}, name={self.name!r})"
+
+
+class PeerInvitation(Base):
+    """A one-time code an admin gives to the admin of another instance so it
+    can subscribe to this one's shared library (Lot 11b). Only the secret's
+    hash is kept; it expires, and works once."""
+
+    __tablename__ = "peer_invitations"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    secret_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    trust_admins: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    created_by: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utcnow
+    )
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class SharedTombstone(Base):
+    """A shared pattern of this instance that was removed, so that a
+    subscribed instance reading the changes since some point learns it is
+    gone (Lot 11b) — the deletion's own place in the change sequence."""
+
+    __tablename__ = "shared_tombstones"
+
+    pattern_id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    seq: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    deleted_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utcnow
+    )
+
