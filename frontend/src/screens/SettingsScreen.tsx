@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState, type ChangeEvent } from "react";
 
+import { AccountPanel } from "../components/AccountPanel";
+import { ProfilesPanel } from "../components/ProfilesPanel";
 import { LANGUAGES, useI18n, type Language } from "../i18n";
 import {
   backupExportUrl,
@@ -14,11 +16,14 @@ import {
 import { clearOfflineCache } from "../lib/db";
 import { useTheme, type ThemeChoice } from "../lib/theme";
 import { useWakeLock } from "../lib/wakeLock";
+import { useCurrentUser } from "../state/auth";
 
 /** An empty backup document: reuses exactly the restore mechanism
  * (`app/backup.py::restore_backup`, full replacement) to "clear all data",
  * rather than duplicating a separate server-side deletion logic for the same
- * result. */
+ * result. Format version 1 on purpose: a document from before profiles
+ * (Lot 10) leaves the profiles in place — clearing the data must not lock
+ * everyone out. */
 const EMPTY_BACKUP_DOCUMENT = JSON.stringify({
   format: "csh-backup",
   format_version: 1,
@@ -61,6 +66,9 @@ export function SettingsScreen({ version }: SettingsScreenProps) {
   const { t, language, setLanguage } = useI18n();
   const { choice, setChoice } = useTheme();
   const wakeLock = useWakeLock();
+  // Data (backup, restore, clearing) and deleting recipes act on everyone's
+  // data: admins only (Lot 10) — the server refuses them to anyone else.
+  const isAdmin = useCurrentUser().role === "admin";
 
   // Still a local setting: it will become a server preference when a real
   // need to have it influence extraction/import arises.
@@ -76,6 +84,7 @@ export function SettingsScreen({ version }: SettingsScreenProps) {
   const restoreInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
+    if (!isAdmin) return;
     const controller = new AbortController();
     void fetchAutoBackupSetting(controller.signal)
       .then((setting) => setAutoBackupState(setting.enabled))
@@ -87,7 +96,7 @@ export function SettingsScreen({ version }: SettingsScreenProps) {
         setAutoBackupError(true);
       });
     return () => controller.abort();
-  }, []);
+  }, [isAdmin]);
 
   const toggleAutoBackup = (value: boolean): void => {
     setAutoBackupState(value); // optimistic: reflects the tap immediately.
@@ -179,6 +188,9 @@ export function SettingsScreen({ version }: SettingsScreenProps) {
       <h2 style={{ margin: "0 0 18px" }}>{t("settings.title")}</h2>
 
       <div style={{ maxWidth: 620, display: "flex", flexDirection: "column", gap: 14 }}>
+        <AccountPanel />
+        {isAdmin && <ProfilesPanel />}
+
         <section className="panel">
           <div>
             <div className="panel-title">{t("settings.brand")}</div>
@@ -263,72 +275,74 @@ export function SettingsScreen({ version }: SettingsScreenProps) {
           </div>
         </section>
 
-        <section className="panel">
-          <div>
-            <div className="panel-title">{t("settings.data")}</div>
-          </div>
-          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-            <a
-              className="btn btn-secondary"
-              style={{ minHeight: 48, padding: "0 18px" }}
-              href={backupExportUrl()}
+        {isAdmin && (
+          <section className="panel">
+            <div>
+              <div className="panel-title">{t("settings.data")}</div>
+            </div>
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+              <a
+                className="btn btn-secondary"
+                style={{ minHeight: 48, padding: "0 18px" }}
+                href={backupExportUrl()}
+              >
+                {t("settings.data.export")}
+              </a>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                style={{ minHeight: 48, padding: "0 18px" }}
+                disabled={dataBusy}
+                onClick={pickRestoreFile}
+              >
+                {t("settings.data.restore")}
+              </button>
+              <input
+                ref={restoreInputRef}
+                type="file"
+                accept="application/json"
+                hidden
+                onChange={handleRestoreFile}
+              />
+            </div>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 12,
+                minHeight: 48,
+                fontSize: 14,
+              }}
             >
-              {t("settings.data.export")}
-            </a>
+              <span>{t("settings.data.autoBackup")}</span>
+              <Switch
+                checked={autoBackup}
+                onChange={toggleAutoBackup}
+                label={t("settings.data.autoBackup")}
+              />
+            </div>
+            {autoBackupError && (
+              <div className="text-muted" style={{ fontSize: 12 }}>
+                {t("settings.data.autoBackup.error")}
+              </div>
+            )}
+            {dataMessage && (
+              <div className="text-muted" style={{ fontSize: 13 }}>
+                {dataMessage}
+              </div>
+            )}
             <button
               type="button"
-              className="btn btn-secondary"
-              style={{ minHeight: 48, padding: "0 18px" }}
+              className="btn btn-ghost"
+              style={{ alignSelf: "flex-start", minHeight: 44, color: "var(--color-accent-700)" }}
               disabled={dataBusy}
-              onClick={pickRestoreFile}
+              onClick={eraseAllData}
             >
-              {t("settings.data.restore")}
+              {t("settings.data.erase")}
             </button>
-            <input
-              ref={restoreInputRef}
-              type="file"
-              accept="application/json"
-              hidden
-              onChange={handleRestoreFile}
-            />
-          </div>
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              gap: 12,
-              minHeight: 48,
-              fontSize: 14,
-            }}
-          >
-            <span>{t("settings.data.autoBackup")}</span>
-            <Switch
-              checked={autoBackup}
-              onChange={toggleAutoBackup}
-              label={t("settings.data.autoBackup")}
-            />
-          </div>
-          {autoBackupError && (
-            <div className="text-muted" style={{ fontSize: 12 }}>
-              {t("settings.data.autoBackup.error")}
-            </div>
-          )}
-          {dataMessage && (
-            <div className="text-muted" style={{ fontSize: 13 }}>
-              {dataMessage}
-            </div>
-          )}
-          <button
-            type="button"
-            className="btn btn-ghost"
-            style={{ alignSelf: "flex-start", minHeight: 44, color: "var(--color-accent-700)" }}
-            disabled={dataBusy}
-            onClick={eraseAllData}
-          >
-            {t("settings.data.erase")}
-          </button>
-        </section>
+          </section>
+        )}
 
         <section className="panel">
           <div>
@@ -362,14 +376,16 @@ export function SettingsScreen({ version }: SettingsScreenProps) {
                       {t("settings.recipes.usage", { count: recipe.usage_count })}
                     </span>
                   </div>
-                  <button
-                    type="button"
-                    className="btn btn-ghost"
-                    style={{ minHeight: 40, color: "var(--color-accent-700)" }}
-                    onClick={() => removeRecipe(recipe.id)}
-                  >
-                    {t("settings.recipes.delete")}
-                  </button>
+                  {isAdmin && (
+                    <button
+                      type="button"
+                      className="btn btn-ghost"
+                      style={{ minHeight: 40, color: "var(--color-accent-700)" }}
+                      onClick={() => removeRecipe(recipe.id)}
+                    >
+                      {t("settings.recipes.delete")}
+                    </button>
+                  )}
                 </div>
               ))}
             </div>

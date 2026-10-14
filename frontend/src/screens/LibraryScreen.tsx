@@ -1,4 +1,10 @@
-import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+  type ReactNode,
+} from "react";
 
 import { PatternThumbnail } from "../components/PatternThumbnail";
 import { CloseIcon, PlusIcon } from "../components/Icons";
@@ -29,6 +35,9 @@ export interface LibraryEntry {
 }
 
 interface LibraryScreenProps {
+  /** Shown at the right of the title, before "Sort" — the profile menu on a
+   * narrow screen (Lot 10). */
+  headerAccessory?: ReactNode;
   entries: readonly LibraryEntry[];
   /** The library is still loading: `entries` is not the real list yet. */
   loading?: boolean;
@@ -60,6 +69,7 @@ export function LibraryScreen({
   onDuplicate,
   onDelete,
   onEdit,
+  headerAccessory,
 }: LibraryScreenProps) {
   const t = useT();
   const hasActions = onDuplicate !== undefined && onDelete !== undefined;
@@ -209,33 +219,36 @@ export function LibraryScreen({
             {loading ? "\u00a0" : t("library.summary", { count: shown.length, active: inProgress })}
           </div>
         </div>
-        <div ref={sortMenuRef} style={{ position: "relative" }}>
-          <button
-            type="button"
-            className="btn btn-secondary"
-            style={{ minHeight: 44, padding: "0 16px" }}
-            aria-haspopup="menu"
-            aria-expanded={sortMenuOpen}
-            onClick={() => setSortMenuOpen((open) => !open)}
-          >
-            {t("library.sort")}
-          </button>
-          {sortMenuOpen && (
-            <div role="menu" aria-label={t("library.sort")} className="menu elev-md">
-              {LIBRARY_SORTS.map((option) => (
-                <button
-                  key={option}
-                  type="button"
-                  role="menuitemradio"
-                  aria-checked={sort === option}
-                  className="menu-item"
-                  onClick={() => chooseSort(option)}
-                >
-                  {t(`library.sort.${option}`)}
-                </button>
-              ))}
-            </div>
-          )}
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          {headerAccessory}
+          <div ref={sortMenuRef} style={{ position: "relative" }}>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              style={{ minHeight: 44, padding: "0 16px" }}
+              aria-haspopup="menu"
+              aria-expanded={sortMenuOpen}
+              onClick={() => setSortMenuOpen((open) => !open)}
+            >
+              {t("library.sort")}
+            </button>
+            {sortMenuOpen && (
+              <div role="menu" aria-label={t("library.sort")} className="menu elev-md">
+                {LIBRARY_SORTS.map((option) => (
+                  <button
+                    key={option}
+                    type="button"
+                    role="menuitemradio"
+                    aria-checked={sort === option}
+                    className="menu-item"
+                    onClick={() => chooseSort(option)}
+                  >
+                    {t(`library.sort.${option}`)}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -277,6 +290,12 @@ export function LibraryScreen({
             </button>
           ))}
         </div>
+      )}
+
+      {!loading && shown.length === 0 && (
+        <p className="text-muted" style={{ fontSize: 14 }}>
+          {t("library.empty")}
+        </p>
       )}
 
       {activeFilter !== null && visibleCards.length === 0 && (

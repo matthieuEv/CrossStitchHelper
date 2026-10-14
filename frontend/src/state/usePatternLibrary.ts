@@ -9,6 +9,10 @@
  *    instance in development): `App.tsx` falls back to the pattern built on
  *    the client (`demo/lavender.ts`).
  *
+ * A server that answers with no pattern is an empty library, never the demo
+ * (Lot 10): a profile that has imported nothing yet must not be shown
+ * client-made patterns as if they were its own.
+ *
  * In cases 1 and 2, any operation still queued (not yet confirmed by the
  * server) is replayed on top of the loaded progress, so the display never
  * "goes backwards" after a reload during a network outage.
@@ -23,7 +27,14 @@ import {
   fetchProgress,
   type ApiPatternSummary,
 } from "../lib/api";
-import { cachePattern, cacheProgress, db, getPendingOps, type PendingOp } from "../lib/db";
+import {
+  cachePattern,
+  cacheProgress,
+  getCachedPatterns,
+  getCachedProgress,
+  getPendingOps,
+  type PendingOp,
+} from "../lib/db";
 import { patternFromApi, progressFromApi, specialProgressFromApi } from "../lib/mappers";
 import type { Pattern, Progress, SpecialProgress } from "../pattern/types";
 
@@ -112,10 +123,10 @@ async function loadEntryFromServer(summary: ApiPatternSummary): Promise<LibraryP
 }
 
 async function loadEntriesFromCache(): Promise<LibraryPattern[]> {
-  const cachedPatterns = await db.patterns.toArray();
+  const cachedPatterns = await getCachedPatterns();
   const entries: LibraryPattern[] = [];
   for (const row of cachedPatterns) {
-    const cachedProgress = await db.progress.get(row.id);
+    const cachedProgress = await getCachedProgress(row.id);
     const cellCount = row.pattern.width * row.pattern.height;
     const base: LayeredBase = {
       full: cachedProgress?.done ?? new Uint8Array(cellCount),
@@ -163,10 +174,6 @@ export function usePatternLibrary(): PatternLibrary {
 
     try {
       const summaries = await fetchPatterns();
-      if (summaries.length === 0) {
-        if (!isStale()) setState({ entries: null, source: "demo" });
-        return;
-      }
       const entries = await Promise.all(summaries.map(loadEntryFromServer));
       if (!isStale()) setState({ entries, source: "server" });
     } catch {
