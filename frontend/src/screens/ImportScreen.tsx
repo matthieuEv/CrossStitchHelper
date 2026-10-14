@@ -9,14 +9,18 @@ import {
 } from "react";
 
 import { ImportGridPainter, StitchTypeBar } from "../components/ImportGridPainter";
+import { LabelPicker } from "../components/LabelPicker";
 import { SourcePreview } from "../components/SourcePreview";
 import { BackIcon, UploadIcon } from "../components/Icons";
 import { PatternThumbnail } from "../components/PatternThumbnail";
 import { useT } from "../i18n";
+import { useCompareText } from "../lib/format";
 import { useWideLayout } from "../lib/hooks";
+import { allLabels } from "../lib/labels";
 import { unresolvedUncertainCells } from "../lib/importFills";
 import {
   commitImport,
+  fetchPatterns,
   createImport,
   createRecipe,
   extractImport,
@@ -127,6 +131,21 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
   const [stitch, setStitch] = useState<ApiImportStitch>("full");
 
   const [name, setName] = useState("");
+  // Labels given to the new pattern (issue #57), and those the library
+  // already uses, offered with one tap. A failure to list them only means
+  // no suggestions: labels can still be typed.
+  const [labels, setLabels] = useState<string[]>([]);
+  const [knownLabels, setKnownLabels] = useState<string[]>([]);
+  const compareText = useCompareText();
+  useEffect(() => {
+    const controller = new AbortController();
+    fetchPatterns(controller.signal)
+      .then((patterns) =>
+        setKnownLabels(allLabels(patterns.map((pattern) => pattern.labels), compareText)),
+      )
+      .catch(() => undefined);
+    return () => controller.abort();
+  }, [compareText]);
   const [fabricCount, setFabricCount] = useState("14");
   const [preview, setPreview] = useState<ApiImportJob["preview"] | null>(null);
   const [committing, setCommitting] = useState(false);
@@ -435,6 +454,7 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
       await configSaveRef.current;
       const response = await commitImport(job.id, {
         name: name.trim(),
+        labels,
         ...(Number.isFinite(fabric) && fabric > 0 && { fabric_count: fabric }),
       });
       onFinish(response.pattern_id);
@@ -992,6 +1012,12 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
                     style={{ minHeight: 46 }}
                   />
                 </label>
+                <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                  <span className="text-muted" style={{ fontSize: 12 }}>
+                    {t("labels.title")}
+                  </span>
+                  <LabelPicker labels={labels} onChange={setLabels} known={knownLabels} />
+                </div>
                 <label style={{ display: "flex", flexDirection: "column", gap: 4, maxWidth: 160 }}>
                   <span className="text-muted" style={{ fontSize: 12 }}>
                     {t("import.recap.fabric")}

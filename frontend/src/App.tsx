@@ -4,7 +4,7 @@ import { AppShell } from "./components/AppShell";
 import { createDemoPattern, createDemoProgress } from "./demo/lavender";
 import { createDemoVariants } from "./demo/variants";
 import { useT } from "./i18n";
-import { deletePattern, duplicatePattern, useServerHealth } from "./lib/api";
+import { deletePattern, duplicatePattern, updatePattern, useServerHealth } from "./lib/api";
 import { forgetCachedPattern } from "./lib/db";
 import { useWideLayout } from "./lib/hooks";
 import { useRouter } from "./lib/router";
@@ -136,6 +136,10 @@ export function App() {
             onDelete: async (patternId: string) => {
               await deletePattern(patternId);
               await forgetCachedPattern(patternId);
+              await library.refresh();
+            },
+            onEdit: async (patternId: string, changes: { name: string; labels: string[] }) => {
+              await updatePattern(patternId, changes);
               await library.refresh();
             },
           })}

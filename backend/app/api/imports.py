@@ -53,6 +53,7 @@ from app.imports_engine import (
     render_symbol_svg,
     sha256_file,
 )
+from app.labels import labels_to_json
 from app.models import Grid, ImportJob, PaletteEntry, Pattern, Progress
 from app.schemas import (
     BackstitchSegment,
@@ -672,6 +673,7 @@ def commit(
         import_config_json=json.dumps(result["config"]),
         recipe_id=(result.get("applied_recipe") or {}).get("id"),
         notes=None,
+        labels_json=labels_to_json(payload.labels),
     )
     session.add(pattern)
 

@@ -80,6 +80,7 @@ export function patternFromApi(detail: ApiPatternDetail, grid: ApiGrid): Pattern
   return {
     id: detail.id,
     name: detail.name,
+    labels: detail.labels,
     width: detail.width,
     height: detail.height,
     cells: Uint8Array.from(layer),

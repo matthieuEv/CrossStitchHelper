@@ -147,6 +147,8 @@ export interface ApiPatternSummary {
   stitched_count: number;
   cell_count: number;
   percent: number;
+  /** Labels the user sorts the library with (issue #57). */
+  labels: string[];
   created_at: string;
   updated_at: string;
 }
@@ -160,6 +162,7 @@ export interface ApiPatternDetail {
   width: number;
   height: number;
   notes: string | null;
+  labels: string[];
   created_at: string;
   updated_at: string;
   palette: ApiPaletteEntry[];
@@ -260,6 +263,14 @@ export function deletePattern(id: string): Promise<void> {
 /** Copies a pattern under `name`, with empty progress (issue #52). */
 export function duplicatePattern(id: string, name: string): Promise<{ id: string }> {
   return postJson<{ id: string }>(`/patterns/${encodeURIComponent(id)}/duplicate`, { name });
+}
+
+/** The library's "Edit" action (issue #57): name and labels only. */
+export function updatePattern(
+  id: string,
+  changes: { name?: string; labels?: string[] },
+): Promise<ApiPatternDetail> {
+  return patchJson<ApiPatternDetail>(`/patterns/${encodeURIComponent(id)}`, changes);
 }
 
 export function fetchPatternDetail(id: string, signal?: AbortSignal): Promise<ApiPatternDetail> {
@@ -456,7 +467,7 @@ export interface ApiImportCommitResponse {
 
 export function commitImport(
   jobId: string,
-  payload: { name: string; fabric_count?: number },
+  payload: { name: string; fabric_count?: number; labels?: string[] },
   signal?: AbortSignal,
 ): Promise<ApiImportCommitResponse> {
   return postJson<ApiImportCommitResponse>(`/imports/${jobId}/commit`, payload, signal);
