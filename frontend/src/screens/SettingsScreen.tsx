@@ -27,7 +27,6 @@ const EMPTY_BACKUP_DOCUMENT = JSON.stringify({
   recipes: [],
 });
 
-const BRANDS = ["DMC", "Anchor", "Madeira"] as const;
 const LANGUAGE_LABELS: Record<Language, string> = { fr: "Français", en: "English" };
 
 interface SettingsScreenProps {
@@ -64,7 +63,6 @@ export function SettingsScreen({ version }: SettingsScreenProps) {
 
   // Still a local setting: it will become a server preference when a real
   // need to have it influence extraction/import arises.
-  const [brand, setBrand] = useState<(typeof BRANDS)[number]>("DMC");
 
   // Daily automatic backup (Lot 8): a server setting (`AppMeta`,
   // `app/auto_backup.py`), not a browser-local preference — it must apply
@@ -179,27 +177,6 @@ export function SettingsScreen({ version }: SettingsScreenProps) {
       <h2 style={{ margin: "0 0 18px" }}>{t("settings.title")}</h2>
 
       <div style={{ maxWidth: 620, display: "flex", flexDirection: "column", gap: 14 }}>
-        <section className="panel">
-          <div>
-            <div className="panel-title">{t("settings.brand")}</div>
-            <div className="text-muted" style={{ fontSize: 12 }}>
-              {t("settings.brand.hint")}
-            </div>
-          </div>
-          <div className="seg" style={{ alignSelf: "flex-start" }}>
-            {BRANDS.map((item) => (
-              <button
-                key={item}
-                type="button"
-                aria-pressed={brand === item}
-                onClick={() => setBrand(item)}
-              >
-                {item}
-              </button>
-            ))}
-          </div>
-        </section>
-
         <section className="panel">
           <div>
             <div className="panel-title">{t("settings.theme")}</div>

@@ -829,6 +829,12 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
               )}
             </div>
 
+            {/* DMC is the only thread chart (issue #38): said once, read-only,
+                so nobody wonders which brand the codes below belong to. */}
+            <p className="text-muted" style={{ fontSize: 13, margin: 0 }}>
+              {t("import.palette.chart")}
+            </p>
+
             <div
               style={{
                 display: "grid",

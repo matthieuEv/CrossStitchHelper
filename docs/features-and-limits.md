@@ -79,6 +79,5 @@ This document is precisely meant to check together whether an important feature 
 - Should it be possible to share a pattern (just the file, not via the app) with another person who has their own instance?
 - Is Android support necessary, or does use remain strictly iPhone/iPad?
 - Should the time actually spent stitching be tracked (a stopwatch), in addition to the completion percentage?
-- Should several thread brands (Anchor, DMC…) be supported, with conversion of codes from one to another?
 
 Feel free to add any other feature you think of while reading this document — this is the cheapest moment to do so.
