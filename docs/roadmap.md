@@ -200,7 +200,11 @@ Two stages, two PRs, in this order:
 
 **11b — between two instances.** Each shared pattern has a single home instance; a paired instance mirrors it read-only by pull, and forwards its users' writes to that home instance. Only the home instance needs to be reachable from the other.
 
-- [ ] Pairing by invitation code, revocable from either side
-- [ ] Changes feed (cursor, revisions, tombstones) and pull loop
-- [ ] Forwarded contributions, requests and (if trusted) admin actions
+- [x] Pairing by invitation code, revocable from either side
+- [x] Changes feed (cursor, revisions, tombstones) and pull loop
+- [x] Forwarded contributions, requests and (if trusted) admin actions
+
+**Done when:** an admin of a second self-hosted instance joins with an invitation code; its profiles see the host's shared patterns, copy them, add to the host's library and send requests the host's admins decide on, and see the outcome; a replaced original shows "Update" on copies at both sites; personal libraries and progress never leave their instance.
+
+**11b closed.** Subscribing side `backend/app/federation.py` (pairing, pull, forwarding), host side and admin routes `backend/app/api/federation.py`, exchange format `backend/app/fed_payload.py` (the backup's palette/grid serialisation), identity and change counter `backend/app/instance.py`, migration `0009_federation` (which also numbers the shared patterns that already existed — found missing on a real upgraded instance: they were never published). Verified by `backend/tests/test_federation.py` — 17 tests between **two real instances** (the host is a separate uvicorn process with its own database, reached over HTTP; nothing mocked): pairing and single-use invitations, mirroring, the peer token, copies told about a replacement, removal on the host unlinking copies, sharing and importing into the host's library, requests and proposals forwarded and their outcome returned, untrusted vs trusted moderation, leaving, revocation, an unreachable host (mirror still readable, writes refused with a clear error), backups (mirrors never in them, re-pulled after a restore; a host's restore reaching its subscribers), personal patterns unreachable through the protocol. In the browser, two Docker instances on one network ("Site A" with the upgraded data, a fresh "Site B"): invite, join, mirror with its source, trusted rename forwarded and landed on the host, sharing into the other site's library. `frontend/e2e/issue-78-federation.spec.ts` runs the same with two containers, in CI too (`.github/workflows/ci.yml` starts a second one). Found and fixed along the way: two instances on one host name (two ports) overwrote each other's session cookie, which is now named after the instance (`app/auth.py::cookie_name`); `httpx` had to become a runtime dependency.
 
