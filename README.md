@@ -107,6 +107,28 @@ docker exec crossstitchhelper python -m app.cli reset-password someone@example.c
 `reset-password` prints a new password to log in with (change it right after
 from Settings → My account) and logs that profile out of every device.
 
+### Linking two instances
+
+Two households, each with their own instance, can share one shared library
+(Settings → Linked sites). The site hosting the library creates an invitation
+code; an admin of the other site pastes it in "Join a site". From then on the
+other site pulls the host's shared library every 15 minutes, and whenever
+someone opens the Shared tab.
+
+Only the **host** must be reachable from the **other site's server**, at the
+address written in the invitation (by default the one the admin is using —
+change it if the other server reaches yours differently):
+
+- an HTTPS reverse proxy with a public domain (Caddy, Nginx, Traefik,
+  Cloudflare Tunnel…), the same you may use to reach your instance from your
+  phone outside the house;
+- or a private network both servers are on — e.g. Tailscale, sharing the
+  host's machine with the other household's tailnet.
+
+Personal libraries and progress never leave their instance: only shared
+patterns and the requests about them are exchanged. Either side can remove
+the link at any time.
+
 ## Updating
 
 ```bash

@@ -11,12 +11,13 @@ from __future__ import annotations
 import json
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Body, Depends
 from fastapi.responses import Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 from sqlalchemy.orm.attributes import flag_modified
 
+from app import federation
 from app import shared as shared_library
 from app.activity import compute_activity
 from app.auth import CurrentUser
@@ -47,6 +48,7 @@ from app.schemas import (
     ProgressSyncRequest,
     ProgressSyncResponse,
     SharedPatternRef,
+    ShareRequest,
     UpdateFromOriginOut,
     UpdateFromOriginRequest,
 )
@@ -463,11 +465,19 @@ def duplicate_pattern(
     summary="Put a copy of this pattern in the shared library",
 )
 def share_pattern(
-    pattern_id: str, session: Annotated[Session, Depends(get_session)], user: CurrentUser
+    pattern_id: str,
+    session: Annotated[Session, Depends(get_session)],
+    user: CurrentUser,
+    payload: Annotated[ShareRequest | None, Body()] = None,
 ) -> SharedPatternRef:
     """Lot 11 (issue #78): the personal pattern and its progress stay put;
-    the shared library gets a copy without progress, credited to `user`."""
-    shared = shared_library.share(session, user, _get_pattern(session, pattern_id, user))
+    the shared library gets a copy without progress, credited to `user` —
+    this instance's, or a paired host's (`target_peer_id`, Lot 11b)."""
+    personal = _get_pattern(session, pattern_id, user)
+    if payload is not None and payload.target_peer_id is not None:
+        peer = federation.peer_of(session, payload.target_peer_id)
+        return SharedPatternRef(id=federation.share_to_host(session, user, personal, peer).id)
+    shared = shared_library.share(session, user, personal)
     session.commit()
     return SharedPatternRef(id=shared.id)
 

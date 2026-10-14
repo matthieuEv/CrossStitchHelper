@@ -13,6 +13,12 @@ library:
   and the revision it was copied at: when an admin replaces the original's
   content, the copy shows "update available", and is never overwritten
   without its owner asking (`update_copy`), nor ever loses its progress.
+
+Every change to one of this instance's own shared patterns moves the change
+counter (`touch`, `_tombstone`): that is what a paired instance mirroring
+this library reads (Lot 11b, `app/api/federation.py`). Mirrors of a paired
+instance's patterns are never changed here directly — `app/federation.py`
+forwards the request to their home instance.
 """
 
 from __future__ import annotations
@@ -24,12 +30,25 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.http import api_error
-from app.models import Pattern, SharedRequest, User
+from app.instance import next_seq
+from app.models import Pattern, SharedRequest, SharedTombstone, User
 from app.pattern_copy import clone_pattern, replace_content, same_shape
 
 
 def display_name(user: User | None) -> str | None:
     return None if user is None else f"{user.first_name} {user.last_name}"
+
+
+def touch(session: Session, pattern: Pattern) -> None:
+    """Record that one of this instance's shared patterns changed (added,
+    renamed, replaced) — a mirror's change is its home instance's business."""
+    if pattern.library == "shared" and pattern.source_peer_id is None:
+        pattern.shared_seq = next_seq(session)
+
+
+def _tombstone(session: Session, pattern: Pattern) -> None:
+    if pattern.source_peer_id is None:
+        session.merge(SharedTombstone(pattern_id=pattern.id, seq=next_seq(session)))
 
 
 def get_shared(session: Session, pattern_id: str) -> Pattern:
@@ -65,6 +84,7 @@ def share(session: Session, user: User, personal: Pattern) -> Pattern:
     )
     personal.origin_pattern_id = shared.id
     personal.origin_revision = shared.revision
+    touch(session, shared)
     return shared
 
 
@@ -107,6 +127,7 @@ def replace_shared(session: Session, shared: Pattern, source: Pattern) -> None:
     now see "update available"."""
     replace_content(session, shared, source)
     shared.revision += 1
+    touch(session, shared)
 
 
 def _settle(request: SharedRequest, status: str, by: User | None) -> None:
@@ -123,7 +144,7 @@ def _drop_proposal(session: Session, request: SharedRequest) -> None:
         request.proposal_pattern_id = None
 
 
-def delete_shared(session: Session, shared: Pattern, admin: User) -> None:
+def delete_shared(session: Session, shared: Pattern, admin: User | None) -> None:
     """Remove a shared pattern. Copies keep their content and progress, no
     longer linked. Pending requests about it are settled: a removal was
     granted, a replacement no longer has anything to replace."""
@@ -135,6 +156,7 @@ def delete_shared(session: Session, shared: Pattern, admin: User) -> None:
     for request in pending:
         _settle(request, "accepted" if request.kind == "removal" else "rejected", admin)
         _drop_proposal(session, request)
+    _tombstone(session, shared)
     session.delete(shared)
 
 
@@ -201,7 +223,9 @@ def _require_pending(request: SharedRequest) -> None:
         raise api_error(409, "request_already_settled")
 
 
-def accept_request(session: Session, request: SharedRequest, admin: User) -> None:
+def accept_request(session: Session, request: SharedRequest, admin: User | None) -> None:
+    """`admin` is None when the decision comes from a trusted admin of a
+    paired instance (`app/api/federation.py`)."""
     _require_pending(request)
     shared = (
         session.get(Pattern, request.shared_pattern_id)
@@ -226,7 +250,7 @@ def accept_request(session: Session, request: SharedRequest, admin: User) -> Non
     _drop_proposal(session, request)
 
 
-def reject_request(session: Session, request: SharedRequest, admin: User) -> None:
+def reject_request(session: Session, request: SharedRequest, admin: User | None) -> None:
     _require_pending(request)
     _settle(request, "rejected", admin)
     _drop_proposal(session, request)
@@ -238,3 +262,18 @@ def cancel_request(session: Session, request: SharedRequest, user: User) -> None
     _require_pending(request)
     _settle(request, "cancelled", user)
     _drop_proposal(session, request)
+
+
+def requester_label(request: SharedRequest, names: dict[str, str]) -> str | None:
+    """Who asked: a profile of this instance, or one of a paired instance
+    (its name as that instance gave it)."""
+    if request.requested_by is not None and request.requested_by in names:
+        return names[request.requested_by]
+    return request.requested_by_name
+
+
+def contributor_label(pattern: Pattern, names: dict[str, str]) -> str | None:
+    if pattern.contributed_by is not None and pattern.contributed_by in names:
+        return names[pattern.contributed_by]
+    return pattern.contributed_by_name
+

@@ -39,7 +39,7 @@ CrossStitchHelper differentiates itself with a **transparent semi-automatic impo
 ### 2.2 Excluded (explicitly out of scope)
 
 - **Creating** patterns (photo → chart conversion): that is the job of Stitch Fiddle and the like, not ours.
-- **Public pattern library**: no pattern is distributed publicly or stored with a third party (see §3.3). Sharing within an instance's group is in scope since Lot 11 (issue #78) — deliberate, by its members, never implicit.
+- **Public pattern library**: no pattern is distributed publicly or stored with a third party (see §3.3). Sharing within an instance's group is in scope since Lot 11 (issue #78) — deliberate, by its members, never implicit — and, since Lot 11b, with one other instance its admins deliberately linked.
 - **Native** iOS/Android apps: deliberately ruled out (paid Apple developer account, contrary to the free goal).
 - **Multi-user with accounts and permissions**: out of V1 — added in Lot 10 as *profiles* of one household or group (issue #77): each profile has its own private library, an admin manages the profiles. Still excluded: self-registration, sending email, any account on a third-party service.
 - **Marketplace, payment, advertising**: none.
@@ -59,7 +59,7 @@ CrossStitchHelper differentiates itself with a **transparent semi-automatic impo
 
 - Primary target: **Safari on iPhone and iPad**, installed as a **PWA** ("Add to Home Screen") — full screen, icon, offline, no App Store.
 - Browser storage (IndexedDB) is treated as a **cache**, never as the source of truth: Safari applies an eviction policy to site data after inactivity, and the behaviour has varied across iOS versions. The source of truth is the self-hosted server's database.
-- Access from outside the local network (Tailscale/WireGuard-style tunnel, or HTTPS reverse proxy) is a **documentation** topic, not application code.
+- Access from outside the local network (Tailscale/WireGuard-style tunnel, or HTTPS reverse proxy) is a **documentation** topic, not application code. The same goes for linking two instances (Lot 11b): the hosting one must be reachable by the other's server, the application does no NAT traversal of its own.
 
 ### 3.3 Legal constraints
 
@@ -183,6 +183,9 @@ patterns (
   revision,                  -- content replacements of a shared pattern
   contributed_by NULL,       -- users.id credited for a shared pattern
   origin_pattern_id NULL, origin_revision NULL,  -- a copy's shared original
+  source_peer_id NULL, remote_id NULL,  -- Lot 11b: a mirror of a linked host's pattern
+  contributed_by_name NULL,  -- credit for a contributor of another instance
+  shared_seq NULL,           -- place in this instance's change sequence
   name, source_filename, source_sha256,
   width, height, fabric_count, created_at, updated_at,
   import_config_json,        -- configuration validated in the wizard
@@ -235,6 +238,19 @@ import_jobs (
   status, kind, pattern_id NULL, progress_pct,
   result_json, error, created_at, finished_at
 )
+
+peers (                      -- Lot 11b: a linked instance
+  id, instance_id, name,
+  role,                      -- 'host' (we mirror its shared library) | 'subscriber' (it mirrors ours)
+  base_url NULL, outbound_token NULL,   -- host: where and how we call it
+  inbound_token_hash NULL,   -- subscriber: the token it presents, hashed
+  trust_admins,              -- its admins may moderate the host's library
+  cursor,                    -- host: last change read
+  last_sync_at NULL, last_error NULL, created_at
+)
+
+peer_invitations (id, secret_hash, trust_admins, created_by, created_at, expires_at, used_at)
+shared_tombstones (pattern_id, seq, deleted_at)   -- removals, in the change sequence
 
 shared_requests (            -- Lot 11, issue #78
   id, kind,                  -- 'removal' | 'replacement'
@@ -401,6 +417,13 @@ This library stays strictly local. Community sharing had been considered as an o
 | POST | `/api/shared/patterns/{id}/replace` | Admins: replace its content with one of my patterns |
 | POST | `/api/shared/requests` | Ask for a removal, or propose a replacement |
 | POST | `/api/shared/requests/{id}/accept`, `/reject`, `/cancel` | Admins decide; the author withdraws |
+| GET | `/api/federation` | Admins: this instance's name and links |
+| PUT | `/api/federation/instance` | Admins: this instance's name, shown to linked instances |
+| POST/DELETE | `/api/federation/invitations` | Admins: a one-time code for another instance (24 h) |
+| POST | `/api/federation/join` | Admins: join a host with its code |
+| DELETE | `/api/federation/peers/{id}` | Admins: undo a link (mirrors go, copies stay) |
+| POST | `/api/federation/sync` | Pull the linked hosts now (opening the shared tab) |
+| — | `/api/federation/v1/*` | Instance-to-instance protocol, peer token only: `info`, `pair`, `changes?since=`, `patterns/{id}`, `shared` (+ rename, replace, delete if trusted), `requests` (+ accept/reject if trusted, cancel) |
 
 Progress synchronisation works with **versioned deltas**: the client sends the changed cells along with the version it knows; on divergence, the server returns the missing operations and the client replays them. Checking a cell is an idempotent operation, which makes conflicts trivial to resolve. Since Lot 8, each operation also carries a stitch category (`layer`: full, 1/2, 1/4, backstitch, knot) — a single version index for the whole pattern, but an index space specific to each category (never shared, see §6.2).
 
@@ -520,3 +543,4 @@ Lots 0 to 3 make up the **usable V1** and should be carried out in one go. Lots 
 | 2026-10-13 | **DMC is the only thread chart** (issue #38): no brand selector, no per-colour brand, no code conversion between brands. The Palette step says so read-only. Completing the 228-shade DMC table waits for a source whose licence allows redistribution |
 | 2026-10-14 | **Profiles (Lot 10, issue #77)** — the household instance becomes a group of profiles, each with a private library; at least one admin, always. Login delegated where it is risky (`pwdlib`/Argon2id for passwords; Authlib for OpenID Connect later), sessions in a small table of our own: `fastapi-users`, the only library covering user management, requires an asynchronous database layer (the whole backend is synchronous) and is in maintenance mode. Login screen lists the profiles ("Who's stitching?") then asks for the password — profile names are visible to anyone who opens the app, accepted for a household. Deleting a profile deletes its library |
 | 2026-10-14 | **Shared library within an instance (Lot 11a, issue #78)** — reverses the "nothing shared between users" principle of 2026-09-13 for the group of one instance only: sharing is deliberate (a profile shares a pattern), never implicit; a shared pattern belongs to nobody and has no progress — stitching it means copying it; only admins edit or remove it, others ask (removal, or a replacement frozen when proposed); a copy is told when its original is replaced and is never overwritten nor loses its progress (`backend/app/shared.py::update_copy`). Rights reminder shown wherever a pattern is shared. Sharing with a second, paired instance is Lot 11b |
+| 2026-10-14 | **Sharing between two instances (Lot 11b, issue #78)** — every shared pattern has one home instance, the only one that changes it; a subscribed instance keeps a read-only mirror, refreshed by pull (a changes feed: cursor, revision, tombstones), and forwards its users' writes to the home instance. No conflict can arise, and only the host needs to be reachable. Pairing by a one-time invitation code; the host chooses whether the subscriber's admins may moderate. Rejected after research: replication libraries (cr-sqlite has no Python package, Marmot/rqlite need a separate service, Litestream is single-writer, sqlite-sync is not open source), CRDT libraries (overkill for rarely edited, admin-authoritative data), ActivityPub and an embedded OIDC provider (overkill for two trusted peers), Iroh (Python bindings alpha, relays run by a third party by default). Delegated: transport security (HTTPS or the tunnel already used for remote access) and HTTP (`httpx`) |

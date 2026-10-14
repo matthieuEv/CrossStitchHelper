@@ -31,6 +31,7 @@ import {
   fetchDmcShades,
   type ApiThreadShade,
   type ApiLibraryChoice,
+  type ApiSharedTarget,
   translateApiError,
   translateDetectionWarning,
   type ApiImportConfig,
@@ -63,6 +64,9 @@ function nextPaletteEntry(existing: readonly ApiImportPaletteEntry[]): ApiImport
 
 interface ImportScreenProps {
   onCancel: () => void;
+  /** The shared libraries an import can go to (Lot 11b); a choice is
+   * offered when there is more than one. */
+  sharedTargets?: ReadonlyArray<ApiSharedTarget>;
   /** `null` when the pattern went to the shared library only (Lot 11):
    * there is nothing of one's own to open. */
   onFinish: (patternId: string | null) => void;
@@ -82,7 +86,7 @@ function paletteForApi(palette: readonly PaletteRow[]): ApiImportPaletteEntry[] 
 /** `<datalist>` of the DMC chart's codes, shared by every code field. */
 const DMC_CODES_LIST_ID = "import-dmc-codes";
 
-export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
+export function ImportScreen({ onCancel, onFinish, sharedTargets = [] }: ImportScreenProps) {
   const t = useT();
   const wide = useWideLayout();
 
@@ -140,6 +144,7 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
   const [labels, setLabels] = useState<string[]>([]);
   // Where the pattern goes (Lot 11, issue #78).
   const [destination, setDestination] = useState<ApiLibraryChoice>("personal");
+  const [sharedTarget, setSharedTarget] = useState("");
   const [knownLabels, setKnownLabels] = useState<string[]>([]);
   const compareText = useCompareText();
   useEffect(() => {
@@ -461,6 +466,7 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
         name: name.trim(),
         labels,
         library: destination,
+        ...(destination !== "personal" && sharedTarget !== "" && { shared_target_peer_id: sharedTarget }),
         ...(Number.isFinite(fabric) && fabric > 0 && { fabric_count: fabric }),
       });
       onFinish(response.pattern_id);
@@ -1044,6 +1050,21 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
                       </button>
                     ))}
                   </div>
+                  {destination !== "personal" && sharedTargets.length > 1 && (
+                    <select
+                      className="input"
+                      aria-label={t("shared.target")}
+                      value={sharedTarget}
+                      onChange={(event) => setSharedTarget(event.target.value)}
+                      style={{ minHeight: 46, marginTop: 6 }}
+                    >
+                      {sharedTargets.map((target) => (
+                        <option key={target.peer_id ?? ""} value={target.peer_id ?? ""}>
+                          {target.name}
+                        </option>
+                      ))}
+                    </select>
+                  )}
                   {destination !== "personal" && (
                     <span className="text-muted" style={{ fontSize: 12, lineHeight: 1.5 }}>
                       {t("shared.rightsNotice")}

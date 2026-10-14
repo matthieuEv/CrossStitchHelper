@@ -123,3 +123,33 @@ def test_downgrade_to_0006_then_upgrade_again(database: Path) -> None:
         assert connection.execute(text("SELECT count(*) FROM progress")).scalar() == 1
         assert connection.execute(text("SELECT count(*) FROM users")).scalar() == 0
     engine.dispose()
+
+
+def test_existing_shared_patterns_are_published_after_0009(database: Path) -> None:
+    """A pattern shared before 0009 (Lot 11a) must get a place in the change
+    sequence, or a paired instance would never hear of it."""
+    config = build_alembic_config()
+    url = get_settings().database_url
+    command.upgrade(config, "0008_shared_library")
+    engine = create_engine(url)
+    with engine.begin() as connection:
+        for pattern_id in ("s1", "s2"):
+            connection.execute(
+                text(
+                    "INSERT INTO patterns (id, name, width, height, created_at, updated_at, "
+                    "labels_json, library, revision) VALUES (:id, 'Shared', 2, 1, "
+                    "'2026-01-01 00:00:00', '2026-01-01 00:00:00', '[]', 'shared', 1)"
+                ),
+                {"id": pattern_id},
+            )
+    command.upgrade(config, "head")
+    with engine.connect() as connection:
+        seqs = connection.execute(
+            text("SELECT shared_seq FROM patterns ORDER BY shared_seq")
+        ).scalars()
+        assert list(seqs) == [1, 2]
+        counter = connection.execute(
+            text("SELECT value FROM app_meta WHERE key = 'shared_seq'")
+        ).scalar()
+        assert counter == "2"
+    engine.dispose()

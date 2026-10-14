@@ -19,6 +19,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 from sqlalchemy import (
+    Boolean,
     DateTime,
     Float,
     ForeignKey,
@@ -114,6 +115,13 @@ class Pattern(Base):
     and the ``revision`` it was copied at (``origin_revision``): a newer
     revision of the original is what "update available" means — the copy is
     never overwritten on its own.
+
+    Between two paired instances (Lot 11b, `app/federation.py`): a shared
+    pattern whose home is the other instance is mirrored here, read-only
+    (``source_peer_id`` + its id over there, ``remote_id``); a shared pattern
+    of this instance records when it last changed (``shared_seq``), which is
+    what the other instance pulls. ``contributed_by_name`` credits a
+    contributor who is not a profile of this instance.
     """
 
     __tablename__ = "patterns"
@@ -152,6 +160,12 @@ class Pattern(Base):
         ForeignKey("patterns.id", ondelete="SET NULL"), nullable=True, index=True
     )
     origin_revision: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    source_peer_id: Mapped[str | None] = mapped_column(
+        ForeignKey("peers.id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    remote_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    contributed_by_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    shared_seq: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
 
     palette_entries: Mapped[list[PaletteEntry]] = relationship(
         back_populates="pattern",
@@ -464,7 +478,93 @@ class SharedRequest(Base):
         UtcDateTime, nullable=False, default=_utcnow
     )
     resolved_at: Mapped[datetime | None] = mapped_column(UtcDateTime, nullable=True)
+    # Lot 11b. Home side: a request made by a profile of a paired instance
+    # (``requester_peer_id``, that profile's id over there, its name).
+    # Mirror side: the copy of a request whose home is the paired instance
+    # (``source_peer_id`` + ``remote_id``).
+    requested_by_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    requester_peer_id: Mapped[str | None] = mapped_column(
+        ForeignKey("peers.id", ondelete="SET NULL"), nullable=True
+    )
+    requester_ref: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    source_peer_id: Mapped[str | None] = mapped_column(
+        ForeignKey("peers.id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    remote_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
 
     def __repr__(self) -> str:  # pragma: no cover - debugging convenience
         return f"SharedRequest(id={self.id!r}, kind={self.kind!r}, status={self.status!r})"
+
+
+class Peer(Base):
+    """An instance paired with this one (Lot 11b, issue #78).
+
+    ``role`` says which way the shared library flows:
+
+    - ``"host"``: the other instance hosts a shared library this one mirrors.
+      This side calls it (``base_url``, presenting ``outbound_token``) and
+      remembers how far it has read its changes (``cursor``).
+    - ``"subscriber"``: the other instance mirrors this one's shared library.
+      It calls this side, presenting a token whose hash is
+      ``inbound_token_hash``; it never needs to be reachable from here.
+
+    ``trust_admins``: the host lets the subscriber's admins moderate its
+    shared library (chosen by the host's admin when inviting).
+    """
+
+    __tablename__ = "peers"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    instance_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    role: Mapped[str] = mapped_column(String(16), nullable=False)
+    base_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    outbound_token: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    inbound_token_hash: Mapped[str | None] = mapped_column(
+        String(64), nullable=True, unique=True
+    )
+    trust_admins: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    cursor: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    last_sync_at: Mapped[datetime | None] = mapped_column(UtcDateTime, nullable=True)
+    last_error: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        UtcDateTime, nullable=False, default=_utcnow
+    )
+
+    def __repr__(self) -> str:  # pragma: no cover - debugging convenience
+        return f"Peer(id={self.id!r}, role={self.role!r}, name={self.name!r})"
+
+
+class PeerInvitation(Base):
+    """A one-time code an admin gives to the admin of another instance so it
+    can subscribe to this one's shared library (Lot 11b). Only the secret's
+    hash is kept; it expires, and works once."""
+
+    __tablename__ = "peer_invitations"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    secret_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    trust_admins: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    created_by: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        UtcDateTime, nullable=False, default=_utcnow
+    )
+    expires_at: Mapped[datetime] = mapped_column(UtcDateTime, nullable=False)
+    used_at: Mapped[datetime | None] = mapped_column(UtcDateTime, nullable=True)
+
+
+class SharedTombstone(Base):
+    """A shared pattern of this instance that was removed, so that a
+    subscribed instance reading the changes since some point learns it is
+    gone (Lot 11b) — the deletion's own place in the change sequence."""
+
+    __tablename__ = "shared_tombstones"
+
+    pattern_id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    seq: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    deleted_at: Mapped[datetime] = mapped_column(
+        UtcDateTime, nullable=False, default=_utcnow
+    )
 

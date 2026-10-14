@@ -119,7 +119,9 @@ def test_login_logout_round_trip(client: TestClient) -> None:
     ok = other.post("/api/auth/login", json={"user_id": admin_id, "password": ADMIN_PASSWORD})
     assert ok.status_code == 200
     cookie = ok.headers["set-cookie"]
-    assert "csh_session=" in cookie
+    # Named after this instance: two instances on one host name (two ports)
+    # must not overwrite each other's session (Lot 11b).
+    assert cookie.startswith("csh_session_")
     assert "httponly" in cookie.lower()
     assert "samesite=lax" in cookie.lower()
     assert "secure" not in cookie.lower()  # plain HTTP on the home network

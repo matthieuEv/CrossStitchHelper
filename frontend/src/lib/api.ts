@@ -511,6 +511,8 @@ export function commitImport(
     fabric_count?: number;
     labels?: string[];
     library?: ApiLibraryChoice;
+    /** A paired host's shared library rather than this one's (Lot 11b). */
+    shared_target_peer_id?: string | null;
   },
   signal?: AbortSignal,
 ): Promise<ApiImportCommitResponse> {
@@ -711,6 +713,17 @@ export interface ApiSharedPattern {
   updated_at: string;
   /** The logged-in profile's copies of it. */
   my_copy_ids: string[];
+  /** The paired instance this pattern's home is (Lot 11b); null if here. */
+  source_name?: string | null;
+  /** The logged-in profile may rename, replace or remove it. */
+  can_moderate?: boolean;
+}
+
+/** A shared library a pattern can be added to: this instance's
+ * (`peer_id` null), or a paired host's (Lot 11b). */
+export interface ApiSharedTarget {
+  peer_id: string | null;
+  name: string;
 }
 
 export type ApiSharedRequestKind = "removal" | "replacement";
@@ -730,12 +743,16 @@ export interface ApiSharedRequest {
   proposal_pattern_id: string | null;
   created_at: string;
   resolved_at: string | null;
+  /** The logged-in profile may accept or decline it (Lot 11b: not an admin
+   * of an instance the request's home does not trust). */
+  can_decide?: boolean;
 }
 
 export interface ApiSharedLibrary {
   patterns: ApiSharedPattern[];
   /** Every pending request for an admin; one's own, settled ones included. */
   requests: ApiSharedRequest[];
+  targets?: ApiSharedTarget[];
 }
 
 export function fetchSharedLibrary(signal?: AbortSignal): Promise<ApiSharedLibrary> {
@@ -756,9 +773,12 @@ export function copySharedPattern(id: string, name: string): Promise<{ id: strin
   return postJson<{ id: string }>(`/shared/patterns/${encodeURIComponent(id)}/copy`, { name });
 }
 
-/** Puts a copy of one of my patterns in the shared library. */
-export function sharePattern(id: string): Promise<{ id: string }> {
-  return postJson<{ id: string }>(`/patterns/${encodeURIComponent(id)}/share`, {});
+/** Puts a copy of one of my patterns in a shared library: this
+ * instance's, or a paired host's (`targetPeerId`, Lot 11b). */
+export function sharePattern(id: string, targetPeerId: string | null = null): Promise<{ id: string }> {
+  return postJson<{ id: string }>(`/patterns/${encodeURIComponent(id)}/share`, {
+    target_peer_id: targetPeerId,
+  });
 }
 
 /** Brings a copy up to its shared original: in place, or as a new copy
@@ -807,6 +827,73 @@ export function settleSharedRequest(
   action: "accept" | "reject" | "cancel",
 ): Promise<ApiSharedRequest> {
   return postJson<ApiSharedRequest>(`/shared/requests/${encodeURIComponent(id)}/${action}`, {});
+}
+
+// --- Linking two instances (Lot 11b, issue #78) ---------------------------
+
+export interface ApiPeer {
+  id: string;
+  name: string;
+  /** "host": we mirror its shared library; "subscriber": it mirrors ours. */
+  role: "host" | "subscriber";
+  base_url: string | null;
+  trust_admins: boolean;
+  last_sync_at: string | null;
+  last_error: string | null;
+  created_at: string;
+}
+
+export interface ApiInvitation {
+  id: string;
+  trust_admins: boolean;
+  created_at: string;
+  expires_at: string;
+}
+
+export interface ApiFederation {
+  instance_id: string;
+  instance_name: string;
+  peers: ApiPeer[];
+  invitations: ApiInvitation[];
+}
+
+export function fetchFederation(signal?: AbortSignal): Promise<ApiFederation> {
+  return request<ApiFederation>("/federation", withSignal(signal));
+}
+
+export function renameInstance(name: string): Promise<void> {
+  return requestNoContent("/federation/instance", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name }),
+  });
+}
+
+export function createInvitation(
+  publicUrl: string,
+  trustAdmins: boolean,
+): Promise<{ code: string; expires_at: string }> {
+  return postJson<{ code: string; expires_at: string }>("/federation/invitations", {
+    public_url: publicUrl,
+    trust_admins: trustAdmins,
+  });
+}
+
+export function withdrawInvitation(id: string): Promise<void> {
+  return deleteRequest(`/federation/invitations/${encodeURIComponent(id)}`);
+}
+
+export function joinHost(code: string): Promise<ApiPeer> {
+  return postJson<ApiPeer>("/federation/join", { code });
+}
+
+export function leavePeer(id: string): Promise<void> {
+  return deleteRequest(`/federation/peers/${encodeURIComponent(id)}`);
+}
+
+/** Pull the paired hosts now (skipped by the server if done moments ago). */
+export function syncShared(): Promise<{ synced: number; errors: string[] }> {
+  return postJson<{ synced: number; errors: string[] }>("/federation/sync", {});
 }
 
 export type ServerState = "checking" | "ok" | "unreachable";

@@ -68,9 +68,15 @@ jobs:
         run: docker build -t crossstitchhelper:ci .
       - name: Start the instance and wait for it to respond
         run: |
-          docker run -d --name csh -p 8000:8000 crossstitchhelper:ci
+          # A second instance next to it, on one Docker network: the
+          # instance-to-instance e2e (Lot 11b) links them (`csh` is reached by
+          # the second one's server as http://csh:8000).
+          docker network create csh-net
+          docker run -d --name csh --network csh-net -p 8000:8000 crossstitchhelper:ci
+          docker run -d --name csh-peer --network csh-net -p 8001:8000 crossstitchhelper:ci
           for attempt in $(seq 1 30); do
-            if curl -fsS http://127.0.0.1:8000/api/health > /tmp/health.json; then
+            if curl -fsS http://127.0.0.1:8000/api/health > /tmp/health.json \
+              && curl -fsS http://127.0.0.1:8001/api/health > /dev/null; then
               break
             fi
             sleep 2
@@ -97,6 +103,9 @@ jobs:
           npx playwright install --with-deps chromium
       - name: e2e tests (against the real Docker image)
         working-directory: frontend
+        env:
+          E2E_PEER_URL: http://127.0.0.1:8001
+          E2E_HOST_INTERNAL_URL: http://csh:8000
         run: npm run test:e2e
       - name: e2e report
         if: failure()
@@ -105,6 +114,8 @@ jobs:
           name: playwright-report
           path: frontend/playwright-report/
           retention-days: 7
-      - name: Clean up the container
+      - name: Clean up the containers
         if: always()
-        run: docker rm -f csh
+        run: |
+          docker rm -f csh csh-peer
+          docker network rm csh-net

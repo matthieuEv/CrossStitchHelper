@@ -10,7 +10,7 @@ import { PatternThumbnail } from "../components/PatternThumbnail";
 import { CloseIcon, PlusIcon } from "../components/Icons";
 import { LabelPicker } from "../components/LabelPicker";
 import { useT } from "../i18n";
-import { translateApiError } from "../lib/api";
+import { translateApiError, type ApiSharedTarget } from "../lib/api";
 import { useCompareText, useRelativeTime } from "../lib/format";
 import { allLabels, sameLabel } from "../lib/labels";
 import {
@@ -72,8 +72,12 @@ interface LibraryScreenProps {
   sharedCount?: number;
   tab?: LibraryTab;
   onTabChange?: (tab: LibraryTab) => void;
-  /** Put a copy of one's pattern in the shared library. */
-  onShare?: (patternId: string) => Promise<void>;
+  /** Put a copy of one's pattern in a shared library — this instance's
+   * (`null`), or a paired host's (Lot 11b). */
+  onShare?: (patternId: string, targetPeerId: string | null) => Promise<void>;
+  /** The shared libraries one can add to; a choice is offered when there is
+   * more than one. */
+  shareTargets?: ReadonlyArray<ApiSharedTarget>;
   /** Bring a copy up to its shared original; resolves to whether it was
    * done in place (`false`: a new copy was made, see `app/shared.py`). */
   onUpdateFromOrigin?: (patternId: string, newCopyName: string) => Promise<boolean>;
@@ -100,6 +104,7 @@ export function LibraryScreen({
   tab = "mine",
   onTabChange,
   onShare,
+  shareTargets = [],
   onUpdateFromOrigin,
 }: LibraryScreenProps) {
   const t = useT();
@@ -107,6 +112,7 @@ export function LibraryScreen({
   const [actionsFor, setActionsFor] = useState<LibraryEntry | null>(null);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [confirmingShare, setConfirmingShare] = useState(false);
+  const [shareTarget, setShareTarget] = useState("");
   // Shown in the sheet after an update that had to make a new copy.
   const [notice, setNotice] = useState<string | null>(null);
   const showingShared = sharedView !== undefined && tab === "shared";
@@ -589,6 +595,23 @@ export function LibraryScreen({
               ) : confirmingShare ? (
                 <>
                   <p style={{ margin: 0 }}>{t("library.share.confirm", { name: actionsFor.pattern.name })}</p>
+                  {shareTargets.length > 1 && (
+                    <label className="form-field">
+                      <span>{t("shared.target")}</span>
+                      <select
+                        className="input"
+                        style={{ minHeight: 46 }}
+                        value={shareTarget}
+                        onChange={(event) => setShareTarget(event.target.value)}
+                      >
+                        {shareTargets.map((target) => (
+                          <option key={target.peer_id ?? ""} value={target.peer_id ?? ""}>
+                            {target.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  )}
                   <p className="text-muted" style={{ margin: 0, fontSize: 12, lineHeight: 1.5 }}>
                     {t("shared.rightsNotice")}
                   </p>
@@ -597,7 +620,9 @@ export function LibraryScreen({
                     className="btn btn-primary btn-block"
                     style={{ minHeight: 48 }}
                     disabled={busy}
-                    onClick={() => void runAction(() => onShare!(actionsFor.pattern.id))}
+                    onClick={() =>
+                      void runAction(() => onShare!(actionsFor.pattern.id, shareTarget === "" ? null : shareTarget))
+                    }
                   >
                     {t("library.share.submit")}
                   </button>
