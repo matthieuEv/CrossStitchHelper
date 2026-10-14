@@ -9,7 +9,6 @@ progress synchronisation, and `.cshp` export.
 from __future__ import annotations
 
 import json
-from datetime import UTC
 from typing import Annotated
 
 from fastapi import APIRouter, Depends

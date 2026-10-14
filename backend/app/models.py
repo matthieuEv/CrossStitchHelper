@@ -461,9 +461,9 @@ class SharedRequest(Base):
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True
     )
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), nullable=False, default=_utcnow
+        UtcDateTime, nullable=False, default=_utcnow
     )
-    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    resolved_at: Mapped[datetime | None] = mapped_column(UtcDateTime, nullable=True)
 
     def __repr__(self) -> str:  # pragma: no cover - debugging convenience
         return f"SharedRequest(id={self.id!r}, kind={self.kind!r}, status={self.status!r})"
