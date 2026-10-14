@@ -1,8 +1,13 @@
 #!/usr/bin/env bash
 # Assembles an integration branch: main plus every open, non-draft pull request
-# targeting main, merged in pull request number order. This is what testers get
-# as a pre-release image (`.github/workflows/integration.yml`); the pull
-# requests themselves stay open and are merged into main one by one, as usual.
+# targeting main, merged in pull request number order, then the pull requests
+# stacked on them (targeting another open pull request's branch rather than
+# main), each after the one it is stacked on. This is what testers get as a
+# pre-release image (`.github/workflows/integration.yml`); the pull requests
+# themselves stay open and are merged into main one by one, as usual.
+#
+# A stacked pull request carries the commits of the ones below it: it is left
+# out whenever one of them is (excluded, or a draft), never merged with them.
 #
 # Conflicts between pull requests are resolved once by hand, recorded by
 # `git rerere` and replayed on every rebuild. Recorded resolutions are shared
@@ -71,18 +76,67 @@ cache_tree() {
 git fetch -q origin main
 git checkout -q -B "$branch" origin/main
 
-excluded=" $(tr -cs '0-9' ' ' <<<"$exclude") "
-prs=$(gh pr list --base main --state open --limit 200 --json number,title,isDraft \
-  --jq '[.[] | select(.isDraft | not)] | sort_by(.number) | .[] | "\(.number)\t\(.title)"')
+excluded_numbers=$(tr -cs '0-9' ' ' <<<"$exclude" | xargs)
+excluded_json="[${excluded_numbers// /,}]"
+
+# Which pull requests to merge, in which order, as tab-separated lines:
+#   include <depth> <number> <title> <number it is stacked on, if any>
+#   skip <number> <title> <reason, empty when excluded by --exclude>
+# `depth` is 0 for a pull request targeting main, 1 for one stacked on it, and
+# so on: merging by depth, then number, merges a pull request after the one it
+# is stacked on and keeps the order stable from one rebuild to the next (the
+# recorded resolutions depend on it).
+select_prs='
+  def parent($prs):
+    . as $pr
+    | [$prs[] | select((.isCrossRepository | not) and .headRefName == $pr.baseRefName)]
+    | first;
+  # The pull requests from the one targeting main up to this one, or null when
+  # its base is neither main nor an open pull request of this repository.
+  def chain($prs; $depth):
+    if .baseRefName == "main" then [.]
+    elif $depth > 20 then null
+    else
+      parent($prs) as $parent
+      | if $parent == null then null
+        else ($parent | chain($prs; $depth + 1)) as $below
+        | if $below == null then null else $below + [.] end
+        end
+    end;
+  def excluded($excluded): . as $number | any($excluded[]; . == $number);
+  '"$excluded_json"' as $excluded
+  | . as $prs
+  | [.[] | select(.isDraft | not)]
+  | sort_by(.number)
+  | map(
+      . as $pr
+      | chain($prs; 0) as $chain
+      | if $chain == null then
+          {pr: $pr, reason: "targets \($pr.baseRefName), neither main nor an open pull request"}
+        elif ($pr.number | excluded($excluded)) then {pr: $pr, reason: ""}
+        else
+          ([$chain[:-1][] | select(.isDraft or (.number | excluded($excluded)))] | first) as $blocker
+          | if $blocker != null then
+              {pr: $pr, reason: "stacked on #\($blocker.number), \(if $blocker.isDraft then "a draft" else "excluded" end)"}
+            else
+              {pr: $pr, depth: ($chain | length - 1), on: (if ($chain | length) > 1 then $chain[-2].number else "" end)}
+            end
+        end)
+  | (map(select(.depth != null)) | sort_by(.depth, .pr.number)[] | ["include", .depth, .pr.number, .pr.title, .on]),
+    (map(select(.depth == null))[] | ["skip", .pr.number, .pr.title, .reason])
+  | @tsv'
+selection=$(gh pr list --state open --limit 200 \
+  --json number,title,isDraft,baseRefName,headRefName,isCrossRepository --jq "$select_prs")
 
 included=()
 skipped=()
-while IFS=$'\t' read -r number title; do
-  [[ -n $number ]] || continue
-  if [[ $excluded == *" $number "* ]]; then
-    skipped+=("$number"$'\t'"$title")
+while IFS=$'\t' read -r kind field1 field2 field3 field4; do
+  if [[ $kind == skip ]]; then
+    skipped+=("$field1"$'\t'"$field2"$'\t'"$field3")
     continue
   fi
+  [[ $kind == include ]] || continue
+  number=$field2 title=$field3 stacked_on=$field4
   git fetch -q origin "pull/$number/head"
   sha=$(git rev-parse FETCH_HEAD)
   if ! git_rr merge -q --no-ff -m "Merge #$number: $title" FETCH_HEAD >/dev/null; then
@@ -102,25 +156,25 @@ while IFS=$'\t' read -r number title; do
     # Every conflict was replayed from a recorded resolution.
     git commit -q --no-edit
   fi
-  included+=("$number"$'\t'"$sha"$'\t'"$title")
-done <<<"$prs"
+  included+=("$number"$'\t'"$sha"$'\t'"$title"$'\t'"$stacked_on")
+done <<<"$selection"
 
 report() {
   echo "Base: \`main\` at \`$(git rev-parse --short origin/main)\`"
   echo
-  echo "| PR | Commit | Title |"
-  echo "|---|---|---|"
-  local entry number sha title
+  echo "| PR | Commit | Title | Stacked on |"
+  echo "|---|---|---|---|"
+  local entry number sha title stacked_on reason
   for entry in ${included[@]+"${included[@]}"}; do
-    IFS=$'\t' read -r number sha title <<<"$entry"
-    echo "| #$number | \`${sha:0:7}\` | $title |"
+    IFS=$'\t' read -r number sha title stacked_on <<<"$entry"
+    echo "| #$number | \`${sha:0:7}\` | $title | ${stacked_on:+#$stacked_on} |"
   done
   if ((${#skipped[@]})); then
     echo
-    echo "Excluded:"
+    echo "Left out:"
     for entry in "${skipped[@]}"; do
-      IFS=$'\t' read -r number title <<<"$entry"
-      echo "- #$number $title"
+      IFS=$'\t' read -r number title reason <<<"$entry"
+      echo "- #$number $title${reason:+ ($reason)}"
     done
   fi
 }
