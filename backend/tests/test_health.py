@@ -22,7 +22,7 @@ def test_health_reports_ok_and_applied_migration(client: TestClient) -> None:
     assert body["status"] == "ok"
     assert body["version"] == get_settings().app_version
     assert body["database"] == "ok"
-    assert body["schema_revision"] == "0007_profiles"
+    assert body["schema_revision"] == "0008_shared_library"
 
 
 def test_database_is_created_inside_the_configured_data_dir(

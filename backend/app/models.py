@@ -94,12 +94,26 @@ class Pattern(Base):
     """An imported pattern (or, before Lot 2, injected directly into the
     database).
 
-    ``owner_id`` is the profile whose library holds the pattern (Lot 10).
-    Still nullable: a pattern created before the first admin exists (the
-    seed, an instance upgraded from a single-user version) has no owner until
-    the first-launch setup hands every such pattern to that admin
-    (`app/accounts.py::create_first_admin`). An ownerless pattern is visible
-    to nobody.
+    ``library`` (Lot 11, issue #78) says where the pattern lives:
+
+    - ``"personal"``: in ``owner_id``'s library — the only kind that has a
+      progress row and can be stitched. ``owner_id`` is still nullable: a
+      pattern created before the first admin exists (the seed, an instance
+      upgraded from a single-user version) has no owner until the
+      first-launch setup hands it to that admin
+      (`app/accounts.py::create_first_admin`). An ownerless personal pattern
+      is visible to nobody.
+    - ``"shared"``: in the instance's shared library, owned by nobody (a
+      contributor's departure must not take it away); ``contributed_by`` only
+      credits who added it. ``revision`` counts its content replacements.
+    - ``"proposal"``: a frozen copy of the content a profile proposed to
+      replace a shared pattern with (`SharedRequest`), deleted once the
+      request is settled.
+
+    A personal copy of a shared pattern remembers it (``origin_pattern_id``)
+    and the ``revision`` it was copied at (``origin_revision``): a newer
+    revision of the original is what "update available" means — the copy is
+    never overwritten on its own.
     """
 
     __tablename__ = "patterns"
@@ -127,6 +141,17 @@ class Pattern(Base):
     labels_json: Mapped[str] = mapped_column(
         Text, nullable=False, default="[]", server_default="[]"
     )
+    library: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="personal", server_default="personal", index=True
+    )
+    revision: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
+    contributed_by: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    origin_pattern_id: Mapped[str | None] = mapped_column(
+        ForeignKey("patterns.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    origin_revision: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     palette_entries: Mapped[list[PaletteEntry]] = relationship(
         back_populates="pattern",
@@ -402,3 +427,44 @@ class UserSession(Base):
 
     def __repr__(self) -> str:  # pragma: no cover - debugging convenience
         return f"UserSession(id={self.id!r}, user_id={self.user_id!r})"
+
+
+class SharedRequest(Base):
+    """A profile asking the admins to remove a shared pattern, or to replace
+    its content with a version of their own (Lot 11, issue #78).
+
+    Kept once settled, so whoever asked can see the outcome.
+    ``pattern_name`` is the shared pattern's name when the request was made:
+    still readable once that pattern is gone (``shared_pattern_id`` then
+    becomes NULL). A replacement points to a frozen copy of the proposed
+    content (``proposal_pattern_id``, a ``"proposal"`` pattern), deleted
+    when the request is settled.
+    """
+
+    __tablename__ = "shared_requests"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    kind: Mapped[str] = mapped_column(String(16), nullable=False)  # "removal" | "replacement"
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="pending")
+    shared_pattern_id: Mapped[str | None] = mapped_column(
+        ForeignKey("patterns.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    pattern_name: Mapped[str] = mapped_column(String(200), nullable=False)
+    requested_by: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    proposal_pattern_id: Mapped[str | None] = mapped_column(
+        ForeignKey("patterns.id", ondelete="SET NULL"), nullable=True
+    )
+    resolved_by: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        UtcDateTime, nullable=False, default=_utcnow
+    )
+    resolved_at: Mapped[datetime | None] = mapped_column(UtcDateTime, nullable=True)
+
+    def __repr__(self) -> str:  # pragma: no cover - debugging convenience
+        return f"SharedRequest(id={self.id!r}, kind={self.kind!r}, status={self.status!r})"
+

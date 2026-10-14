@@ -39,7 +39,7 @@ CrossStitchHelper differentiates itself with a **transparent semi-automatic impo
 ### 2.2 Excluded (explicitly out of scope)
 
 - **Creating** patterns (photo → chart conversion): that is the job of Stitch Fiddle and the like, not ours.
-- **Shared pattern library**: no pattern is distributed, stored with a third party or shared between users (see §3.3).
+- **Public pattern library**: no pattern is distributed publicly or stored with a third party (see §3.3). Sharing within an instance's group is in scope since Lot 11 (issue #78) — deliberate, by its members, never implicit.
 - **Native** iOS/Android apps: deliberately ruled out (paid Apple developer account, contrary to the free goal).
 - **Multi-user with accounts and permissions**: out of V1 — added in Lot 10 as *profiles* of one household or group (issue #77): each profile has its own private library, an admin manages the profiles. Still excluded: self-registration, sending email, any account on a third-party service.
 - **Marketplace, payment, advertising**: none.
@@ -65,7 +65,7 @@ CrossStitchHelper differentiates itself with a **transparent semi-automatic impo
 
 A cross-stitch chart is a copyrighted work. The application is a **personal tracking tool**: the user imports files they already own.
 
-- No imported pattern is shared between users or sent to a third party.
+- No pattern is ever sent to a third party. Within an instance, a pattern is shared only when a profile deliberately puts it in the shared library (Lot 11, decision of 2026-10-14), with a reminder that whoever shares remains responsible for having the right to; a profile's library stays private, and progress is never shared.
 - The source PDF is not kept beyond import (automatic deletion after extraction, enabled by default).
 - Reusable import "recipes" (§8.7) contain **only geometric and structural parameters** — never the creative content of the pattern.
 - The DMC → RGB mapping tables used are unofficial community data: to be credited as such, and presented in the interface as an approximation.
@@ -177,7 +177,12 @@ Essential corollary: **progress is stored separately from the grid**, so that a 
 
 ```sql
 patterns (
-  id, owner_id NULL,         -- users.id (Lot 10); NULL only before the first admin exists
+  id, owner_id NULL,         -- users.id (Lot 10); NULL only before the first admin exists,
+                             -- and always for shared/proposal patterns
+  library,                   -- 'personal' | 'shared' | 'proposal' (Lot 11)
+  revision,                  -- content replacements of a shared pattern
+  contributed_by NULL,       -- users.id credited for a shared pattern
+  origin_pattern_id NULL, origin_revision NULL,  -- a copy's shared original
   name, source_filename, source_sha256,
   width, height, fabric_count, created_at, updated_at,
   import_config_json,        -- configuration validated in the wizard
@@ -231,6 +236,15 @@ import_jobs (
   result_json, error, created_at, finished_at
 )
 
+shared_requests (            -- Lot 11, issue #78
+  id, kind,                  -- 'removal' | 'replacement'
+  status,                    -- 'pending' | 'accepted' | 'rejected' | 'cancelled'
+  shared_pattern_id NULL,    -- NULL once that pattern is gone; pattern_name remains
+  pattern_name, requested_by NULL, message NULL,
+  proposal_pattern_id NULL,  -- frozen proposed content (a 'proposal' pattern)
+  resolved_by NULL, created_at, resolved_at NULL
+)
+
 users (                      -- Lot 10, issue #77
   id, email UNIQUE,          -- lowercased; a contact detail, not the login identifier
   first_name, last_name,
@@ -263,7 +277,9 @@ An open, documented export must be available from lot 2 onwards, so that the use
 
 ### 7.1 Project library
 
-Home screen: list of imported patterns with thumbnail, dimensions, percentage complete, date of last activity. Actions: open, edit (name and labels), duplicate, export, delete, import a new pattern. A row of label filters ("All" by default) narrows the list to the patterns carrying one label; labels are also chosen on the import summary step.
+Home screen: list of imported patterns with thumbnail, dimensions, percentage complete, date of last activity. Actions: open, edit (name and labels), duplicate, share, export, delete, import a new pattern. A row of label filters ("All" by default) narrows the list to the patterns carrying one label; labels are also chosen on the import summary step.
+
+Since Lot 11 (issue #78), two tabs: **My patterns** and **Shared**. The shared tab lists the instance's shared patterns (who added them, whether one has a copy); anyone copies one into their library or asks the admins to remove it or to replace it with their own version (frozen when sent); admins rename, replace or remove, and decide on pending requests, counted on the tab. A copy whose original was replaced shows "Update": updating replaces its palette and grid in place when its progress keeps its meaning (same cells, same backstitches and knots), otherwise adds a new copy next to it — never at the cost of progress. The import summary step offers the destination: my library, shared, or both.
 
 ### 7.2 Import wizard
 
@@ -375,6 +391,15 @@ This library stays strictly local. Community sharing had been considered as an o
 | POST | `/api/auth/me/password` | Change my password (ends my other sessions) |
 | GET/POST | `/api/users` | Admins: list profiles (with their library size), add a profile |
 | PATCH/DELETE | `/api/users/{id}` | Admins: edit a profile (role, password reset), delete it with its library |
+| POST | `/api/patterns/{id}/share` | Put a copy of my pattern in the shared library (mine stays, linked) |
+| POST | `/api/patterns/{id}/update-from-origin` | Bring a copy up to its replaced original (in place, or as a new copy) |
+| GET | `/api/shared` | Shared patterns, and the requests I may see |
+| GET | `/api/shared/patterns/{id}`, `/grid` | A shared pattern (or a proposal, for admins and its author) |
+| POST | `/api/shared/patterns/{id}/copy` | Copy a shared pattern into my library |
+| PATCH/DELETE | `/api/shared/patterns/{id}` | Admins: rename / remove a shared pattern |
+| POST | `/api/shared/patterns/{id}/replace` | Admins: replace its content with one of my patterns |
+| POST | `/api/shared/requests` | Ask for a removal, or propose a replacement |
+| POST | `/api/shared/requests/{id}/accept`, `/reject`, `/cancel` | Admins decide; the author withdraws |
 
 Progress synchronisation works with **versioned deltas**: the client sends the changed cells along with the version it knows; on divergence, the server returns the missing operations and the client replays them. Checking a cell is an idempotent operation, which makes conflicts trivial to resolve. Since Lot 8, each operation also carries a stitch category (`layer`: full, 1/2, 1/4, backstitch, knot) — a single version index for the whole pattern, but an index space specific to each category (never shared, see §6.2).
 
@@ -492,3 +517,4 @@ Lots 0 to 3 make up the **usable V1** and should be carried out in one go. Lots 
 | 2026-09-18 | **Community recipe sharing removed from scope** — mentioned as a possible avenue in §8.7, never a commitment; the intended use does not need it |
 | 2026-09-24 | **All documentation, code comments and docstrings are written in English.** French doc filenames renamed (`docs/specification.md`, `docs/features-and-limits.md`). User-facing strings are unaffected: they stay in i18n, French and English |
 | 2026-10-14 | **Profiles (Lot 10, issue #77)** — the household instance becomes a group of profiles, each with a private library; at least one admin, always. Login delegated where it is risky (`pwdlib`/Argon2id for passwords; Authlib for OpenID Connect later), sessions in a small table of our own: `fastapi-users`, the only library covering user management, requires an asynchronous database layer (the whole backend is synchronous) and is in maintenance mode. Login screen lists the profiles ("Who's stitching?") then asks for the password — profile names are visible to anyone who opens the app, accepted for a household. Deleting a profile deletes its library |
+| 2026-10-14 | **Shared library within an instance (Lot 11a, issue #78)** — reverses the "nothing shared between users" principle of 2026-09-13 for the group of one instance only: sharing is deliberate (a profile shares a pattern), never implicit; a shared pattern belongs to nobody and has no progress — stitching it means copying it; only admins edit or remove it, others ask (removal, or a replacement frozen when proposed); a copy is told when its original is replaced and is never overwritten nor loses its progress (`backend/app/shared.py::update_copy`). Rights reminder shown wherever a pattern is shared. Sharing with a second, paired instance is Lot 11b |

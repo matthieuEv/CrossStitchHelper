@@ -241,6 +241,8 @@ button { font-family: inherit; color: inherit; }
 }
 .seg button + button { border-left: 1px solid var(--color-divider); }
 .seg button[aria-pressed="true"] { background: var(--color-accent); color: var(--color-bg); }
+/* Three choices on a phone's width (Lot 11: import destination, library tabs). */
+.seg-compact button { padding: 0 12px; }
 
 .switch {
   flex: none;
@@ -821,3 +823,30 @@ button.badge {
 .form-field { display: flex; flex-direction: column; gap: 4px; }
 .form-field > span { font-size: 12px; color: color-mix(in srgb, var(--color-text) 58%, transparent); }
 .form-error { font-size: 13px; color: var(--color-accent-700); }
+
+/* — shared library (Lot 11) — */
+.tab-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  margin-left: 6px;
+  padding: 0 6px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--color-bg);
+  background: var(--color-accent-700);
+  border-radius: 999px;
+}
+/* Over a pattern's thumbnail, whatever its colours: solid, never tinted. */
+.update-dot {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--color-bg);
+  background: var(--color-accent);
+  box-shadow: var(--shadow-md);
+}

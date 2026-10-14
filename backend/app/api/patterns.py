@@ -9,8 +9,6 @@ progress synchronisation, and `.cshp` export.
 from __future__ import annotations
 
 import json
-import uuid
-from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends
@@ -19,6 +17,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 from sqlalchemy.orm.attributes import flag_modified
 
+from app import shared as shared_library
 from app.activity import compute_activity
 from app.auth import CurrentUser
 from app.codec import (
@@ -26,14 +25,14 @@ from app.codec import (
     bytes_to_base64,
     count_set_bits,
     decode_uint16_layer,
-    empty_bitmap,
     set_bit,
 )
 from app.db import get_session
 from app.export_cshp import build_cshp_archive
 from app.http import api_error, content_disposition
 from app.labels import labels_from_json, labels_to_json
-from app.models import Grid, PaletteEntry, Pattern, Progress, ProgressEvent, User
+from app.models import Pattern, Progress, ProgressEvent, User
+from app.pattern_copy import clone_pattern
 from app.schemas import (
     GridOut,
     PaletteEntryOut,
@@ -47,6 +46,9 @@ from app.schemas import (
     ProgressOut,
     ProgressSyncRequest,
     ProgressSyncResponse,
+    SharedPatternRef,
+    UpdateFromOriginOut,
+    UpdateFromOriginRequest,
 )
 
 router = APIRouter(prefix="/patterns", tags=["patterns"])
@@ -62,7 +64,7 @@ def _get_pattern(session: Session, pattern_id: str, user: User) -> Pattern:
     404 as a pattern that does not exist (Lot 10): a personal library is
     private, down to the existence of what it holds."""
     pattern = session.get(Pattern, pattern_id)
-    if pattern is None or pattern.owner_id != user.id:
+    if pattern is None or pattern.library != "personal" or pattern.owner_id != user.id:
         raise api_error(404, "pattern_not_found")
     return pattern
 
@@ -80,7 +82,7 @@ def list_patterns(
     patterns = (
         session.execute(
             select(Pattern)
-            .where(Pattern.owner_id == user.id)
+            .where(Pattern.owner_id == user.id, Pattern.library == "personal")
             .options(
                 selectinload(Pattern.grid),
                 selectinload(Pattern.progress),
@@ -91,8 +93,21 @@ def list_patterns(
         .all()
     )
 
+    origin_ids = {p.origin_pattern_id for p in patterns if p.origin_pattern_id is not None}
+    origin_revisions: dict[str, int] = (
+        {
+            origin_id: revision
+            for origin_id, revision in session.execute(
+                select(Pattern.id, Pattern.revision).where(Pattern.id.in_(origin_ids))
+            ).tuples()
+        }
+        if origin_ids
+        else {}
+    )
+
     summaries: list[PatternSummary] = []
     for pattern in patterns:
+        origin_revision = origin_revisions.get(pattern.origin_pattern_id or "")
         cell_count = _non_empty_cell_count(pattern)
         stitched_count = pattern.progress.stitched_count if pattern.progress is not None else 0
         percent = round(stitched_count / cell_count * 100) if cell_count else 0
@@ -109,6 +124,9 @@ def list_patterns(
                 labels=labels_from_json(pattern.labels_json),
                 created_at=pattern.created_at,
                 updated_at=pattern.updated_at,
+                origin_pattern_id=pattern.origin_pattern_id,
+                update_available=origin_revision is not None
+                and origin_revision != pattern.origin_revision,
             )
         )
     return summaries
@@ -118,7 +136,7 @@ def list_patterns(
 def get_pattern(
     pattern_id: str, session: Annotated[Session, Depends(get_session)], user: CurrentUser
 ) -> PatternDetail:
-    return _pattern_detail(_get_pattern(session, pattern_id, user))
+    return pattern_detail(_get_pattern(session, pattern_id, user))
 
 
 @router.patch("/{pattern_id}", response_model=PatternDetail, summary="Edit name and labels")
@@ -142,10 +160,10 @@ def update_pattern(
     pattern.updated_at = last_activity
     flag_modified(pattern, "updated_at")
     session.commit()
-    return _pattern_detail(pattern)
+    return pattern_detail(pattern)
 
 
-def _pattern_detail(pattern: Pattern) -> PatternDetail:
+def pattern_detail(pattern: Pattern) -> PatternDetail:
     return PatternDetail(
         id=pattern.id,
         owner_id=pattern.owner_id,
@@ -166,7 +184,10 @@ def _pattern_detail(pattern: Pattern) -> PatternDetail:
 def get_grid(
     pattern_id: str, session: Annotated[Session, Depends(get_session)], user: CurrentUser
 ) -> GridOut:
-    pattern = _get_pattern(session, pattern_id, user)
+    return grid_out(_get_pattern(session, pattern_id, user))
+
+
+def grid_out(pattern: Pattern) -> GridOut:
     grid = pattern.grid
     if grid is None:
         raise api_error(404, "pattern_grid_not_found")
@@ -408,16 +429,6 @@ def delete_pattern(
     return Response(status_code=204)
 
 
-def _copy_columns(row: object, model: type, skip: set[str]) -> dict[str, object]:
-    """Column values of `row`, except those in `skip` (keys, links)."""
-    table = model.__table__  # type: ignore[attr-defined]
-    return {
-        column.key: getattr(row, column.key)
-        for column in table.columns
-        if column.key not in skip
-    }
-
-
 @router.post(
     "/{pattern_id}/duplicate",
     response_model=PatternDuplicateOut,
@@ -435,35 +446,49 @@ def duplicate_pattern(
     source's progress and activity log stay its own, never shared — the two
     patterns are fully independent from then on."""
     source = _get_pattern(session, pattern_id, user)
-    now = datetime.now(UTC)
-    new_id = uuid.uuid4().hex
-    copy = Pattern(
-        **_copy_columns(source, Pattern, {"id", "name", "created_at", "updated_at"}),
-        id=new_id,
-        name=payload.name,
-        created_at=now,
-        updated_at=now,
-    )
-    session.add(copy)
-    session.flush()
-    for entry in source.palette_entries:
-        session.add(
-            PaletteEntry(
-                **_copy_columns(entry, PaletteEntry, {"id", "pattern_id"}),
-                id=uuid.uuid4().hex,
-                pattern_id=new_id,
-            )
-        )
-    if source.grid is not None:
-        session.add(Grid(**_copy_columns(source.grid, Grid, {"pattern_id"}), pattern_id=new_id))
-    session.add(
-        Progress(
-            pattern_id=new_id,
-            bitmap=empty_bitmap(source.width * source.height),
-            version=1,
-            stitched_count=0,
-            updated_at=now,
-        )
-    )
+    copy = clone_pattern(session, source, name=payload.name, library="personal", owner_id=user.id)
+    # A duplicate of a copy of a shared pattern follows the same original, at
+    # the same revision (Lot 11): it is told about the same updates.
+    copy.origin_pattern_id = source.origin_pattern_id
+    copy.origin_revision = source.origin_revision
+    new_id = copy.id
     session.commit()
     return PatternDuplicateOut(id=new_id)
+
+
+@router.post(
+    "/{pattern_id}/share",
+    response_model=SharedPatternRef,
+    status_code=201,
+    summary="Put a copy of this pattern in the shared library",
+)
+def share_pattern(
+    pattern_id: str, session: Annotated[Session, Depends(get_session)], user: CurrentUser
+) -> SharedPatternRef:
+    """Lot 11 (issue #78): the personal pattern and its progress stay put;
+    the shared library gets a copy without progress, credited to `user`."""
+    shared = shared_library.share(session, user, _get_pattern(session, pattern_id, user))
+    session.commit()
+    return SharedPatternRef(id=shared.id)
+
+
+@router.post(
+    "/{pattern_id}/update-from-origin",
+    response_model=UpdateFromOriginOut,
+    summary="Bring a copy up to its shared original",
+)
+def update_from_origin(
+    pattern_id: str,
+    payload: UpdateFromOriginRequest,
+    session: Annotated[Session, Depends(get_session)],
+    user: CurrentUser,
+) -> UpdateFromOriginOut:
+    """In place when the progress keeps its meaning, otherwise as a new copy
+    next to this one — never at the cost of stitching already done
+    (`app/shared.py::update_copy`)."""
+    pattern, in_place = shared_library.update_copy(
+        session, _get_pattern(session, pattern_id, user), payload.name
+    )
+    session.commit()
+    return UpdateFromOriginOut(pattern_id=pattern.id, in_place=in_place)
+

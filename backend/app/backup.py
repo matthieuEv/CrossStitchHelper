@@ -15,6 +15,10 @@ Deliberately out of scope: ``ImportJob`` (transient state of an import
 wizard in progress, never durable data — see `app/models.py`), ``AppMeta``
 (internal bookkeeping, not user data) and sessions.
 
+Format version 3 (Lot 11) adds the shared library: each pattern's library,
+revision and links, and the requests about shared patterns. Version 2
+documents restore with every pattern personal.
+
 Since format version 2 (Lot 10), the document also carries the profiles,
 password hashes included — a backup is therefore an admin-only download
 (`app/api/backup.py`). A version 1 document (before profiles) still
@@ -36,7 +40,16 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.codec import base64_to_bytes, bytes_to_base64
 from app.labels import labels_from_json, labels_to_json
-from app.models import Grid, PaletteEntry, Pattern, Progress, ProgressEvent, Recipe, User
+from app.models import (
+    Grid,
+    PaletteEntry,
+    Pattern,
+    Progress,
+    ProgressEvent,
+    Recipe,
+    SharedRequest,
+    User,
+)
 from app.schemas import (
     BackupDocument,
     BackupGrid,
@@ -46,12 +59,13 @@ from app.schemas import (
     BackupProgressEvent,
     BackupRecipe,
     BackupRestoreSummary,
+    BackupSharedRequest,
     BackupUser,
 )
 
 FORMAT: Literal["csh-backup"] = "csh-backup"
-FORMAT_VERSION = 2
-SUPPORTED_VERSIONS = (1, 2)
+FORMAT_VERSION = 3
+SUPPORTED_VERSIONS = (1, 2, 3)
 
 
 class BackupFormatError(ValueError):
@@ -87,6 +101,9 @@ def build_backup(session: Session) -> BackupDocument:
 
     recipes = session.execute(select(Recipe).order_by(Recipe.created_at)).scalars().all()
     users = session.execute(select(User).order_by(User.created_at)).scalars().all()
+    requests = (
+        session.execute(select(SharedRequest).order_by(SharedRequest.created_at)).scalars().all()
+    )
 
     return BackupDocument(
         format=FORMAT,
@@ -97,6 +114,7 @@ def build_backup(session: Session) -> BackupDocument:
             _dump_pattern(pattern, events_by_pattern.get(pattern.id, [])) for pattern in patterns
         ],
         recipes=[_dump_recipe(recipe) for recipe in recipes],
+        shared_requests=[_dump_request(request) for request in requests],
     )
 
 
@@ -129,10 +147,31 @@ def _dump_pattern(pattern: Pattern, events: list[ProgressEvent]) -> BackupPatter
         recipe_id=pattern.recipe_id,
         notes=pattern.notes,
         labels=labels_from_json(pattern.labels_json),
+        library=pattern.library,  # type: ignore[arg-type]
+        revision=pattern.revision,
+        contributed_by=pattern.contributed_by,
+        origin_pattern_id=pattern.origin_pattern_id,
+        origin_revision=pattern.origin_revision,
         palette=[_dump_palette_entry(entry) for entry in pattern.palette_entries],
         grid=_dump_grid(pattern.grid) if pattern.grid is not None else None,
         progress=_dump_progress(pattern.progress) if pattern.progress is not None else None,
         progress_events=[_dump_event(event) for event in events],
+    )
+
+
+def _dump_request(request: SharedRequest) -> BackupSharedRequest:
+    return BackupSharedRequest(
+        id=request.id,
+        kind=request.kind,  # type: ignore[arg-type]
+        status=request.status,  # type: ignore[arg-type]
+        shared_pattern_id=request.shared_pattern_id,
+        pattern_name=request.pattern_name,
+        requested_by=request.requested_by,
+        message=request.message,
+        proposal_pattern_id=request.proposal_pattern_id,
+        resolved_by=request.resolved_by,
+        created_at=request.created_at,
+        resolved_at=request.resolved_at,
     )
 
 
@@ -233,6 +272,7 @@ def restore_backup(
     # Deleting the patterns cascades in SQLite (`PRAGMA foreign_keys=ON`,
     # `app/db.py`) to their palette, grid, progress and associated event log
     # — never a special case to write here.
+    session.execute(delete(SharedRequest))
     session.execute(delete(Pattern))
     session.execute(delete(Recipe))
 
@@ -246,13 +286,25 @@ def restore_backup(
             select(User.id).where(User.role == "admin").order_by(User.created_at).limit(1)
         ).scalar_one_or_none()
 
+    def known(user_id: str | None) -> str | None:
+        return user_id if user_id in known_owners else None
+
     for pattern_data in document.patterns:
+        personal = pattern_data.library == "personal"
         owner_id = pattern_data.owner_id
-        if owner_id is None or owner_id not in known_owners:
+        if personal and (owner_id is None or owner_id not in known_owners):
             owner_id = default_owner
         pattern = Pattern(
             id=pattern_data.id,
-            owner_id=owner_id,
+            # Shared and proposal patterns belong to nobody (`app/models.py`).
+            owner_id=owner_id if personal else None,
+            library=pattern_data.library,
+            revision=pattern_data.revision,
+            contributed_by=known(pattern_data.contributed_by),
+            # Links between patterns are set once they all exist (below):
+            # SQLite checks a foreign key at each insert.
+            origin_pattern_id=None,
+            origin_revision=pattern_data.origin_revision,
             name=pattern_data.name,
             source_filename=pattern_data.source_filename,
             source_sha256=pattern_data.source_sha256,
@@ -344,6 +396,35 @@ def restore_backup(
                     version_after=event.version_after,
                 )
             )
+
+    session.flush()
+    restored_ids = {pattern_data.id for pattern_data in document.patterns}
+    for pattern_data in document.patterns:
+        if pattern_data.origin_pattern_id in restored_ids:
+            restored = session.get(Pattern, pattern_data.id)
+            assert restored is not None
+            restored.origin_pattern_id = pattern_data.origin_pattern_id
+
+    for request_data in document.shared_requests:
+        session.add(
+            SharedRequest(
+                id=request_data.id,
+                kind=request_data.kind,
+                status=request_data.status,
+                shared_pattern_id=request_data.shared_pattern_id
+                if request_data.shared_pattern_id in restored_ids
+                else None,
+                pattern_name=request_data.pattern_name,
+                requested_by=known(request_data.requested_by),
+                message=request_data.message,
+                proposal_pattern_id=request_data.proposal_pattern_id
+                if request_data.proposal_pattern_id in restored_ids
+                else None,
+                resolved_by=known(request_data.resolved_by),
+                created_at=request_data.created_at,
+                resolved_at=request_data.resolved_at,
+            )
+        )
 
     for recipe_data in document.recipes:
         session.add(

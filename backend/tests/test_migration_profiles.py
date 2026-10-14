@@ -88,6 +88,11 @@ def test_upgrade_keeps_existing_patterns_progress_and_jobs(database: Path) -> No
     with engine.connect() as connection:
         rows = connection.execute(text("SELECT name, owner_id FROM patterns")).all()
         assert [tuple(row) for row in rows] == [("Existing", None)]
+        # 0008 (Lot 11): an existing pattern is a personal one, never shared.
+        shared_state = connection.execute(
+            text("SELECT library, revision, origin_pattern_id FROM patterns")
+        ).one()
+        assert tuple(shared_state) == ("personal", 1, None)
         assert connection.execute(text("SELECT count(*) FROM palette_entries")).scalar() == 1
         assert connection.execute(text("SELECT layer_full FROM grids")).scalar() == bytes(
             [1, 0, 1, 0]

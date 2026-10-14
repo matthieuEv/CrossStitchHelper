@@ -33,7 +33,13 @@ export interface LibraryEntry {
    * (`demo/`), which never has any — see `emptySpecialProgress` for the
    * fallback in `App.tsx`. */
   special?: SpecialProgress;
+  /** The shared pattern this one is a copy of, or was shared as (Lot 11). */
+  originId?: string | null;
+  /** That shared original's content changed since: "update available". */
+  updateAvailable?: boolean;
 }
+
+export type LibraryTab = "mine" | "shared";
 
 interface LibraryScreenProps {
   /** Shown at the right of the title, before "Sort" — the profile menu on a
@@ -54,6 +60,23 @@ interface LibraryScreenProps {
   onDelete?: (patternId: string) => Promise<void>;
   /** "Edit" action (issue #57): name and labels. */
   onEdit?: (patternId: string, changes: { name: string; labels: string[] }) => Promise<void>;
+  /**
+   * Shared library (Lot 11, issue #78). With `sharedView`, the Library shows
+   * two tabs — one's own patterns, and the shared library this node renders.
+   * `sharedBadge` counts what waits for the logged-in profile there (pending
+   * requests, for an admin).
+   */
+  sharedView?: ReactNode;
+  sharedBadge?: number;
+  /** Number of shared patterns, for the subtitle while that tab is shown. */
+  sharedCount?: number;
+  tab?: LibraryTab;
+  onTabChange?: (tab: LibraryTab) => void;
+  /** Put a copy of one's pattern in the shared library. */
+  onShare?: (patternId: string) => Promise<void>;
+  /** Bring a copy up to its shared original; resolves to whether it was
+   * done in place (`false`: a new copy was made, see `app/shared.py`). */
+  onUpdateFromOrigin?: (patternId: string, newCopyName: string) => Promise<boolean>;
 }
 
 /** Holding a card this long opens its actions, like a native long-press. */
@@ -71,11 +94,22 @@ export function LibraryScreen({
   onDelete,
   onEdit,
   headerAccessory,
+  sharedView,
+  sharedBadge = 0,
+  sharedCount = 0,
+  tab = "mine",
+  onTabChange,
+  onShare,
+  onUpdateFromOrigin,
 }: LibraryScreenProps) {
   const t = useT();
   const hasActions = onDuplicate !== undefined && onDelete !== undefined;
   const [actionsFor, setActionsFor] = useState<LibraryEntry | null>(null);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [confirmingShare, setConfirmingShare] = useState(false);
+  // Shown in the sheet after an update that had to make a new copy.
+  const [notice, setNotice] = useState<string | null>(null);
+  const showingShared = sharedView !== undefined && tab === "shared";
   // The "Edit" form's values while it is open (issue #57).
   const [editing, setEditing] = useState<{ name: string; labels: string[] } | null>(null);
   // Label the library is filtered on (issue #57); `null` = every pattern.
@@ -86,6 +120,8 @@ export function LibraryScreen({
   const openActions = (entry: LibraryEntry): void => {
     setActionsFor(entry);
     setConfirmingDelete(false);
+    setConfirmingShare(false);
+    setNotice(null);
     setEditing(null);
     setActionError(null);
   };
@@ -102,12 +138,11 @@ export function LibraryScreen({
     return () => document.removeEventListener("keydown", onKeyDown);
   }, [actionsFor, busy]);
 
-  const runAction = async (action: () => Promise<void>): Promise<void> => {
+  const runAction = async (action: () => Promise<void | "keep-open">): Promise<void> => {
     setBusy(true);
     setActionError(null);
     try {
-      await action();
-      setActionsFor(null);
+      if ((await action()) !== "keep-open") setActionsFor(null);
     } catch (error) {
       setActionError(translateApiError(t, error));
     } finally {
@@ -220,12 +255,16 @@ export function LibraryScreen({
           <h2 style={{ margin: "0 0 2px" }}>{t("library.title")}</h2>
           <div className="text-muted" style={{ fontSize: 13 }}>
             {/* A non-breaking space keeps the header's height while loading. */}
-            {loading ? "\u00a0" : t("library.summary", { count: shown.length, active: inProgress })}
+            {showingShared
+              ? t("library.sharedSummary", { count: sharedCount })
+              : loading
+                ? "\u00a0"
+                : t("library.summary", { count: shown.length, active: inProgress })}
           </div>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           {headerAccessory}
-          <div ref={sortMenuRef} style={{ position: "relative" }}>
+          <div ref={sortMenuRef} style={{ position: "relative", ...(showingShared && { display: "none" }) }}>
             <button
               type="button"
               className="btn btn-secondary"
@@ -268,6 +307,32 @@ export function LibraryScreen({
         </button>
       )}
 
+      {sharedView !== undefined && (
+        <div role="tablist" aria-label={t("library.title")} className="seg" style={{ marginBottom: 18 }}>
+          {(["mine", "shared"] as const).map((item) => (
+            <button
+              key={item}
+              type="button"
+              role="tab"
+              aria-selected={tab === item}
+              aria-pressed={tab === item}
+              onClick={() => onTabChange?.(item)}
+            >
+              {t(`library.tab.${item}`)}
+              {item === "shared" && sharedBadge > 0 && (
+                <span className="tab-badge" aria-label={t("library.tab.badge", { count: sharedBadge })}>
+                  {sharedBadge}
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {showingShared ? (
+        sharedView
+      ) : (
+      <>
       {knownLabels.length > 0 && (
         <div
           role="group"
@@ -343,6 +408,7 @@ export function LibraryScreen({
             >
               <div
                 style={{
+                  position: "relative",
                   aspectRatio: "4 / 3",
                   borderRadius: 18,
                   overflow: "hidden",
@@ -354,6 +420,9 @@ export function LibraryScreen({
                   progress={entry.progress}
                   label={entry.pattern.name}
                 />
+                {entry.updateAvailable === true && (
+                  <span className="tag update-dot">{t("library.updateAvailable")}</span>
+                )}
               </div>
               <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                 <div
@@ -412,6 +481,8 @@ export function LibraryScreen({
           </div>
         ))}
       </div>
+      </>
+      )}
 
       {actionsFor !== null && (
         <div className="drawer-backdrop is-fixed" role="presentation" onClick={closeActions}>
@@ -503,6 +574,43 @@ export function LibraryScreen({
                     {t("library.cancel")}
                   </button>
                 </>
+              ) : notice !== null ? (
+                <>
+                  <p style={{ margin: 0 }}>{notice}</p>
+                  <button
+                    type="button"
+                    className="btn btn-primary btn-block"
+                    style={{ minHeight: 48 }}
+                    onClick={() => setActionsFor(null)}
+                  >
+                    {t("library.ok")}
+                  </button>
+                </>
+              ) : confirmingShare ? (
+                <>
+                  <p style={{ margin: 0 }}>{t("library.share.confirm", { name: actionsFor.pattern.name })}</p>
+                  <p className="text-muted" style={{ margin: 0, fontSize: 12, lineHeight: 1.5 }}>
+                    {t("shared.rightsNotice")}
+                  </p>
+                  <button
+                    type="button"
+                    className="btn btn-primary btn-block"
+                    style={{ minHeight: 48 }}
+                    disabled={busy}
+                    onClick={() => void runAction(() => onShare!(actionsFor.pattern.id))}
+                  >
+                    {t("library.share.submit")}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-block"
+                    style={{ minHeight: 48 }}
+                    disabled={busy}
+                    onClick={() => setConfirmingShare(false)}
+                  >
+                    {t("library.cancel")}
+                  </button>
+                </>
               ) : confirmingDelete ? (
                 <>
                   <p style={{ margin: 0 }}>{t("library.deleteConfirm", { name: actionsFor.pattern.name })}</p>
@@ -527,6 +635,35 @@ export function LibraryScreen({
                 </>
               ) : (
                 <>
+                  {actionsFor.updateAvailable === true && onUpdateFromOrigin !== undefined && (
+                    <div className="panel" style={{ gap: 8 }}>
+                      <span style={{ fontSize: 14 }}>{t("library.update.hint")}</span>
+                      <button
+                        type="button"
+                        className="btn btn-primary"
+                        style={{ minHeight: 44, alignSelf: "flex-start", padding: "0 18px" }}
+                        disabled={busy}
+                        onClick={() =>
+                          void runAction(async () => {
+                            const inPlace = await onUpdateFromOrigin(
+                              actionsFor.pattern.id,
+                              t("library.update.newCopyName", { name: actionsFor.pattern.name }),
+                            );
+                            if (inPlace) return undefined;
+                            setNotice(t("library.update.newCopy"));
+                            return "keep-open";
+                          })
+                        }
+                      >
+                        {t("library.update.submit")}
+                      </button>
+                    </div>
+                  )}
+                  {actionsFor.originId != null && (
+                    <p className="text-muted" style={{ margin: 0, fontSize: 13 }}>
+                      {t("library.linkedToShared")}
+                    </p>
+                  )}
                   {onEdit !== undefined && (
                     <button
                       type="button"
@@ -559,6 +696,17 @@ export function LibraryScreen({
                   >
                     {t("library.duplicate")}
                   </button>
+                  {onShare !== undefined && actionsFor.originId == null && (
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-block"
+                      style={{ minHeight: 48 }}
+                      disabled={busy}
+                      onClick={() => setConfirmingShare(true)}
+                    >
+                      {t("library.share")}
+                    </button>
+                  )}
                   <button
                     type="button"
                     className="btn btn-secondary btn-block"
