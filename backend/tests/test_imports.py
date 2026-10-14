@@ -334,6 +334,74 @@ def test_commit_creates_a_real_usable_pattern(client: TestClient) -> None:
     assert sync["stitched_count"] == 1
 
 
+def test_half_and_quarter_stitches_painted_by_hand_reach_the_pattern(
+    client: TestClient,
+) -> None:
+    """Issue #41: an area painted as 1/2 or 1/4 stitches lands in that
+    layer, not in the full-stitch one. A cell painted by hand holds one
+    stitch type only (the last area wins), and the eraser clears all three."""
+    job = _upload_pdf(client)
+    job_id = job["id"]
+    client.patch(
+        f"/api/imports/{job_id}/config",
+        json={
+            "columns": 4,
+            "rows": 1,
+            "palette": _SAMPLE_PALETTE,
+            "fills": [
+                {"x0": 0, "y0": 0, "x1": 3, "y1": 0, "palette_index": 1},
+                {"x0": 1, "y0": 0, "x1": 1, "y1": 0, "palette_index": 2, "stitch": "half"},
+                {"x0": 2, "y0": 0, "x1": 3, "y1": 0, "palette_index": 2, "stitch": "quarter"},
+                {"x0": 3, "y0": 0, "x1": 3, "y1": 0, "palette_index": 0, "stitch": "half"},
+            ],
+        },
+    )
+
+    preview = client.post(f"/api/imports/{job_id}/extract").json()["preview"]
+    assert preview["filled_count"] == 3  # cell 3 erased, every layer
+    assert decode_uint16_layer(base64_to_bytes(preview["layer_full"])) == [1, 0, 0, 0]
+    assert decode_uint16_layer(base64_to_bytes(preview["layer_half"])) == [0, 2, 0, 0]
+    assert decode_uint16_layer(base64_to_bytes(preview["layer_quarter"])) == [0, 0, 2, 0]
+
+    response = client.post(f"/api/imports/{job_id}/commit", json={"name": "Points partiels"})
+    assert response.status_code == 200
+    pattern_id = response.json()["pattern_id"]
+    detail = client.get(f"/api/patterns/{pattern_id}").json()
+    counts = {
+        entry["code"]: (entry["count_full"], entry["count_half"], entry["count_quarter"])
+        for entry in detail["palette"]
+    }
+    assert counts == {"310": (1, 0, 0), "666": (0, 1, 1)}
+    grid = client.get(f"/api/patterns/{pattern_id}/grid").json()
+    assert decode_uint16_layer(base64_to_bytes(grid["layer_half"])) == [0, 2, 0, 0]
+    assert decode_uint16_layer(base64_to_bytes(grid["layer_quarter"])) == [0, 0, 2, 0]
+
+
+def test_full_stitch_only_import_keeps_no_fractional_layer(client: TestClient) -> None:
+    """Without any 1/2 or 1/4 stitch, those layers stay absent (`None`), as
+    before issue #41 — never an all-zero blob."""
+    job = _upload_pdf(client)
+    job_id = job["id"]
+    client.patch(
+        f"/api/imports/{job_id}/config",
+        json={
+            "columns": 2,
+            "rows": 1,
+            "palette": _SAMPLE_PALETTE,
+            "fills": [{"x0": 0, "y0": 0, "x1": 1, "y1": 0, "palette_index": 1}],
+        },
+    )
+    preview = client.post(f"/api/imports/{job_id}/extract").json()["preview"]
+    assert preview["layer_half"] is None
+    assert preview["layer_quarter"] is None
+    pattern_id = client.post(
+        f"/api/imports/{job_id}/commit", json={"name": "Points complets"}
+    ).json()["pattern_id"]
+    grid = client.get(f"/api/patterns/{pattern_id}/grid").json()
+    assert grid["layer_half"] is None
+    assert grid["layer_quarter"] is None
+
+
 def test_commit_is_final(client: TestClient) -> None:
     job = _upload_pdf(client)
     job_id = job["id"]

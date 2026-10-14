@@ -265,6 +265,10 @@ class ImportFillZone(BaseModel):
     x1: int = Field(ge=0)
     y1: int = Field(ge=0)
     palette_index: int = Field(ge=0)
+    stitch: Literal["full", "half", "quarter"] = Field(
+        default="full",
+        description="Layer the area paints (issue #41) — see `apply_fills`.",
+    )
 
 
 class ImportConfig(BaseModel):
@@ -361,6 +365,12 @@ class ImportPreview(BaseModel):
     cell_count: int
     filled_count: int
     layer_full: str = Field(description="Base64-encoded Uint16Array, like `GridOut`.")
+    layer_half: str | None = Field(
+        default=None, description="Same encoding, `None` when there is no 1/2 stitch."
+    )
+    layer_quarter: str | None = Field(
+        default=None, description="Same encoding, `None` when there is no 1/4 stitch."
+    )
     palette: list[ImportPaletteEntry]
 
 
