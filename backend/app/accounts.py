@@ -91,7 +91,11 @@ def create_first_admin(
         role="admin",
         password=password,
     )
-    session.execute(update(Pattern).where(Pattern.owner_id.is_(None)).values(owner_id=admin.id))
+    session.execute(
+        update(Pattern)
+        .where(Pattern.owner_id.is_(None), Pattern.library == "personal")
+        .values(owner_id=admin.id)
+    )
     session.execute(
         update(ImportJob).where(ImportJob.owner_id.is_(None)).values(owner_id=admin.id)
     )

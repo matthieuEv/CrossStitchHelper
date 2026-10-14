@@ -65,6 +65,12 @@ class PatternSummary(BaseModel):
     labels: list[str] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime
+    origin_pattern_id: str | None = Field(
+        default=None, description="The shared pattern this one is a copy of (Lot 11)."
+    )
+    update_available: bool = Field(
+        default=False, description="The original's content changed since it was copied."
+    )
 
 
 class PatternDetail(BaseModel):
@@ -425,14 +431,25 @@ class ImportJobOut(BaseModel):
     finished_at: datetime | None
 
 
+LibraryChoice = Literal["personal", "shared", "both"]
+
+
 class ImportCommitRequest(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     fabric_count: int | None = Field(default=None, ge=1, le=64)
     labels: list[str] = Field(default_factory=list)
+    library: LibraryChoice = Field(
+        default="personal",
+        description="Where the pattern goes (Lot 11): one's own library, the shared "
+        "library, or both (a personal copy linked to the shared one).",
+    )
 
 
 class ImportCommitResponse(BaseModel):
-    pattern_id: str
+    pattern_id: str | None = Field(
+        description="The personal pattern, unless `library` was `shared`."
+    )
+    shared_pattern_id: str | None = None
 
 
 # --- Reusable recipes (Lot 6, specification §8.7, §6.2) --------------------
@@ -538,6 +555,12 @@ class BackupPattern(BaseModel):
     notes: str | None = None
     # Issue #57 — absent from backups made before it: no labels.
     labels: list[str] = Field(default_factory=list)
+    # Lot 11 (format version 3) — absent before: a personal pattern.
+    library: Literal["personal", "shared", "proposal"] = "personal"
+    revision: int = 1
+    contributed_by: str | None = None
+    origin_pattern_id: str | None = None
+    origin_revision: int | None = None
     palette: list[BackupPaletteEntry] = Field(default_factory=list)
     grid: BackupGrid | None = None
     progress: BackupProgress | None = None
@@ -569,6 +592,22 @@ class BackupUser(BaseModel):
     updated_at: datetime
 
 
+class BackupSharedRequest(BaseModel):
+    """A request about a shared pattern (format version 3, Lot 11)."""
+
+    id: str
+    kind: Literal["removal", "replacement"]
+    status: Literal["pending", "accepted", "rejected", "cancelled"]
+    shared_pattern_id: str | None = None
+    pattern_name: str
+    requested_by: str | None = None
+    message: str | None = None
+    proposal_pattern_id: str | None = None
+    resolved_by: str | None = None
+    created_at: datetime
+    resolved_at: datetime | None = None
+
+
 class BackupDocument(BaseModel):
     """The exported/restored document as a whole.
 
@@ -581,11 +620,12 @@ class BackupDocument(BaseModel):
     pattern to the admin who restores it."""
 
     format: Literal["csh-backup"] = "csh-backup"
-    format_version: int = 2
+    format_version: int = 3
     generated_at: datetime
     users: list[BackupUser] | None = None
     patterns: list[BackupPattern] = Field(default_factory=list)
     recipes: list[BackupRecipe] = Field(default_factory=list)
+    shared_requests: list[BackupSharedRequest] = Field(default_factory=list)
 
 
 class BackupRestoreSummary(BaseModel):
@@ -693,3 +733,95 @@ class UserUpdate(BaseModel):
     last_name: str | None = Field(default=None, min_length=1, max_length=100)
     role: Role | None = None
     password: str | None = Field(default=None, min_length=8, max_length=256)
+
+
+# --- Shared library (Lot 11, issue #78) --------------------------------------
+
+
+class SharedPatternOut(BaseModel):
+    """A pattern of the shared library, as its tab lists it."""
+
+    id: str
+    name: str
+    width: int
+    height: int
+    palette_count: int
+    cell_count: int
+    labels: list[str] = Field(default_factory=list)
+    revision: int
+    contributed_by_name: str | None = Field(
+        description="Who added it; null once that profile is deleted."
+    )
+    created_at: datetime
+    updated_at: datetime
+    my_copy_ids: list[str] = Field(
+        default_factory=list, description="The logged-in profile's copies of it."
+    )
+
+
+RequestKind = Literal["removal", "replacement"]
+RequestStatus = Literal["pending", "accepted", "rejected", "cancelled"]
+
+
+class SharedRequestOut(BaseModel):
+    id: str
+    kind: RequestKind
+    status: RequestStatus
+    shared_pattern_id: str | None
+    pattern_name: str
+    requested_by_name: str | None
+    mine: bool
+    message: str | None
+    proposal_pattern_id: str | None
+    created_at: datetime
+    resolved_at: datetime | None
+
+
+class SharedLibraryOut(BaseModel):
+    """The shared tab in one call: its patterns, and the requests the
+    logged-in profile may see — every pending one for an admin, its own for
+    everybody."""
+
+    patterns: list[SharedPatternOut]
+    requests: list[SharedRequestOut]
+
+
+class SharedPatternRef(BaseModel):
+    id: str
+
+
+class SharedCopyRequest(BaseModel):
+    """Name of the personal copy — chosen (and translated) by the client."""
+
+    name: str = Field(min_length=1, max_length=200)
+
+
+class SharedReplaceRequest(BaseModel):
+    """An admin replacing a shared pattern's content with one of their own
+    personal patterns."""
+
+    source_pattern_id: str = Field(max_length=32)
+
+
+class SharedRequestCreate(BaseModel):
+    kind: RequestKind
+    shared_pattern_id: str = Field(max_length=32)
+    message: str | None = Field(default=None, max_length=1000)
+    proposal_pattern_id: str | None = Field(
+        default=None,
+        max_length=32,
+        description="For a replacement: the personal pattern whose content is proposed.",
+    )
+
+
+class UpdateFromOriginRequest(BaseModel):
+    """Name to give a new copy, used only when the update cannot be made in
+    place without losing progress (`app/shared.py::update_copy`)."""
+
+    name: str = Field(min_length=1, max_length=200)
+
+
+class UpdateFromOriginOut(BaseModel):
+    pattern_id: str
+    in_place: bool
+

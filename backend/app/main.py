@@ -25,6 +25,7 @@ from app.api.health import router as health_router
 from app.api.imports import router as imports_router
 from app.api.patterns import router as patterns_router
 from app.api.recipes import router as recipes_router
+from app.api.shared import router as shared_router
 from app.api.users import router as users_router
 from app.auth import current_user
 from app.auto_backup import run_auto_backup_loop
@@ -129,6 +130,7 @@ def create_app() -> FastAPI:
     app.include_router(recipes_router, prefix="/api", dependencies=logged_in)
     app.include_router(backup_router, prefix="/api", dependencies=logged_in)
     app.include_router(users_router, prefix="/api", dependencies=logged_in)
+    app.include_router(shared_router, prefix="/api", dependencies=logged_in)
 
     # Registered last: the catch-all route must never shadow an API route.
     if settings.frontend_dist is not None:
