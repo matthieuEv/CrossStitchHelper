@@ -1,0 +1,71 @@
+name: Integration build
+
+# Pre-release image for testers: main plus every open pull request, assembled
+# by `.github/scripts/assemble-integration.sh`, then tested and published by
+# release.yml. The pull requests stay open and are merged one by one once
+# validated.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Pre-release version, e.g. v2.0.0-beta.1 (image only: no `latest`, no GitHub Release)"
+        required: true
+        type: string
+      exclude:
+        description: "Pull requests to leave out, comma-separated (e.g. 66,70)"
+        required: false
+        type: string
+        default: ""
+
+# Two builds at once would race on the integration branch.
+concurrency:
+  group: integration
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  packages: write
+  pull-requests: read
+
+jobs:
+  assemble:
+    name: Assemble main + open pull requests
+    runs-on: ubuntu-latest
+    outputs:
+      sha: ${{ steps.assemble.outputs.sha }}
+    steps:
+      - name: Check this is a pre-release
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          if [[ "$VERSION" != v*-* ]]; then
+            echo "::error::'$VERSION' is not a pre-release (expected e.g. v2.0.0-beta.1)"
+            exit 1
+          fi
+
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Assemble and push the integration branch
+        id: assemble
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ inputs.version }}
+          EXCLUDE: ${{ inputs.exclude }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # v2.0.0-beta.1 -> integration/v2.0.0, rebuilt from scratch every time.
+          branch="integration/${VERSION%%-*}"
+          .github/scripts/assemble-integration.sh --ci --branch "$branch" --exclude "$EXCLUDE"
+          git push --force origin "HEAD:refs/heads/$branch"
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+  publish:
+    name: Test and publish
+    needs: [assemble]
+    uses: ./.github/workflows/release.yml
+    with:
+      version: ${{ inputs.version }}
+      ref: ${{ needs.assemble.outputs.sha }}

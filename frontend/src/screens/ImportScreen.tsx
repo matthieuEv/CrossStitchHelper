@@ -9,10 +9,12 @@ import {
 } from "react";
 
 import { ImportGridPainter } from "../components/ImportGridPainter";
+import { SourcePreview } from "../components/SourcePreview";
 import { BackIcon, UploadIcon } from "../components/Icons";
 import { PatternThumbnail } from "../components/PatternThumbnail";
 import { useT } from "../i18n";
 import { useWideLayout } from "../lib/hooks";
+import { unresolvedUncertainCells } from "../lib/importFills";
 import {
   commitImport,
   createImport,
@@ -21,6 +23,7 @@ import {
   fetchImport,
   importPagePreviewUrl,
   patchImportConfig,
+  type ApiImportConfigPatch,
   fetchDmcShades,
   type ApiThreadShade,
   translateApiError,
@@ -57,6 +60,17 @@ interface ImportScreenProps {
   onFinish: (patternId: string) => void;
 }
 
+/**
+ * A palette row as edited in the wizard: the API entry, plus — on the client
+ * only — the PDF symbol a typed one replaced, so it can be restored (issue
+ * #42). Never sent to the server (`paletteForApi`).
+ */
+type PaletteRow = ApiImportPaletteEntry & { pdf_symbol_svg?: string };
+
+function paletteForApi(palette: readonly PaletteRow[]): ApiImportPaletteEntry[] {
+  return palette.map(({ pdf_symbol_svg: _original, ...entry }) => entry);
+}
+
 /** `<datalist>` of the DMC chart's codes, shared by every code field. */
 const DMC_CODES_LIST_ID = "import-dmc-codes";
 
@@ -75,9 +89,14 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
   // would make no sense.
   const [cropByPage, setCropByPage] = useState<Record<number, Crop>>({});
   const [page, setPage] = useState(1);
+  /** Phone layout only: the imported file is shown on demand (issue #40). */
+  const [showSource, setShowSource] = useState(false);
+  const [cropHelpOpen, setCropHelpOpen] = useState(false);
   const [columns, setColumns] = useState<string>("");
   const [rows, setRows] = useState<string>("");
-  const [palette, setPalette] = useState<ApiImportPaletteEntry[]>([]);
+  const [palette, setPalette] = useState<PaletteRow[]>([]);
+  // Row whose symbol field has just replaced a PDF symbol: focused right away.
+  const [focusSymbolIndex, setFocusSymbolIndex] = useState<number | null>(null);
   // DMC colour chart (issue #39), keyed by lower-case code: typing a known
   // code fills in its colour and name. Loaded once; without it (server
   // unreachable), codes are simply typed as before.
@@ -248,6 +267,26 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
   const dimensionsValid =
     Number.isFinite(columnsValue) && columnsValue > 0 && Number.isFinite(rowsValue) && rowsValue > 0;
 
+  // Edits are saved in the background (on blur, after each painted area)
+  // without waiting for the answer — but always in order, one after the
+  // other, and the steps that read the saved configuration back (`extract`,
+  // `commit`) first wait for the last one. Without this, an edit made just
+  // before "Continue" was lost: `extract` reads the whole job, takes a while
+  // to recompute the preview of a large grid, then writes it all back,
+  // overwriting a save that landed in between (issue #42).
+  const configSaveRef = useRef<Promise<void>>(Promise.resolve());
+  const saveConfig = (jobId: string, patch: ApiImportConfigPatch): Promise<void> => {
+    const next = configSaveRef.current
+      .then(() => patchImportConfig(jobId, patch))
+      .then(
+        () => undefined,
+        // Best effort, as before: a failed save must not block the next ones.
+        () => undefined,
+      );
+    configSaveRef.current = next;
+    return next;
+  };
+
   const goToPalette = async (): Promise<void> => {
     if (job === null || !dimensionsValid) return;
     const cropByPageForApi = Object.fromEntries(
@@ -265,13 +304,13 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
   // Filtered to the current range: `uncertainCells` refers to the dimensions
   // at detection time, stale as soon as the user types others by hand before
   // the next server round trip (same risk as `detectedCells`, see
-  // `applyFillsLocal` on the painting side).
+  // `applyFillsLocal` on the painting side). Cells already painted over by
+  // hand are dropped too: a manual correction resolves the doubt (#46).
   const uncertainCellsSet = useMemo(() => {
     if (uncertainCells === null || !dimensionsValid) return null;
-    const bound = columnsValue * rowsValue;
-    const filtered = uncertainCells.filter((index) => index >= 0 && index < bound);
+    const filtered = unresolvedUncertainCells(columnsValue, rowsValue, uncertainCells, fills);
     return filtered.length > 0 ? new Set(filtered) : null;
-  }, [uncertainCells, dimensionsValid, columnsValue, rowsValue]);
+  }, [uncertainCells, dimensionsValid, columnsValue, rowsValue, fills]);
 
   const painter = useImportPainter(
     dimensionsValid ? columnsValue : 0,
@@ -287,7 +326,7 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
     fills,
     (nextFills) => {
       setFills(nextFills);
-      if (job !== null) void patchImportConfig(job.id, { fills: nextFills });
+      if (job !== null) void saveConfig(job.id, { fills: nextFills });
     },
     name,
     detectedCells,
@@ -297,7 +336,7 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
     const next = [...palette, nextPaletteEntry(palette)];
     setPalette(next);
     setActiveIndex(next.length);
-    if (job !== null) void patchImportConfig(job.id, { palette: next });
+    if (job !== null) void saveConfig(job.id, { palette: paletteForApi(next) });
   };
 
   const updatePaletteEntry = (index: number, patch: Partial<ApiImportPaletteEntry>): void => {
@@ -306,7 +345,7 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
   };
 
   const commitPaletteEdits = (): void => {
-    if (job !== null) void patchImportConfig(job.id, { palette });
+    if (job !== null) void saveConfig(job.id, { palette: paletteForApi(palette) });
   };
 
   // Leaving a code field after changing it to a code of the DMC chart fills
@@ -326,18 +365,44 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
       i === index ? { ...row, rgb_hex: shade.rgb_hex, name: shade.name } : row,
     );
     setPalette(next);
-    if (job !== null) void patchImportConfig(job.id, { palette: next });
+    if (job !== null) void saveConfig(job.id, { palette: paletteForApi(next) });
   };
 
   const removePaletteEntry = (index: number): void => {
     const next = palette.filter((_, i) => i !== index);
     setPalette(next);
     if (activeIndex > next.length) setActiveIndex(Math.max(1, next.length));
-    if (job !== null) void patchImportConfig(job.id, { palette: next });
+    if (job !== null) void saveConfig(job.id, { palette: paletteForApi(next) });
+  };
+
+  // A symbol cut out of the PDF can be replaced by one typed by hand (issue
+  // #42): without `symbol_svg`, the text key (`symbol_key`) is what gets
+  // drawn, here and in the created pattern. The PDF symbol is kept aside so it
+  // can be restored for as long as the wizard is open.
+  const replacePdfSymbol = (index: number): void => {
+    const next = palette.map((entry, i) =>
+      i === index && entry.symbol_svg != null
+        ? { ...entry, symbol_svg: null, pdf_symbol_svg: entry.symbol_svg }
+        : entry,
+    );
+    setPalette(next);
+    setFocusSymbolIndex(index);
+    if (job !== null) void saveConfig(job.id, { palette: paletteForApi(next) });
+  };
+
+  const restorePdfSymbol = (index: number): void => {
+    const next = palette.map((entry, i) => {
+      if (i !== index || entry.pdf_symbol_svg === undefined) return entry;
+      const { pdf_symbol_svg: original, ...rest } = entry;
+      return { ...rest, symbol_svg: original };
+    });
+    setPalette(next);
+    if (job !== null) void saveConfig(job.id, { palette: paletteForApi(next) });
   };
 
   const goToRecap = async (): Promise<void> => {
     if (job === null) return;
+    await configSaveRef.current;
     const updated = await extractImport(job.id);
     setJob(updated);
     setPreview(updated.preview);
@@ -360,6 +425,7 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
         }
       }
       const fabric = Number.parseInt(fabricCount, 10);
+      await configSaveRef.current;
       const response = await commitImport(job.id, {
         name: name.trim(),
         ...(Number.isFinite(fabric) && fabric > 0 && { fabric_count: fabric }),
@@ -464,6 +530,28 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
                   : t("import.crop.hint")}
             </div>
 
+            {/* What an imprecise frame or a misaligned image changes, and when
+                no frame can fit the grid (issue #54) — manual path only: a file
+                recognised automatically does not depend on the frame. */}
+            {!job.detecting && detectedCells === null && (
+              <details
+                className="crop-help"
+                open={cropHelpOpen}
+                onToggle={(event) => setCropHelpOpen(event.currentTarget.open)}
+              >
+                <summary>{t("import.crop.help.title")}</summary>
+                {/* Rendered only once opened: closed, the step stays as short
+                    as before, and its words never mix with the step's own. */}
+                {cropHelpOpen && (
+                  <>
+                    <p>{t("import.crop.help.loose")}</p>
+                    <p>{t("import.crop.help.seam")}</p>
+                    <p>{t("import.crop.help.impossible")}</p>
+                  </>
+                )}
+              </details>
+            )}
+
             {job.applied_recipe !== null && (
               <div
                 className="tag tag-accent"
@@ -536,7 +624,7 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
 
             <div
               ref={stageRef}
-              className="crop-stage"
+              className="crop-stage edit-area"
               onPointerMove={onPointerMove}
               onPointerUp={endDrag}
               onPointerLeave={endDrag}
@@ -703,23 +791,43 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
               </button>
             </div>
 
-            {palette.length === 0 ? (
-              <p className="text-muted" style={{ fontSize: 13 }}>
-                {t("import.palette.empty")}
-              </p>
-            ) : (
-              <ImportGridPainter
-                painter={painter}
-                activeIndex={activeIndex}
-                uncertainCells={uncertainCellsSet}
-              />
-            )}
-
-            {uncertainCellsSet !== null && (
-              <p className="text-muted" style={{ fontSize: 12, margin: 0 }}>
-                {t("import.paint.uncertainHint", { count: uncertainCellsSet.size })}
-              </p>
-            )}
+            {/* The generated grid, and the imported file next to it to check
+                it against (issue #40): side by side when there is room, on
+                demand below the grid on a phone. */}
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: wide && job !== null ? "minmax(0, 1fr) minmax(0, 1fr)" : "minmax(0, 1fr)",
+                gap: 16,
+                alignItems: "start",
+              }}
+            >
+              {palette.length === 0 ? (
+                <p className="text-muted" style={{ fontSize: 13 }}>
+                  {t("import.palette.empty")}
+                </p>
+              ) : (
+                <ImportGridPainter
+                  painter={painter}
+                  activeIndex={activeIndex}
+                  uncertainCells={uncertainCellsSet}
+                />
+              )}
+              {job !== null && !wide && (
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  style={{ minHeight: 44, justifySelf: "start", padding: "0 16px" }}
+                  aria-expanded={showSource}
+                  onClick={() => setShowSource((shown) => !shown)}
+                >
+                  {t(showSource ? "import.source.hide" : "import.source.show")}
+                </button>
+              )}
+              {job !== null && (wide || showSource) && (
+                <SourcePreview jobId={job.id} pageCount={job.page_count} initialPage={page} />
+              )}
+            </div>
 
             <div
               style={{
@@ -752,27 +860,56 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
                       aria-label={t("import.legend.color")}
                     />
                     {hasRealSymbol ? (
-                      // Real symbol cut out of the PDF (Lot 4): the internal
-                      // key (`symbol_key`) then no longer needs to be visible or
-                      // editable — this symbol comes from the file, never from
-                      // it.
-                      <img
-                        src={`data:image/svg+xml;base64,${btoa(entry.symbol_svg as string)}`}
-                        alt=""
-                        style={{ width: 28, height: 28, flex: "none" }}
-                      />
+                      // Real symbol cut out of the PDF (Lot 4): shown as is,
+                      // its internal key (`symbol_key`) is never meant to be
+                      // displayed. A tap replaces it with a symbol of one's
+                      // own choosing (issue #42).
+                      <button
+                        type="button"
+                        className="btn btn-secondary btn-icon"
+                        style={{ flex: "none" }}
+                        aria-label={t("import.legend.replaceSymbol")}
+                        title={t("import.legend.replaceSymbol")}
+                        onClick={() => replacePdfSymbol(index)}
+                      >
+                        <img
+                          src={`data:image/svg+xml;base64,${btoa(entry.symbol_svg as string)}`}
+                          alt=""
+                          style={{ width: 28, height: 28 }}
+                        />
+                      </button>
                     ) : (
-                      <input
-                        className="input"
-                        style={{ width: 44, textAlign: "center", flex: "none" }}
-                        maxLength={2}
-                        placeholder={t("import.legend.symbol")}
-                        value={entry.symbol_key}
-                        onChange={(event) =>
-                          updatePaletteEntry(index, { symbol_key: event.target.value })
-                        }
-                        onBlur={commitPaletteEdits}
-                      />
+                      <>
+                        <input
+                          className="input"
+                          style={{ width: 44, textAlign: "center", flex: "none" }}
+                          maxLength={2}
+                          placeholder={t("import.legend.symbol")}
+                          aria-label={t("import.legend.symbol")}
+                          value={entry.symbol_key}
+                          autoFocus={focusSymbolIndex === index}
+                          onFocus={(event) => event.target.select()}
+                          onChange={(event) =>
+                            updatePaletteEntry(index, { symbol_key: event.target.value })
+                          }
+                          onBlur={() => {
+                            setFocusSymbolIndex(null);
+                            commitPaletteEdits();
+                          }}
+                        />
+                        {entry.pdf_symbol_svg !== undefined && (
+                          <button
+                            type="button"
+                            className="btn btn-icon btn-ghost"
+                            style={{ flex: "none" }}
+                            aria-label={t("import.legend.restoreSymbol")}
+                            title={t("import.legend.restoreSymbol")}
+                            onClick={() => restorePdfSymbol(index)}
+                          >
+                            ↺
+                          </button>
+                        )}
+                      </>
                     )}
                     <input
                       className="input"

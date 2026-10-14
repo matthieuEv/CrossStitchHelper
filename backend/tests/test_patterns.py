@@ -7,6 +7,7 @@ from collections.abc import Iterator
 
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import text
 
 from app.codec import base64_to_bytes, decode_uint16_layer, get_bit
 from app.db import get_session_factory
@@ -367,3 +368,78 @@ def test_activity_reflects_a_real_progress_sync(seeded_client: TestClient) -> No
 
 def test_activity_404_for_unknown_pattern(client: TestClient) -> None:
     assert client.get("/api/patterns/does-not-exist/activity").status_code == 404
+
+
+def test_delete_pattern_removes_it_and_its_data(seeded_client: TestClient) -> None:
+    """Issue #52: deleting a pattern removes it with its palette, grid,
+    progress and activity log — nothing left behind to reappear."""
+    # Some activity first, so the log has rows to cascade.
+    sync = seeded_client.post(
+        f"/api/patterns/{DEMO_PATTERN_ID}/progress",
+        json={"base_version": 0, "ops": [{"index": 300, "stitched": True}]},
+    )
+    assert sync.status_code == 200
+
+    response = seeded_client.delete(f"/api/patterns/{DEMO_PATTERN_ID}")
+    assert response.status_code == 204
+    assert seeded_client.get(f"/api/patterns/{DEMO_PATTERN_ID}").status_code == 404
+    assert seeded_client.get("/api/patterns").json() == []
+
+    with get_session_factory()() as session:
+        for table in ("palette_entries", "grids", "progress", "progress_events"):
+            count = session.execute(
+                text(f"SELECT COUNT(*) FROM {table} WHERE pattern_id = :id"),
+                {"id": DEMO_PATTERN_ID},
+            ).scalar_one()
+            assert count == 0, table
+
+    assert seeded_client.delete(f"/api/patterns/{DEMO_PATTERN_ID}").status_code == 404
+
+
+def test_duplicate_pattern_copies_chart_with_empty_progress(seeded_client: TestClient) -> None:
+    """Issue #52: a duplicate is the same chart under a new name, to stitch
+    again — palette and grid copied, progress starting from zero, the
+    source's own progress untouched."""
+    source_progress = seeded_client.get(f"/api/patterns/{DEMO_PATTERN_ID}/progress").json()
+    assert source_progress["stitched_count"] > 0
+
+    response = seeded_client.post(
+        f"/api/patterns/{DEMO_PATTERN_ID}/duplicate", json={"name": "Copie de la démo"}
+    )
+    assert response.status_code == 201
+    copy_id = response.json()["id"]
+    assert copy_id != DEMO_PATTERN_ID
+
+    source = seeded_client.get(f"/api/patterns/{DEMO_PATTERN_ID}").json()
+    copy = seeded_client.get(f"/api/patterns/{copy_id}").json()
+    assert copy["name"] == "Copie de la démo"
+    assert (copy["width"], copy["height"]) == (WIDTH, HEIGHT)
+
+    def strip(entries: list[dict[str, object]]) -> list[dict[str, object]]:
+        return [
+            {key: value for key, value in entry.items() if key not in ("id", "pattern_id")}
+            for entry in entries
+        ]
+
+    assert strip(copy["palette"]) == strip(source["palette"])
+
+    source_grid = seeded_client.get(f"/api/patterns/{DEMO_PATTERN_ID}/grid").json()
+    copy_grid = seeded_client.get(f"/api/patterns/{copy_id}/grid").json()
+    for key in ("layer_full", "layer_half", "layer_quarter", "backstitch", "french_knots"):
+        assert copy_grid[key] == source_grid[key], key
+
+    copy_progress = seeded_client.get(f"/api/patterns/{copy_id}/progress").json()
+    assert copy_progress["stitched_count"] == 0
+    # The source keeps its own progress.
+    assert (
+        seeded_client.get(f"/api/patterns/{DEMO_PATTERN_ID}/progress").json()["stitched_count"]
+        == source_progress["stitched_count"]
+    )
+    assert len(seeded_client.get("/api/patterns").json()) == 2
+
+
+def test_duplicate_requires_a_name_and_an_existing_pattern(seeded_client: TestClient) -> None:
+    empty = seeded_client.post(f"/api/patterns/{DEMO_PATTERN_ID}/duplicate", json={"name": ""})
+    assert empty.status_code == 422
+    missing = seeded_client.post("/api/patterns/nope/duplicate", json={"name": "x"})
+    assert missing.status_code == 404

@@ -14,6 +14,18 @@ function localeTag(language: Language): string {
 }
 
 /**
+ * Text comparison following the interface language (accents and case
+ * ignored, digits compared as numbers: "Motif 2" before "Motif 10").
+ */
+export function useCompareText(): (a: string, b: string) => number {
+  const { language } = useI18n();
+  return useMemo(() => {
+    const collator = new Intl.Collator(localeTag(language), { sensitivity: "base", numeric: true });
+    return (a: string, b: string) => collator.compare(a, b);
+  }, [language]);
+}
+
+/**
  * Number formatter following the interface language.
  *
  * Stitch counts are read in thousands: without a separator, "45900" takes a

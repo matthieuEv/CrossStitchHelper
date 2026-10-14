@@ -29,6 +29,10 @@ export interface CellPosition {
   y: number;
 }
 
+/** Zoom level `focusCell` brings the view to, at least: a cell large enough
+ * to see its colour, symbol and marker at a glance. */
+const FOCUS_MIN_CELL = 20;
+
 export interface ImportPainter {
   pattern: Pattern;
   filledCount: number;
@@ -36,6 +40,9 @@ export interface ImportPainter {
 
   view: GridView;
   setOffset: (x0: number, y0: number) => void;
+  /** Centres a cell in a canvas of `viewWidth` × `viewHeight` CSS pixels,
+   * zooming in first if needed so the cell is clearly readable. */
+  focusCell: (x: number, y: number, viewWidth: number, viewHeight: number) => void;
   zoomIn: () => void;
   zoomOut: () => void;
   /** Like `useTracker.zoomTo`: zooms to `nextCell` keeping the pattern point
@@ -59,6 +66,11 @@ export interface ImportPainter {
 
   /** Paints (or, with `paletteIndex = 0`, erases) the current selection. */
   paint: (paletteIndex: number) => void;
+  /** Removes the last painted area (issue #37) — painted areas are applied in
+   * order on top of the detected grid, so dropping the last one restores the
+   * grid exactly as it was before it, however many levels back. */
+  undo: () => void;
+  canUndo: boolean;
 }
 
 export function useImportPainter(
@@ -114,6 +126,15 @@ export function useImportPainter(
     [columns, rows],
   );
 
+  const focusCell = useCallback(
+    (x: number, y: number, viewWidth: number, viewHeight: number) => {
+      const nextCell = Math.min(MAX_CELL, Math.max(cell, FOCUS_MIN_CELL));
+      setCell(nextCell);
+      setOffset(x + 0.5 - viewWidth / (2 * nextCell), y + 0.5 - viewHeight / (2 * nextCell));
+    },
+    [cell, setOffset],
+  );
+
   const zoomIn = useCallback(
     () => setCell((value) => Math.min(MAX_CELL, Math.round(value * 1.45))),
     [],
@@ -161,6 +182,10 @@ export function useImportPainter(
     [selection, columns, rows, fills, onFillsChange],
   );
 
+  const undo = useCallback(() => {
+    if (fills.length > 0) onFillsChange(fills.slice(0, -1));
+  }, [fills, onFillsChange]);
+
   const view: GridView = { cell, x0: offset.x0, y0: offset.y0 };
 
   return {
@@ -169,6 +194,7 @@ export function useImportPainter(
     cellCount: columns * rows,
     view,
     setOffset,
+    focusCell,
     zoomIn,
     zoomOut,
     zoomTo,
@@ -177,5 +203,7 @@ export function useImportPainter(
     selection,
     setSelection,
     paint,
+    undo,
+    canUndo: fills.length > 0,
   };
 }
