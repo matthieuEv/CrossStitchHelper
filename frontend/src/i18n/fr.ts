@@ -80,6 +80,7 @@ export const fr = {
   "import.palette.title": "Palette",
   "import.palette.add": "Ajouter une couleur",
   "import.palette.remove": "Retirer",
+  "import.palette.chart": "Nuancier : DMC",
   "import.palette.empty": "Ajoutez au moins une couleur pour commencer à peindre la grille.",
   "import.paint.hint":
     "Choisissez une couleur, puis dessinez une zone sur la grille pour la peindre.",
@@ -178,8 +179,6 @@ export const fr = {
   "stats.activity": "Activité",
 
   "settings.title": "Réglages",
-  "settings.brand": "Marque de fil par défaut",
-  "settings.brand.hint": "Utilisée pour nommer les couleurs détectées à l'import.",
   "settings.theme": "Thème",
   "settings.theme.hint": "Le mode sombre baisse aussi la luminosité de la toile.",
   "settings.theme.light": "Clair",
