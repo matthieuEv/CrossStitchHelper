@@ -2,9 +2,11 @@ import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } f
 
 import { PatternThumbnail } from "../components/PatternThumbnail";
 import { CloseIcon, PlusIcon } from "../components/Icons";
+import { LabelPicker } from "../components/LabelPicker";
 import { useT } from "../i18n";
 import { translateApiError } from "../lib/api";
 import { useCompareText, useRelativeTime } from "../lib/format";
+import { allLabels, sameLabel } from "../lib/labels";
 import {
   LIBRARY_SORTS,
   readStoredLibrarySort,
@@ -40,6 +42,8 @@ interface LibraryScreenProps {
    */
   onDuplicate?: (patternId: string, name: string) => Promise<void>;
   onDelete?: (patternId: string) => Promise<void>;
+  /** "Edit" action (issue #57): name and labels. */
+  onEdit?: (patternId: string, changes: { name: string; labels: string[] }) => Promise<void>;
 }
 
 /** Holding a card this long opens its actions, like a native long-press. */
@@ -55,17 +59,23 @@ export function LibraryScreen({
   onImport,
   onDuplicate,
   onDelete,
+  onEdit,
 }: LibraryScreenProps) {
   const t = useT();
   const hasActions = onDuplicate !== undefined && onDelete !== undefined;
   const [actionsFor, setActionsFor] = useState<LibraryEntry | null>(null);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
+  // The "Edit" form's values while it is open (issue #57).
+  const [editing, setEditing] = useState<{ name: string; labels: string[] } | null>(null);
+  // Label the library is filtered on (issue #57); `null` = every pattern.
+  const [filter, setFilter] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
 
   const openActions = (entry: LibraryEntry): void => {
     setActionsFor(entry);
     setConfirmingDelete(false);
+    setEditing(null);
     setActionError(null);
   };
   const closeActions = (): void => {
@@ -153,6 +163,9 @@ export function LibraryScreen({
   // demo fallback): showing them, then replacing them with the real list a
   // moment later, looks like patterns being deleted (issue #48).
   const shown = loading ? [] : entries;
+  const knownLabels = allLabels(shown.map((entry) => entry.pattern.labels), compareText);
+  // A label nobody carries any more (just edited away) filters nothing out.
+  const activeFilter = knownLabels.find((label) => filter !== null && sameLabel(label, filter)) ?? null;
   const cards = shown.map((entry) => {
     const totals = summarise(countByColor(entry.pattern, entry.progress));
     return { entry, totals };
@@ -171,6 +184,12 @@ export function LibraryScreen({
   const inProgress = cards.filter(
     (card) => card.totals.percent > 0 && card.totals.percent < 100,
   ).length;
+  const visibleCards =
+    activeFilter === null
+      ? cards
+      : cards.filter(({ entry }) =>
+          (entry.pattern.labels ?? []).some((label) => sameLabel(label, activeFilter)),
+        );
 
   return (
     <div className="screen">
@@ -232,6 +251,40 @@ export function LibraryScreen({
         </button>
       )}
 
+      {knownLabels.length > 0 && (
+        <div
+          role="group"
+          aria-label={t("library.filter")}
+          style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 16 }}
+        >
+          {[null, ...knownLabels].map((label) => (
+            <button
+              key={label ?? ""}
+              type="button"
+              className="badge"
+              aria-pressed={activeFilter === label}
+              onClick={() => setFilter(label)}
+              style={{
+                fontSize: 13,
+                minHeight: 36,
+                border:
+                  activeFilter === label
+                    ? "2px solid var(--color-accent)"
+                    : "2px solid transparent",
+              }}
+            >
+              {label ?? t("library.filter.all")}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {activeFilter !== null && visibleCards.length === 0 && (
+        <p className="text-muted" style={{ fontSize: 13 }}>
+          {t("library.filter.empty")}
+        </p>
+      )}
+
       <div
         style={{
           display: "grid",
@@ -239,7 +292,7 @@ export function LibraryScreen({
           gap: 16,
         }}
       >
-        {cards.map(({ entry, totals }) => (
+        {visibleCards.map(({ entry, totals }) => (
           <div key={entry.pattern.id} style={{ position: "relative", display: "grid" }}>
             <button
               type="button"
@@ -308,6 +361,15 @@ export function LibraryScreen({
                     }}
                   />
                 </div>
+                {(entry.pattern.labels ?? []).length > 0 && (
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                    {(entry.pattern.labels ?? []).map((label) => (
+                      <span key={label} className="label-tag" style={{ fontSize: 11 }}>
+                        {label}
+                      </span>
+                    ))}
+                  </div>
+                )}
                 <div className="text-faint" style={{ fontSize: 11 }}>
                   {relative(entry.hoursAgo)}
                 </div>
@@ -368,7 +430,57 @@ export function LibraryScreen({
               </button>
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 10, padding: "6px 18px 22px" }}>
-              {confirmingDelete ? (
+              {editing !== null ? (
+                <>
+                  <label style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                    <span className="text-muted" style={{ fontSize: 12 }}>
+                      {t("library.edit.name")}
+                    </span>
+                    <input
+                      className="input"
+                      style={{ minHeight: 46 }}
+                      value={editing.name}
+                      maxLength={200}
+                      onChange={(event) => setEditing({ ...editing, name: event.target.value })}
+                    />
+                  </label>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                    <span className="text-muted" style={{ fontSize: 12 }}>
+                      {t("labels.title")}
+                    </span>
+                    <LabelPicker
+                      labels={editing.labels}
+                      onChange={(labels) => setEditing({ ...editing, labels })}
+                      known={knownLabels}
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    className="btn btn-primary btn-block"
+                    style={{ minHeight: 48 }}
+                    disabled={busy || editing.name.trim() === ""}
+                    onClick={() =>
+                      void runAction(() =>
+                        onEdit!(actionsFor.pattern.id, {
+                          name: editing.name.trim(),
+                          labels: editing.labels,
+                        }),
+                      )
+                    }
+                  >
+                    {t("library.edit.save")}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-block"
+                    style={{ minHeight: 48 }}
+                    disabled={busy}
+                    onClick={() => setEditing(null)}
+                  >
+                    {t("library.cancel")}
+                  </button>
+                </>
+              ) : confirmingDelete ? (
                 <>
                   <p style={{ margin: 0 }}>{t("library.deleteConfirm", { name: actionsFor.pattern.name })}</p>
                   <button
@@ -392,6 +504,22 @@ export function LibraryScreen({
                 </>
               ) : (
                 <>
+                  {onEdit !== undefined && (
+                    <button
+                      type="button"
+                      className="btn btn-secondary btn-block"
+                      style={{ minHeight: 48 }}
+                      disabled={busy}
+                      onClick={() =>
+                        setEditing({
+                          name: actionsFor.pattern.name,
+                          labels: [...(actionsFor.pattern.labels ?? [])],
+                        })
+                      }
+                    >
+                      {t("library.edit")}
+                    </button>
+                  )}
                   <button
                     type="button"
                     className="btn btn-secondary btn-block"

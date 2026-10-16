@@ -64,6 +64,9 @@ export type StitchLayer = "full" | "half" | "quarter" | "backstitch" | "knot";
 export interface Pattern {
   readonly id: string;
   readonly name: string;
+  /** Labels the user sorts the library with (issue #57) — absent for a
+   * built-in demo pattern, which has none. */
+  readonly labels?: readonly string[];
   readonly width: number;
   readonly height: number;
   readonly cells: Uint8Array;

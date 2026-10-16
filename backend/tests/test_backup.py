@@ -175,3 +175,24 @@ def test_auto_backup_setting_defaults_enabled_and_is_toggleable(client: TestClie
     assert response.status_code == 200
     assert response.json() == {"enabled": False}
     assert client.get("/api/backup/auto").json() == {"enabled": False}
+
+
+def test_restore_round_trips_labels_and_accepts_backups_without_them(
+    seeded_client: TestClient,
+) -> None:
+    """Issue #57: labels are part of a backup; a backup made before them
+    (no `labels` key) still restores, with no labels."""
+    seeded_client.patch(f"/api/patterns/{DEMO_PATTERN_ID}", json={"labels": ["Mini", "Mer"]})
+    snapshot = seeded_client.get("/api/backup").json()
+    assert snapshot["patterns"][0]["labels"] == ["Mini", "Mer"]
+
+    seeded_client.patch(f"/api/patterns/{DEMO_PATTERN_ID}", json={"labels": []})
+    assert seeded_client.post("/api/backup/restore", json=snapshot).status_code == 200
+    assert seeded_client.get(f"/api/patterns/{DEMO_PATTERN_ID}").json()["labels"] == [
+        "Mini",
+        "Mer",
+    ]
+
+    del snapshot["patterns"][0]["labels"]
+    assert seeded_client.post("/api/backup/restore", json=snapshot).status_code == 200
+    assert seeded_client.get(f"/api/patterns/{DEMO_PATTERN_ID}").json()["labels"] == []
