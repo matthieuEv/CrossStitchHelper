@@ -305,12 +305,17 @@ export interface ApiImportPaletteEntry {
   symbol_svg?: string | null;
 }
 
+/** Cell layers the import wizard paints (issue #41). */
+export type ApiImportStitch = "full" | "half" | "quarter";
+
 export interface ApiImportFillZone {
   x0: number;
   y0: number;
   x1: number;
   y1: number;
   palette_index: number;
+  /** Layer the area paints — `"full"` when absent (areas saved before #41). */
+  stitch?: ApiImportStitch;
 }
 
 export interface ApiImportConfig {
@@ -327,6 +332,10 @@ export interface ApiImportConfig {
    * B/C detection (Lot 5) — doubtful colour and/or ambiguous symbol, never a
    * wrong cell left without indication. */
   uncertain_cells: number[] | null;
+  /** 1/2 and 1/4 stitches detected in a type A PDF (Lot 9), same convention
+   * as `detected_cells` — background under the `fills` of those layers. */
+  detected_half: number[] | null;
+  detected_quarter: number[] | null;
   /** Fabric count read from the PDF (type A, Lot 9) — pre-fills the Summary
    * screen's field, never imposed: manual input always wins, see
    * `manualFabricEditRef` in `ImportScreen.tsx`. */
@@ -371,6 +380,9 @@ export interface ApiImportPreview {
   cell_count: number;
   filled_count: number;
   layer_full: string;
+  /** Same encoding as `layer_full`, `null` when the layer has no stitch. */
+  layer_half: string | null;
+  layer_quarter: string | null;
   palette: ApiImportPaletteEntry[];
 }
 
