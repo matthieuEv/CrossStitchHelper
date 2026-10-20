@@ -15,7 +15,9 @@ test.use({ viewport: { width: 375, height: 812 } });
 
 test("a DMC code fills in its colour and name", async ({ page, request }) => {
   // Expected values come from the server's chart, not hard-coded here.
-  const shades = (await (await request.get("/api/threads/dmc")).json()) as Array<{
+  const shades = (await (
+    await request.get("/api/threads/dmc")
+  ).json()) as Array<{
     code: string;
     name: string;
     rgb_hex: string;
@@ -36,11 +38,18 @@ test("a DMC code fills in its colour and name", async ({ page, request }) => {
   await page.getByRole("button", { name: "Continuer", exact: true }).click();
   await page.getByRole("button", { name: /Ajouter une couleur/ }).click();
 
-  // The code suggestions follow a printed DMC chart: named whites first,
-  // then numbers ascending (review of #39 — they used to look shuffled).
-  const suggested = await page
-    .locator("datalist option")
-    .evaluateAll((options) => options.map((option) => (option as HTMLOptionElement).value));
+  const code = page.getByRole("combobox", { name: "Code" });
+  const suggestions = page.getByRole("listbox", { name: "Code" });
+
+  // The suggestions are the app's own list, shown as soon as the field gets
+  // the focus — not a native datalist, which iPadOS hides in the on-screen
+  // keyboard's shortcut bar (review of #39). They follow a printed DMC chart:
+  // named whites first, then numbers ascending.
+  await code.focus();
+  await expect(suggestions).toBeVisible();
+  const suggested = (await suggestions.getByRole("option").allInnerTexts()).map(
+    (text) => text.trim().split(/\s+/)[0]!,
+  );
   expect(suggested).toHaveLength(shades.length);
   expect(suggested.slice(0, 4).map((value) => value.toLowerCase())).toEqual([
     "blanc",
@@ -50,8 +59,9 @@ test("a DMC code fills in its colour and name", async ({ page, request }) => {
   ]);
   const numbered = suggested.filter((value) => /^\d+$/.test(value)).map(Number);
   expect(numbered).toEqual([...numbered].sort((a, b) => a - b));
+  await code.blur();
+  await expect(suggestions).toBeHidden();
 
-  const code = page.getByLabel("Code", { exact: true });
   const name = page.getByPlaceholder("Nom du fil");
   const colour = page.locator('input[type="color"]');
 
@@ -80,4 +90,71 @@ test("a DMC code fills in its colour and name", async ({ page, request }) => {
   await code.blur();
   const ecru = shades.find((shade) => shade.code.toLowerCase() === "ecru");
   await expect(name).toHaveValue(ecru!.name);
+});
+
+test.describe("on a touch screen", () => {
+  test.use({ hasTouch: true, isMobile: true });
+
+  test("tapping a suggestion fills code, colour and name", async ({
+    page,
+    request,
+  }) => {
+    const shades = (await (
+      await request.get("/api/threads/dmc")
+    ).json()) as Array<{
+      code: string;
+      name: string;
+      rgb_hex: string;
+    }>;
+    const straw = shades.find((shade) => shade.code === "3820");
+    if (straw === undefined) throw new Error("DMC 3820 missing from the chart");
+
+    await page.goto("/import");
+    await page.locator('input[type="file"][accept*="pdf"]').setInputFiles({
+      name: "grille-test.png",
+      mimeType: "image/png",
+      buffer: Buffer.from(TINY_PNG_BASE64, "base64"),
+    });
+    await expect(page.getByText("Colonnes")).toBeVisible();
+    const [columnsInput, rowsInput] = await page.locator("input.input").all();
+    await columnsInput!.fill("6");
+    await rowsInput!.fill("5");
+    await page.getByRole("button", { name: "Continuer", exact: true }).tap();
+    await page.getByRole("button", { name: /Ajouter une couleur/ }).tap();
+
+    const code = page.getByRole("combobox", { name: "Code" });
+    const suggestions = page.getByRole("listbox", { name: "Code" });
+    await code.tap();
+    await code.pressSequentially("382");
+    // Typing narrows the list to the codes starting with what was typed.
+    const options = suggestions.getByRole("option");
+    for (const text of await options.allInnerTexts())
+      expect(text.trim()).toMatch(/^382/);
+
+    await options.filter({ hasText: straw.name }).tap();
+    await expect(suggestions).toBeHidden();
+    await expect(code).toHaveValue("3820");
+    await expect(page.getByPlaceholder("Nom du fil")).toHaveValue(straw.name);
+    await expect(page.locator('input[type="color"]')).toHaveValue(
+      straw.rgb_hex,
+    );
+    // The list fits on the phone's screen.
+    await code.tap();
+    const box = await suggestions.boundingBox();
+    expect(box!.x + box!.width).toBeLessThanOrEqual(375);
+
+    // The on-screen keyboard shrinks the visible area once the field has the
+    // focus: the list stays within what is left (above the field if need be).
+    await page.setViewportSize({ width: 375, height: 520 });
+    // Safari then scrolls the focused field into view.
+    await code.scrollIntoViewIfNeeded();
+    await expect
+      .poll(async () => {
+        const list = await suggestions.boundingBox();
+        return list === null ? Infinity : list.y + list.height;
+      })
+      .toBeLessThanOrEqual(520);
+    const shrunk = await suggestions.boundingBox();
+    expect(shrunk!.y).toBeGreaterThanOrEqual(0);
+  });
 });
