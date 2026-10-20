@@ -8,6 +8,7 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from "react";
 
+import { DmcCodeInput } from "../components/DmcCodeInput";
 import { ImportGridPainter } from "../components/ImportGridPainter";
 import { SourcePreview } from "../components/SourcePreview";
 import { BackIcon, UploadIcon } from "../components/Icons";
@@ -71,9 +72,6 @@ function paletteForApi(palette: readonly PaletteRow[]): ApiImportPaletteEntry[] 
   return palette.map(({ pdf_symbol_svg: _original, ...entry }) => entry);
 }
 
-/** `<datalist>` of the DMC chart's codes, shared by every code field. */
-const DMC_CODES_LIST_ID = "import-dmc-codes";
-
 export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
   const t = useT();
   const wide = useWideLayout();
@@ -112,6 +110,7 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
       });
     return () => controller.abort();
   }, []);
+  const dmcShadeList = useMemo(() => [...dmcShades.values()], [dmcShades]);
   // Code of the row being edited, as it was when the field got the focus:
   // the chart only fills in a row whose code really changed.
   const codeAtFocusRef = useRef<string | null>(null);
@@ -363,6 +362,18 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
     }
     const next = palette.map((row, i) =>
       i === index ? { ...row, rgb_hex: shade.rgb_hex, name: shade.name } : row,
+    );
+    setPalette(next);
+    if (job !== null) void saveConfig(job.id, { palette: paletteForApi(next) });
+  };
+
+  // A suggestion picked from the code field's list: code, colour and name at
+  // once. The field keeps the focus, so its later blur must not count this
+  // code as a change still to fill in.
+  const pickDmcShade = (index: number, shade: ApiThreadShade): void => {
+    codeAtFocusRef.current = shade.code;
+    const next = palette.map((row, i) =>
+      i === index ? { ...row, code: shade.code, rgb_hex: shade.rgb_hex, name: shade.name } : row,
     );
     setPalette(next);
     if (job !== null) void saveConfig(job.id, { palette: paletteForApi(next) });
@@ -732,14 +743,6 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
 
         {step === 3 && (
           <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-            {/* Suggestions for the code fields (DMC chart, issue #39). */}
-            <datalist id={DMC_CODES_LIST_ID}>
-              {[...dmcShades.values()].map((shade) => (
-                <option key={shade.code} value={shade.code}>
-                  {shade.name}
-                </option>
-              ))}
-            </datalist>
             <div className="text-muted" style={{ fontSize: 13 }}>
               {t("import.paint.hint")}
             </div>
@@ -911,18 +914,17 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
                         )}
                       </>
                     )}
-                    <input
-                      className="input"
-                      style={{ width: 90 }}
-                      placeholder={t("import.legend.code")}
-                      aria-label={t("import.legend.code")}
-                      list={dmcShades.size > 0 ? DMC_CODES_LIST_ID : undefined}
+                    <DmcCodeInput
                       value={entry.code}
+                      shades={dmcShadeList}
+                      placeholder={t("import.legend.code")}
+                      label={t("import.legend.code")}
                       onFocus={() => {
                         codeAtFocusRef.current = entry.code;
                       }}
-                      onChange={(event) => updatePaletteEntry(index, { code: event.target.value })}
+                      onChange={(code) => updatePaletteEntry(index, { code })}
                       onBlur={() => commitCodeEdit(index)}
+                      onPick={(shade) => pickDmcShade(index, shade)}
                     />
                     <input
                       className="input"
