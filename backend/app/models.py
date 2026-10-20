@@ -73,10 +73,9 @@ class UtcDateTime(TypeDecorator[datetime]):
 class AppMeta(Base):
     """Instance metadata, as key/value pairs.
 
-    Serves two concrete needs: providing a non-empty first migration (hence
-    an Alembic chain really verified end to end), and letting the health
-    endpoint prove that the database responds to reads, not just that the
-    file exists.
+    Holds the fingerprint of the models the schema was created from
+    (`app/schema.py`), and lets the health endpoint prove that the database
+    responds to reads, not just that the file exists.
     """
 
     __tablename__ = "app_meta"

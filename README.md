@@ -45,9 +45,13 @@ curl http://localhost:8765/api/health
 # {"status":"ok","version":"v1.2.3","database":"ok","schema_revision":"..."}
 ```
 
-`status` is `"ok"` once the database has been created **and** migrated.
-Migrations run automatically on every startup, no manual step needed after an
-update.
+`status` is `"ok"` once the database has been created. It is created
+automatically on first startup, no manual step needed.
+
+> **While the app is in development, an update that changes the data model
+> starts the database again from scratch: patterns and progress are lost.**
+> Export a backup (Settings) before updating; the automatic daily backups in
+> `./data/backups` are kept.
 
 **5. Create the first profile:** open the instance in a browser. On first
 launch it asks for the first profile — an administrator. Patterns already on

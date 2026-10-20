@@ -11,13 +11,14 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
-from sqlalchemy import select, text
+from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.db import get_session
 from app.models import AppMeta
+from app.schema import SCHEMA_FINGERPRINT_KEY
 
 router = APIRouter(tags=["system"])
 
@@ -28,7 +29,10 @@ class HealthResponse(BaseModel):
     database: str = Field(description="`ok` if the database responds to reads.")
     schema_revision: str | None = Field(
         default=None,
-        description="Applied Alembic revision, or null if no migration has run.",
+        description=(
+            "Fingerprint of the models the schema was created from "
+            "(`app/schema.py`), or null if the schema was never created."
+        ),
     )
 
 
@@ -43,8 +47,8 @@ def health(session: Annotated[Session, Depends(get_session)]) -> HealthResponse:
         database = "error"
 
     try:
-        row = session.execute(text("SELECT version_num FROM alembic_version")).first()
-        schema_revision = str(row[0]) if row is not None else None
+        stored = session.get(AppMeta, SCHEMA_FINGERPRINT_KEY)
+        schema_revision = stored.value if stored is not None else None
     except SQLAlchemyError:
         schema_revision = None
 

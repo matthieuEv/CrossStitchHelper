@@ -21,6 +21,7 @@ Never duplicate or rephrase the content of these documents elsewhere in the code
 - **Tracking progress is stored separately from the source grid.** Never change the structure of `grids` and `progress` in a coupled way — a re-import must never be able to overwrite existing progress.
 - **Pattern content is shared only on purpose, within a trusted group.** Nothing is ever shared implicitly: a profile's library is private, and a pattern reaches the shared library only when a profile shares it (decision of 2026-10-14, issues #77/#78, specification §3.3). Import "recipes" still contain only geometric/structural parameters, never content. Progress is never shared, not even with a shared pattern's copies.
 - **The source PDF is not kept** beyond extraction, unless the user explicitly enables the option.
+- **No schema migrations while in development** (decision of 2026-10-20). The models in `backend/app/models.py` are the only description of the schema: never add an Alembic revision or any migration script. When the models change, the database is recreated empty at the next startup (`backend/app/schema.py`) — losing data is accepted for now. Revisit before a first stable release.
 - **No multi-service installation.** No Redis, no Postgres, no task broker. SQLite + one application container. Any proposal to add an infrastructure dependency must be justified by a real need, not by habit.
 - **Grid rendering is in `<canvas>`, never one DOM element per cell.** A reference pattern has 45,900 cells (see `fixtures/`) — every rendering component must be tested with a pattern of that size before being considered done.
 - **All documentation, code comments and docstrings are written in English** (decision of 2026-09-24, specification §13). User-facing strings are unaffected: they go through i18n, French and English.
@@ -54,7 +55,7 @@ Before considering a change to the extraction engine done, run the `verify-extra
 
 ## Code conventions
 
-- **Backend**: Python 3.12, FastAPI, `pdfplumber`/`PyMuPDF` for extraction, SQLAlchemy + Alembic for the database, strict typing (clean mypy), tests with `pytest`.
+- **Backend**: Python 3.12, FastAPI, `pdfplumber`/`PyMuPDF` for extraction, SQLAlchemy for the database (schema created from the models, no migrations — see above), strict typing (clean mypy), tests with `pytest`.
 - **Frontend**: strict TypeScript, React, hand-written `<canvas>` grid rendering (no heavy generic virtualised-grid dependency — the level-of-detail logic is domain-specific).
 - **Documentation and comments**: English only, everywhere — Markdown docs, code comments, docstrings, agent and skill definitions.
 - **User-facing strings**: always go through i18n keys (French + English from the start), never hard-coded text in components.

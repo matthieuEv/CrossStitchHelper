@@ -1,6 +1,6 @@
 ---
 name: self-hosting-packager
-description: Specialist in packaging and self-hosting (Docker, docker-compose, migrations, installation documentation). Use for any task touching deployment, packaging, or ease of installation for a non-technical end user.
+description: Specialist in packaging and self-hosting (Docker, docker-compose, database creation at startup, installation documentation). Use for any task touching deployment, packaging, or ease of installation for a non-technical end user.
 tools: Read, Write, Edit, Bash, Grep, Glob
 model: inherit
 ---

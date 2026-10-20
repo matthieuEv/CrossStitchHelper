@@ -9,7 +9,6 @@ dependencies = [
     "fastapi>=0.115",
     "uvicorn[standard]>=0.32",
     "sqlalchemy>=2.0",
-    "alembic>=1.14",
     "pydantic>=2.9",
     "pydantic-settings>=2.6",
     "python-multipart>=0.0.12",
@@ -45,12 +44,6 @@ pythonpath = ["."]
 python_version = "3.11"
 strict = true
 files = ["app", "tests"]
-# Alembic generates untyped migration modules: exclude them from strict mode.
-exclude = ["^alembic/"]
-
-[[tool.mypy.overrides]]
-module = ["alembic.*"]
-ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
 # pymupdf exposes no type information (no py.typed, no third-party stubs

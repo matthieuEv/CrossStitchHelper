@@ -19,7 +19,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app.db import get_session_factory  # noqa: E402
-from app.migrations import upgrade_to_head  # noqa: E402
+from app.schema import ensure_schema  # noqa: E402
 from app.seed import seed_demo_pattern  # noqa: E402
 
 
@@ -30,7 +30,7 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    upgrade_to_head()
+    ensure_schema()
     with get_session_factory()() as session:
         pattern = seed_demo_pattern(session, force=args.force)
         print(f"Demo pattern ready: {pattern.id} ({pattern.width}×{pattern.height})")

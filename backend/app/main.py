@@ -36,7 +36,7 @@ from app.config import get_settings
 from app.db import get_session_factory
 from app.federation import run_federation_loop
 from app.instance import ensure_instance_id
-from app.migrations import upgrade_to_head
+from app.schema import ensure_schema
 
 logger = logging.getLogger(__name__)
 
@@ -55,8 +55,8 @@ _NEVER_CACHED = frozenset(
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     settings = get_settings()
     settings.ensure_directories()
-    if settings.run_migrations_on_startup:
-        upgrade_to_head()
+    if settings.ensure_schema_on_startup:
+        ensure_schema()
     with get_session_factory()() as session:
         ensure_instance_id(session)
     logger.info(
