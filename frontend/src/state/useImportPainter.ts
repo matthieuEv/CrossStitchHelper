@@ -12,8 +12,8 @@
 
 import { useCallback, useMemo, useState } from "react";
 
-import type { ApiImportFillZone } from "../lib/api";
-import { applyFillsLocal } from "../lib/importFills";
+import type { ApiImportFillZone, ApiImportStitch } from "../lib/api";
+import { applyFillsLocal, type DetectedLayers } from "../lib/importFills";
 import { MAX_CELL, MIN_CELL, panMargin, type GridView } from "../pattern/render";
 import type { PaletteEntry, Pattern } from "../pattern/types";
 
@@ -64,8 +64,9 @@ export interface ImportPainter {
   selection: PainterSelection | null;
   setSelection: (selection: PainterSelection | null) => void;
 
-  /** Paints (or, with `paletteIndex = 0`, erases) the current selection. */
-  paint: (paletteIndex: number) => void;
+  /** Paints the current selection as `stitch` (issue #41) or, with
+   * `paletteIndex = 0`, erases it — every layer, see `applyFillsLocal`. */
+  paint: (paletteIndex: number, stitch: ApiImportStitch) => void;
   /** Removes the last painted area (issue #37) — painted areas are applied in
    * order on top of the detected grid, so dropping the last one restores the
    * grid exactly as it was before it, however many levels back. */
@@ -80,20 +81,32 @@ export function useImportPainter(
   fills: readonly ApiImportFillZone[],
   onFillsChange: (fills: ApiImportFillZone[]) => void,
   name: string,
-  detectedCells?: readonly number[] | null,
+  detected: DetectedLayers,
 ): ImportPainter {
   const [cell, setCell] = useState(16);
   const [offset, setOffsetState] = useState({ x0: -2, y0: -2 });
   const [cursor, setCursor] = useState<CellPosition | null>(null);
   const [selection, setSelection] = useState<PainterSelection | null>(null);
 
-  const cells = useMemo(
-    () => applyFillsLocal(columns, rows, fills, detectedCells),
-    [columns, rows, fills, detectedCells],
+  const { full: detectedFull, half: detectedHalf, quarter: detectedQuarter } = detected;
+  const layers = useMemo(
+    () =>
+      applyFillsLocal(columns, rows, fills, {
+        full: detectedFull,
+        half: detectedHalf,
+        quarter: detectedQuarter,
+      }),
+    [columns, rows, fills, detectedFull, detectedHalf, detectedQuarter],
   );
-  const filledCount = useMemo(() => cells.reduce((sum, value) => sum + (value !== 0 ? 1 : 0), 0), [
-    cells,
-  ]);
+  const filledCount = useMemo(() => {
+    let count = 0;
+    for (let index = 0; index < layers.full.length; index++) {
+      if (layers.full[index] !== 0 || layers.half[index] !== 0 || layers.quarter[index] !== 0) {
+        count++;
+      }
+    }
+    return count;
+  }, [layers]);
 
   const pattern: Pattern = useMemo(
     () => ({
@@ -101,17 +114,16 @@ export function useImportPainter(
       name,
       width: columns,
       height: rows,
-      cells,
-      // The import wizard only builds full stitches — backstitch/knots/1-2/1-4
-      // remained Lot 9's scope, not built yet at the time (see
-      // `lib/mappers.ts::patternFromImportPreview`).
-      cellsHalf: new Uint8Array(columns * rows),
-      cellsQuarter: new Uint8Array(columns * rows),
+      cells: layers.full,
+      // 1/2 and 1/4 stitches, detected and/or painted (issue #41).
+      // Backstitch and knots are not painted in the wizard yet.
+      cellsHalf: layers.half,
+      cellsQuarter: layers.quarter,
       backstitch: [],
       frenchKnots: [],
       palette,
     }),
-    [name, columns, rows, cells, palette],
+    [name, columns, rows, layers, palette],
   );
 
   const setOffset = useCallback(
@@ -168,7 +180,7 @@ export function useImportPainter(
   );
 
   const paint = useCallback(
-    (paletteIndex: number) => {
+    (paletteIndex: number, stitch: ApiImportStitch) => {
       if (selection === null) return;
       const zone: ApiImportFillZone = {
         x0: Math.max(0, Math.min(selection.x0, selection.x1)),
@@ -176,6 +188,8 @@ export function useImportPainter(
         x1: Math.min(columns - 1, Math.max(selection.x0, selection.x1)),
         y1: Math.min(rows - 1, Math.max(selection.y0, selection.y1)),
         palette_index: paletteIndex,
+        // Full stitches stay without the field, as before issue #41.
+        ...(stitch !== "full" && { stitch }),
       };
       onFillsChange([...fills, zone]);
     },
