@@ -16,7 +16,7 @@ from datetime import datetime
 
 from app.models import Grid, PaletteEntry, Pattern, Progress
 
-FORMAT_VERSION = 2
+FORMAT_VERSION = 3
 
 _README = f"""CrossStitchHelper — .cshp archive (open format, version {FORMAT_VERSION})
 
@@ -37,21 +37,26 @@ Files:
                   integer is the (1-based) index of the colour in
                   `pattern.json` (palette[index - 1]).
 
-- grid_half.bin, grid_quarter.bin (Lot 8, present only if this pattern has
-                  1/2 or 1/4 stitches) — same format as grid.bin.
+- grid_half.bin   (Lot 8, present only if this pattern has 1/2 stitches) —
+                  same format as grid.bin. 1/4 and 3/4 stitches are not a
+                  grid (a cell may hold several): `pattern.json` →
+                  `segments.quarter_stitches` / `three_quarter_stitches`
+                  lists them, each as a cell (x, y), a corner (tl, tr, bl,
+                  br) and a colour.
 
 - progress.bin    Your progress on full stitches, one bit per cell, same
                   traversal order as grid.bin (least significant bit first in
                   each byte). 1 = stitched cell.
 
-- progress_half.bin, progress_quarter.bin (Lot 8, present along with the
-                  matching grid_*.bin files) — same format as progress.bin.
+- progress_half.bin (Lot 8, present along with grid_half.bin) — same
+                  format as progress.bin.
 
-- progress_backstitch.bin, progress_knots.bin (Lot 8, present if this
-                  pattern has backstitch segments / knots) — one bit per
-                  element of `pattern.json` → `segments.backstitch` /
-                  `segments.french_knots`, in the same order (never one bit
-                  per cell: these are not grids).
+- progress_quarter.bin, progress_three_quarter.bin, progress_backstitch.bin,
+  progress_knots.bin (present if this pattern has such stitches) — one bit
+                  per element of `pattern.json` → `segments.quarter_stitches`
+                  / `three_quarter_stitches` / `backstitch` /
+                  `french_knots`, in the same order (never one bit per cell:
+                  these are not grids).
 
 To turn a grid*.bin file and pattern.json back into a readable matrix, almost
 any language will do: read the integers as little-endian uint16,
@@ -94,6 +99,7 @@ def build_cshp_archive(
                 "count_full": entry.count_full,
                 "count_half": entry.count_half,
                 "count_quarter": entry.count_quarter,
+                "count_three_quarter": entry.count_three_quarter,
                 "count_french": entry.count_french,
                 "count_beads": entry.count_beads,
                 "backstitch_length_cm": entry.backstitch_length_cm,
@@ -101,6 +107,8 @@ def build_cshp_archive(
             for entry in palette_entries
         ],
         "segments": {
+            "quarter_stitches": json.loads(grid.quarter_json),
+            "three_quarter_stitches": json.loads(grid.three_quarter_json),
             "backstitch": json.loads(grid.backstitch_json),
             "french_knots": json.loads(grid.french_knots_json),
         },
@@ -111,7 +119,6 @@ def build_cshp_archive(
             "height": pattern.height,
             "version": grid.version,
             "half_file": "grid_half.bin" if grid.layer_half is not None else None,
-            "quarter_file": "grid_quarter.bin" if grid.layer_quarter is not None else None,
         },
         "progress": {
             "file": "progress.bin",
@@ -119,6 +126,9 @@ def build_cshp_archive(
             "stitched_count": progress.stitched_count,
             "half_file": "progress_half.bin" if progress.bitmap_half is not None else None,
             "quarter_file": "progress_quarter.bin" if progress.bitmap_quarter is not None else None,
+            "three_quarter_file": "progress_three_quarter.bin"
+            if progress.bitmap_three_quarter is not None
+            else None,
             "backstitch_file": "progress_backstitch.bin"
             if progress.bitmap_backstitch is not None
             else None,
@@ -133,12 +143,12 @@ def build_cshp_archive(
         archive.writestr("progress.bin", progress.bitmap)
         if grid.layer_half is not None:
             archive.writestr("grid_half.bin", grid.layer_half)
-        if grid.layer_quarter is not None:
-            archive.writestr("grid_quarter.bin", grid.layer_quarter)
         if progress.bitmap_half is not None:
             archive.writestr("progress_half.bin", progress.bitmap_half)
         if progress.bitmap_quarter is not None:
             archive.writestr("progress_quarter.bin", progress.bitmap_quarter)
+        if progress.bitmap_three_quarter is not None:
+            archive.writestr("progress_three_quarter.bin", progress.bitmap_three_quarter)
         if progress.bitmap_backstitch is not None:
             archive.writestr("progress_backstitch.bin", progress.bitmap_backstitch)
         if progress.bitmap_knots is not None:

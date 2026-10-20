@@ -34,6 +34,7 @@ class PaletteEntryOut(BaseModel):
     count_full: int
     count_half: int
     count_quarter: int
+    count_three_quarter: int = 0
     count_french: int
     count_beads: int
     backstitch_length_cm: float | None = None
@@ -123,6 +124,22 @@ class FrenchKnot(BaseModel):
     palette_index: int
 
 
+Corner = Literal["tl", "tr", "bl", "br"]
+
+
+class PartialStitch(BaseModel):
+    """A 1/4 or 3/4 stitch (issue #83): the cell ``(x, y)`` and a corner —
+    top-left, top-right, bottom-left, bottom-right. A 1/4 stitch goes from
+    that corner to the cell's centre; a 3/4 stitch is that same short leg
+    plus the long diagonal that does not pass through the corner. A cell may
+    hold several (a 3/4 and a 1/4 of another colour, up to four 1/4)."""
+
+    x: int = Field(ge=0)
+    y: int = Field(ge=0)
+    corner: Corner
+    palette_index: int = Field(ge=1)
+
+
 class GridOut(BaseModel):
     pattern_id: str
     width: int
@@ -131,7 +148,8 @@ class GridOut(BaseModel):
     version: int
     layer_full: str = Field(description="Base64-encoded Uint16Array, row by row.")
     layer_half: str | None = None
-    layer_quarter: str | None = None
+    quarter_stitches: list[PartialStitch] = Field(default_factory=list)
+    three_quarter_stitches: list[PartialStitch] = Field(default_factory=list)
     backstitch: list[BackstitchSegment]
     french_knots: list[FrenchKnot]
 
@@ -152,8 +170,13 @@ class ProgressOut(BaseModel):
     )
     bitmap_quarter: str | None = Field(
         default=None,
-        description="Checked 1/4 stitches, same shape as `bitmap` — absent if `Grid.layer_quarter` "
-        "is empty.",
+        description="Checked 1/4 stitches — 1 bit per element of `GridOut.quarter_stitches`, "
+        "same convention as `bitmap_backstitch` (issue #83).",
+    )
+    bitmap_three_quarter: str | None = Field(
+        default=None,
+        description="Checked 3/4 stitches — 1 bit per element of "
+        "`GridOut.three_quarter_stitches`.",
     )
     bitmap_backstitch: str | None = Field(
         default=None,
@@ -167,6 +190,7 @@ class ProgressOut(BaseModel):
     )
     stitched_count_half: int = 0
     stitched_count_quarter: int = 0
+    stitched_count_three_quarter: int = 0
     stitched_count_backstitch: int = 0
     stitched_count_knots: int = 0
 
@@ -178,12 +202,13 @@ class ProgressOp(BaseModel):
 
     `layer` identifies the targeted stitch category (Lot 8): `index` is then
     read in that particular category's space — a grid index (0-based, row by
-    row) for `full`/`half`/`quarter`, an index into
-    `GridOut.backstitch`/`french_knots` for `backstitch`/`knot`. Never an
+    row) for `full`/`half`, an index into `GridOut.quarter_stitches`/
+    `three_quarter_stitches`/`backstitch`/`french_knots` for
+    `quarter`/`three_quarter`/`backstitch`/`knot` (issue #83). Never an
     index space shared between categories, so the wrong cell/segment is never
     checked through a layer mix-up."""
 
-    layer: Literal["full", "half", "quarter", "backstitch", "knot"] = "full"
+    layer: Literal["full", "half", "quarter", "three_quarter", "backstitch", "knot"] = "full"
     index: int = Field(ge=0)
     stitched: bool
 
@@ -508,6 +533,7 @@ class BackupPaletteEntry(BaseModel):
     count_full: int = 0
     count_half: int = 0
     count_quarter: int = 0
+    count_three_quarter: int = 0
     count_french: int = 0
     count_beads: int = 0
     backstitch_length_cm: float | None = None
@@ -516,7 +542,13 @@ class BackupPaletteEntry(BaseModel):
 class BackupGrid(BaseModel):
     layer_full: str = Field(description="Base64-encoded Uint16Array, like `GridOut`.")
     layer_half: str | None = None
-    layer_quarter: str | None = None
+    layer_quarter: str | None = Field(
+        default=None,
+        description="Format versions 1-3 only: 1/4 stitches as a cell layer, without a "
+        "corner — read as top-left `quarter_json` items (issue #83).",
+    )
+    quarter_json: str = "[]"
+    three_quarter_json: str = "[]"
     backstitch_json: str = "[]"
     french_knots_json: str = "[]"
     encoding: str = "uint16le"
@@ -527,6 +559,7 @@ class BackupProgress(BaseModel):
     bitmap: str = Field(description="1 bit per cell, base64-encoded, like `ProgressOut`.")
     bitmap_half: str | None = None
     bitmap_quarter: str | None = None
+    bitmap_three_quarter: str | None = None
     bitmap_backstitch: str | None = None
     bitmap_knots: str | None = None
     version: int = 0

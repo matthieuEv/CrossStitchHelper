@@ -202,9 +202,8 @@ def grid_out(pattern: Pattern) -> GridOut:
         version=grid.version,
         layer_full=bytes_to_base64(grid.layer_full),
         layer_half=bytes_to_base64(grid.layer_half) if grid.layer_half is not None else None,
-        layer_quarter=bytes_to_base64(grid.layer_quarter)
-        if grid.layer_quarter is not None
-        else None,
+        quarter_stitches=json.loads(grid.quarter_json),
+        three_quarter_stitches=json.loads(grid.three_quarter_json),
         backstitch=json.loads(grid.backstitch_json),
         french_knots=json.loads(grid.french_knots_json),
     )
@@ -223,6 +222,9 @@ def _progress_out(pattern: Pattern, progress: Progress) -> ProgressOut:
         bitmap_quarter=bytes_to_base64(progress.bitmap_quarter)
         if progress.bitmap_quarter is not None
         else None,
+        bitmap_three_quarter=bytes_to_base64(progress.bitmap_three_quarter)
+        if progress.bitmap_three_quarter is not None
+        else None,
         bitmap_backstitch=bytes_to_base64(progress.bitmap_backstitch)
         if progress.bitmap_backstitch is not None
         else None,
@@ -231,6 +233,7 @@ def _progress_out(pattern: Pattern, progress: Progress) -> ProgressOut:
         else None,
         stitched_count_half=count_set_bits(progress.bitmap_half or b""),
         stitched_count_quarter=count_set_bits(progress.bitmap_quarter or b""),
+        stitched_count_three_quarter=count_set_bits(progress.bitmap_three_quarter or b""),
         stitched_count_backstitch=count_set_bits(progress.bitmap_backstitch or b""),
         stitched_count_knots=count_set_bits(progress.bitmap_knots or b""),
     )
@@ -269,6 +272,7 @@ _LAYER_ATTR = {
     "full": "bitmap",
     "half": "bitmap_half",
     "quarter": "bitmap_quarter",
+    "three_quarter": "bitmap_three_quarter",
     "backstitch": "bitmap_backstitch",
     "knot": "bitmap_knots",
 }
@@ -276,15 +280,22 @@ _LAYER_ATTR = {
 
 def _layer_bound(pattern: Pattern, layer: str) -> int:
     """Number of addressable elements in this category — 0 if the pattern
-    has none (`Grid.layer_half`/`layer_quarter` absent, or empty
-    `backstitch_json`/`french_knots_json` list), which naturally rejects any
-    `index` (always >= 0) through the same check as the other categories,
-    with no special case to write."""
-    if layer in ("full", "half", "quarter"):
+    has none (an empty `quarter_json`/`three_quarter_json`/`backstitch_json`/
+    `french_knots_json` list), which naturally rejects any `index` (always
+    >= 0) through the same check as the other categories, with no special
+    case to write."""
+    if layer in ("full", "half"):
         return pattern.width * pattern.height
     assert pattern.grid is not None  # guaranteed by the caller, see sync_progress
-    field = "backstitch_json" if layer == "backstitch" else "french_knots_json"
-    return len(json.loads(getattr(pattern.grid, field)))
+    return len(json.loads(getattr(pattern.grid, _ITEM_LISTS[layer])))
+
+
+_ITEM_LISTS = {
+    "quarter": "quarter_json",
+    "three_quarter": "three_quarter_json",
+    "backstitch": "backstitch_json",
+    "knot": "french_knots_json",
+}
 
 
 @router.post(
@@ -305,8 +316,8 @@ def sync_progress(
     about the changes made by other devices since its last known version, so
     it can replay them locally.
 
-    Since Lot 8, `ProgressOp.layer` distinguishes up to five stitch
-    categories (full stitch, 1/2, 1/4, backstitch, knot), each with its own
+    Since Lot 8, `ProgressOp.layer` distinguishes the stitch categories
+    (full stitch, 1/2, 1/4, 3/4 since issue #83, backstitch, knot), each with its own
     bitmap (`Progress.bitmap*`) and its own index space — never shared
     between categories, so the wrong element is never checked through a
     layer mix-up (see `app/models.py::Progress`).

@@ -209,6 +209,7 @@ class PaletteEntry(Base):
     count_full: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     count_half: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     count_quarter: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    count_three_quarter: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     count_french: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     count_beads: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     backstitch_length_cm: Mapped[float | None] = mapped_column(Float, nullable=True)
@@ -229,6 +230,11 @@ class Grid(Base):
     ``app/schemas.py::BackstitchSegment``/``FrenchKnot`` for the exact
     coordinate convention (cell corners for one, cell centre for the other —
     never pixels).
+
+    ``quarter_json``/``three_quarter_json`` (issue #83): lists of
+    ``app/schemas.py::PartialStitch`` — a cell and a corner. Lists rather
+    than per-cell layers like ``layer_half``: one cell may hold several
+    partial stitches of different colours.
     """
 
     __tablename__ = "grids"
@@ -238,7 +244,8 @@ class Grid(Base):
     )
     layer_full: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
     layer_half: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
-    layer_quarter: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    quarter_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    three_quarter_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
     backstitch_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
     french_knots_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
     encoding: Mapped[str] = mapped_column(String(16), nullable=False, default="uint16le")
@@ -259,15 +266,15 @@ class Progress(Base):
 
     ``bitmap`` covers full stitches only (``Grid.layer_full``) — it is
     authoritative for ``stitched_count`` and the overall percentage (§7.1),
-    unchanged since Lot 1. The next four columns (Lot 8) follow the same
-    principle for the other stitch categories, each ``NULL`` as long as the
-    corresponding grid has no content in that category (same convention as
-    ``Grid.layer_half``/``layer_quarter``): ``bitmap_half``/``bitmap_quarter``
-    have the same shape as ``bitmap`` (1 bit per cell,
-    ``Grid.layer_half``/``layer_quarter``); ``bitmap_backstitch``/
+    unchanged since Lot 1. The other columns (Lot 8, issue #83) follow the
+    same principle for the other stitch categories, each ``NULL`` as long as
+    the corresponding grid has no content in that category: ``bitmap_half``
+    has the same shape as ``bitmap`` (1 bit per cell, ``Grid.layer_half``);
+    ``bitmap_quarter``/``bitmap_three_quarter``/``bitmap_backstitch``/
     ``bitmap_knots`` are sized on the number of elements of
-    ``Grid.backstitch_json``/``french_knots_json`` (1 bit per segment/knot,
-    never per cell — these are not grids)."""
+    ``Grid.quarter_json``/``three_quarter_json``/``backstitch_json``/
+    ``french_knots_json`` (1 bit per element, never per cell — these are not
+    grids)."""
 
     __tablename__ = "progress"
 
@@ -277,6 +284,7 @@ class Progress(Base):
     bitmap: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
     bitmap_half: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
     bitmap_quarter: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    bitmap_three_quarter: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
     bitmap_backstitch: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
     bitmap_knots: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=0)

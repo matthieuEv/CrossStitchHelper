@@ -195,22 +195,23 @@ def test_sync_progress_rejects_out_of_range_index(seeded_client: TestClient) -> 
 
 
 # (bitmap key, index not yet checked on the demo pattern) — `app/seed.py`
-# already marks 5/10 half stitches and 6/12 quarter stitches as done, but in
-# the space of the *whole grid's cells* (as for `full`, not in the narrower
-# space of only the cells carrying a 1/2 or 1/4 stitch): cell (0, 9) is not
-# one of them, so it is guaranteed unchecked. For `backstitch`/`knot`, the
-# index space is indeed the narrower one of the elements of
-# `Grid.backstitch_json`/`french_knots_json` themselves — only 0 and 1 (out
-# of 4 segments), then 0, 2 and 4 (out of 6 knots), are checked at the start.
+# already marks 5/10 half stitches as done, in the space of the *whole grid's
+# cells* (as for `full`): cell (0, 9) is not one of them, so it is guaranteed
+# unchecked. For the other categories the index space is the narrower one of
+# the elements of `Grid.quarter_json`/`three_quarter_json`/`backstitch_json`/
+# `french_knots_json` themselves — only 0-5 (out of 16 quarters), 0 (out of 4
+# three-quarters), 0 and 1 (out of 4 segments), then 0, 2 and 4 (out of 6
+# knots), are checked at the start.
 _UNCHECKED_INDEX_BY_LAYER = {
     "half": ("bitmap_half", 9),
     "quarter": ("bitmap_quarter", 9),
+    "three_quarter": ("bitmap_three_quarter", 1),
     "backstitch": ("bitmap_backstitch", 2),
     "knot": ("bitmap_knots", 1),
 }
 
 
-@pytest.mark.parametrize("layer", ["half", "quarter", "backstitch", "knot"])
+@pytest.mark.parametrize("layer", ["half", "quarter", "three_quarter", "backstitch", "knot"])
 def test_sync_progress_handles_each_special_layer_independently(
     seeded_client: TestClient, layer: str
 ) -> None:
@@ -240,7 +241,14 @@ def test_sync_progress_handles_each_special_layer_independently(
     after = seeded_client.get(f"/api/patterns/{DEMO_PATTERN_ID}/progress").json()
     assert get_bit(base64_to_bytes(after[bitmap_key]), target) is True
     # The other bitmaps must not have changed.
-    other_keys = ["bitmap", "bitmap_half", "bitmap_quarter", "bitmap_backstitch", "bitmap_knots"]
+    other_keys = [
+        "bitmap",
+        "bitmap_half",
+        "bitmap_quarter",
+        "bitmap_three_quarter",
+        "bitmap_backstitch",
+        "bitmap_knots",
+    ]
     for other_key in other_keys:
         if other_key == bitmap_key:
             continue
@@ -308,17 +316,17 @@ def test_export_produces_a_self_contained_cshp_archive(seeded_client: TestClient
     assert "attachment" in response.headers["content-disposition"]
 
     archive = zipfile.ZipFile(io.BytesIO(response.content))
-    # The demo pattern has content in all five stitch categories since Lot 8
-    # (see `app/seed.py`): the four optional files must therefore all be
+    # The demo pattern has content in every stitch category (Lot 8, 3/4
+    # since issue #83, see `app/seed.py`): the optional files must all be
     # present here.
     assert set(archive.namelist()) == {
         "pattern.json",
         "grid.bin",
         "grid_half.bin",
-        "grid_quarter.bin",
         "progress.bin",
         "progress_half.bin",
         "progress_quarter.bin",
+        "progress_three_quarter.bin",
         "progress_backstitch.bin",
         "progress_knots.bin",
         "README.txt",
@@ -326,18 +334,21 @@ def test_export_produces_a_self_contained_cshp_archive(seeded_client: TestClient
 
     manifest = json.loads(archive.read("pattern.json"))
     assert manifest["format"] == "cshp"
-    assert manifest["format_version"] == 2
+    assert manifest["format_version"] == 3
     assert manifest["pattern"]["width"] == WIDTH
     assert manifest["pattern"]["height"] == HEIGHT
     assert len(manifest["palette"]) == 12
     assert manifest["grid"]["width"] == WIDTH
     assert manifest["grid"]["half_file"] == "grid_half.bin"
-    assert manifest["grid"]["quarter_file"] == "grid_quarter.bin"
+    assert manifest["progress"]["quarter_file"] == "progress_quarter.bin"
+    assert manifest["progress"]["three_quarter_file"] == "progress_three_quarter.bin"
     assert manifest["progress"]["version"] == 1
     assert manifest["progress"]["backstitch_file"] == "progress_backstitch.bin"
     assert manifest["progress"]["knots_file"] == "progress_knots.bin"
     assert len(manifest["segments"]["backstitch"]) == 4
     assert len(manifest["segments"]["french_knots"]) == 6
+    assert len(manifest["segments"]["quarter_stitches"]) == 16
+    assert len(manifest["segments"]["three_quarter_stitches"]) == 4
 
     grid_response = seeded_client.get(f"/api/patterns/{DEMO_PATTERN_ID}/grid").json()
     progress_response = seeded_client.get(f"/api/patterns/{DEMO_PATTERN_ID}/progress").json()
@@ -348,10 +359,10 @@ def test_export_produces_a_self_contained_cshp_archive(seeded_client: TestClient
     for filename, api_b64 in [
         ("grid.bin", grid_response["layer_full"]),
         ("grid_half.bin", grid_response["layer_half"]),
-        ("grid_quarter.bin", grid_response["layer_quarter"]),
         ("progress.bin", progress_response["bitmap"]),
         ("progress_half.bin", progress_response["bitmap_half"]),
         ("progress_quarter.bin", progress_response["bitmap_quarter"]),
+        ("progress_three_quarter.bin", progress_response["bitmap_three_quarter"]),
         ("progress_backstitch.bin", progress_response["bitmap_backstitch"]),
         ("progress_knots.bin", progress_response["bitmap_knots"]),
     ]:
@@ -456,7 +467,14 @@ def test_duplicate_pattern_copies_chart_with_empty_progress(seeded_client: TestC
 
     source_grid = seeded_client.get(f"/api/patterns/{DEMO_PATTERN_ID}/grid").json()
     copy_grid = seeded_client.get(f"/api/patterns/{copy_id}/grid").json()
-    for key in ("layer_full", "layer_half", "layer_quarter", "backstitch", "french_knots"):
+    for key in (
+        "layer_full",
+        "layer_half",
+        "quarter_stitches",
+        "three_quarter_stitches",
+        "backstitch",
+        "french_knots",
+    ):
         assert copy_grid[key] == source_grid[key], key
 
     copy_progress = seeded_client.get(f"/api/patterns/{copy_id}/progress").json()
