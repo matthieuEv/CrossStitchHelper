@@ -62,6 +62,7 @@ class PatternSummary(BaseModel):
     stitched_count: int
     cell_count: int
     percent: int
+    labels: list[str] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime
 
@@ -75,11 +76,20 @@ class PatternDetail(BaseModel):
     width: int
     height: int
     notes: str | None
+    labels: list[str] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime
     palette: list[PaletteEntryOut]
 
     model_config = {"from_attributes": True}
+
+
+class PatternUpdate(BaseModel):
+    """What a pattern's "Edit" action changes (issue #57) — each field given
+    replaces the stored one, an absent field is left as is."""
+
+    name: str | None = Field(default=None, min_length=1, max_length=200)
+    labels: list[str] | None = None
 
 
 class BackstitchSegment(BaseModel):
@@ -418,6 +428,7 @@ class ImportJobOut(BaseModel):
 class ImportCommitRequest(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     fabric_count: int | None = Field(default=None, ge=1, le=64)
+    labels: list[str] = Field(default_factory=list)
 
 
 class ImportCommitResponse(BaseModel):
@@ -525,6 +536,8 @@ class BackupPattern(BaseModel):
     import_config_json: str | None = None
     recipe_id: str | None = None
     notes: str | None = None
+    # Issue #57 — absent from backups made before it: no labels.
+    labels: list[str] = Field(default_factory=list)
     palette: list[BackupPaletteEntry] = Field(default_factory=list)
     grid: BackupGrid | None = None
     progress: BackupProgress | None = None
