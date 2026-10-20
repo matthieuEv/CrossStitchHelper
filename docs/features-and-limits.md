@@ -26,7 +26,7 @@
 
 - Show, for each cell, the colour code (DMC by default) and its symbol.
 - Provide a complete legend of the pattern: all colours used, their name, their code.
-- Handle the common special stitches: full stitch, half stitch, quarter stitch, backstitch, French knot.
+- Handle the common special stitches: full stitch, half stitch, quarter and three-quarter stitches (each in its own corner of the cell, several in one cell), backstitch, French knot.
 
 ### Provide statistics
 

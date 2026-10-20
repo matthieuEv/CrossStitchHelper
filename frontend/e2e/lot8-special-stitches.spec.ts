@@ -42,7 +42,7 @@ async function fetchDemoPattern(request: APIRequestContext): Promise<PatternSumm
   return demo;
 }
 
-type StitchLayer = "full" | "half" | "quarter" | "backstitch" | "knot";
+type StitchLayer = "full" | "half" | "quarter" | "three_quarter" | "backstitch" | "knot";
 
 /** Forces an absolute state for an element of a given category — idempotent
  * on the server (§9), hence a reliable known baseline whatever state a
@@ -75,6 +75,7 @@ function bitSet(base64: string | null, index: number): boolean {
 interface ProgressResponse {
   bitmap_half: string | null;
   bitmap_quarter: string | null;
+  bitmap_three_quarter: string | null;
   bitmap_backstitch: string | null;
   bitmap_knots: string | null;
 }
@@ -205,10 +206,10 @@ test("rendering shows the demo pattern's special stitches", async ({ page, reque
   const distance = (rgb: [number, number, number]): number =>
     Math.hypot(rgb[0] - (fabricRgb[0] ?? 0), rgb[1] - (fabricRgb[1] ?? 0), rgb[2] - (fabricRgb[2] ?? 0));
 
-  // 1/4 stitch (cell (109,95), top-left corner of the triangle — see
-  // `fillQuarterTriangle`).
+  // 1/4 stitch (cell (109,95), in its top-right corner — `app/seed.py`
+  // points each quarter's leg towards the centre; see `quarterShape`).
   {
-    const [px, py] = toLocalPixel(109 + 0.15, 95 + 0.15);
+    const [px, py] = toLocalPixel(109 + 0.85, 95 + 0.15);
     const rgb = await sample(px, py);
     expect(distance(rgb)).toBeGreaterThan(30);
   }
@@ -235,7 +236,7 @@ test("rendering shows the demo pattern's special stitches", async ({ page, reque
   }
 });
 
-test("checking a 1/2, 1/4, backstitch and knot stitch persists after a reload", async ({
+test("checking a 1/2, 1/4, 3/4, backstitch and knot stitch persists after a reload", async ({
   page,
   request,
 }) => {
@@ -243,18 +244,24 @@ test("checking a 1/2, 1/4, backstitch and knot stitch persists after a reload", 
 
   // Known baseline, whatever the previous run: the four targeted elements
   // start unchecked.
-  const QUARTER_INDEX = 95 * 255 + 109; // cell (109, 95)
+  // 1/4 and 3/4 stitches are indexed by element, not by cell (issue #83):
+  // `app/seed.py` lists the quarter of cell (109, 95), top-right corner,
+  // seventh; the 3/4 stitch of cell (130, 68), top-right corner, second.
+  const QUARTER_INDEX = 6;
+  const THREE_QUARTER_INDEX = 1;
   const HALF_INDEX = 104 * 255 + 117; // cell (117, 104)
   const BACKSTITCH_INDEX = 2; // segment bas→gauche
   const KNOT_INDEX = 1; // knot (121.5, 87.5)
 
   await setStitched(request, pattern.id, "quarter", QUARTER_INDEX, false);
+  await setStitched(request, pattern.id, "three_quarter", THREE_QUARTER_INDEX, false);
   await setStitched(request, pattern.id, "half", HALF_INDEX, false);
   await setStitched(request, pattern.id, "backstitch", BACKSTITCH_INDEX, false);
   await setStitched(request, pattern.id, "knot", KNOT_INDEX, false);
 
   const before = await fetchProgress(request, pattern.id);
   expect(bitSet(before.bitmap_quarter, QUARTER_INDEX)).toBe(false);
+  expect(bitSet(before.bitmap_three_quarter, THREE_QUARTER_INDEX)).toBe(false);
   expect(bitSet(before.bitmap_half, HALF_INDEX)).toBe(false);
   expect(bitSet(before.bitmap_backstitch, BACKSTITCH_INDEX)).toBe(false);
   expect(bitSet(before.bitmap_knots, KNOT_INDEX)).toBe(false);
@@ -271,10 +278,16 @@ test("checking a 1/2, 1/4, backstitch and knot stitch persists after a reload", 
   for (let i = 0; i < 3; i++) await zoomInButton.click();
   let view: View = { x0: 30, y0: 24, cell: 34 };
 
-  // Point 1/4.
-  view = await centerOn(page, box, view, 109.5, 95.5);
+  // Point 1/4: tapped in its corner of the cell.
+  view = await centerOn(page, box, view, 109.8, 95.2);
   await page.getByRole("button", { name: "Cocher", exact: true }).click();
   await page.getByRole("button", { name: "Point 1/4" }).click();
+  await tapCenter(page, box);
+
+  // Point 3/4.
+  view = await centerOn(page, box, view, 130.5, 68.5);
+  await page.getByRole("button", { name: "Cocher", exact: true }).click();
+  await page.getByRole("button", { name: "Point 3/4" }).click();
   await tapCenter(page, box);
 
   // Point 1/2.
@@ -307,18 +320,20 @@ test("checking a 1/2, 1/4, backstitch and knot stitch persists after a reload", 
       const progress = await fetchProgress(request, pattern.id);
       return [
         bitSet(progress.bitmap_quarter, QUARTER_INDEX),
+        bitSet(progress.bitmap_three_quarter, THREE_QUARTER_INDEX),
         bitSet(progress.bitmap_half, HALF_INDEX),
         bitSet(progress.bitmap_backstitch, BACKSTITCH_INDEX),
         bitSet(progress.bitmap_knots, KNOT_INDEX),
       ];
     }, { timeout: 10_000 })
-    .toEqual([true, true, true, true]);
+    .toEqual([true, true, true, true, true]);
 
   await page.reload();
   await expect(page.locator("canvas.track-canvas")).toBeVisible();
 
   const after = await fetchProgress(request, pattern.id);
   expect(bitSet(after.bitmap_quarter, QUARTER_INDEX)).toBe(true);
+  expect(bitSet(after.bitmap_three_quarter, THREE_QUARTER_INDEX)).toBe(true);
   expect(bitSet(after.bitmap_half, HALF_INDEX)).toBe(true);
   expect(bitSet(after.bitmap_backstitch, BACKSTITCH_INDEX)).toBe(true);
   expect(bitSet(after.bitmap_knots, KNOT_INDEX)).toBe(true);

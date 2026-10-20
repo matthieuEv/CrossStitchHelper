@@ -30,7 +30,7 @@ CrossStitchHelper differentiates itself with a **transparent semi-automatic impo
 | Area | Content |
 |---|---|
 | Import | Vector PDF (software export and editorial publication), image/scan in assisted mode, step-by-step correction wizard, multi-page assembly |
-| Grid | Full stitches, half stitches, quarter stitches, backstitches, French knots, beads |
+| Grid | Full stitches, half stitches, quarter and three-quarter stitches (each in a corner of its cell), backstitches, French knots, beads |
 | Tracking | Checking cell by cell, by area, by colour; undo; multi-device resume |
 | Colours | DMC palette (codes, names, approximate RGB), symbol → thread mapping, colour filtering |
 | Statistics | Overall and per-colour progress, remaining stitches, skein estimate, history |
@@ -199,7 +199,7 @@ palette_entries (
   brand, code, name, rgb_hex,
   symbol_key, symbol_svg NULL,      -- vector rendering of the symbol if available
   strands_full, strands_back,
-  count_full, count_half, count_quarter, count_french, count_beads,
+  count_full, count_half, count_quarter, count_three_quarter, count_french, count_beads,
   backstitch_length_cm
 )
 
@@ -207,7 +207,8 @@ grids (
   pattern_id PRIMARY KEY,
   layer_full BLOB,        -- Uint16Array w*h, 0 = empty cell, n = palette index
   layer_half BLOB NULL,
-  layer_quarter BLOB NULL,
+  quarter_json,           -- [{x,y,corner,palette_index}]: a cell and a corner (tl/tr/bl/br),
+  three_quarter_json,     -- several per cell allowed (issue #83) — lists, not layers
   backstitch_json,        -- [{x1,y1,x2,y2,palette_index}], coordinates at cell corners
   french_knots_json,      -- [{x,y,palette_index}], coordinates at cell centres
   encoding, version
@@ -217,7 +218,8 @@ progress (
   pattern_id PRIMARY KEY,
   bitmap BLOB,            -- 1 bit per cell (full stitches) — authoritative for stitched_count
   bitmap_half BLOB NULL,       -- 1 bit per cell, same shape as bitmap (Lot 8)
-  bitmap_quarter BLOB NULL,    -- same
+  bitmap_quarter BLOB NULL,    -- 1 bit per element of grids.quarter_json (issue #83)
+  bitmap_three_quarter BLOB NULL, -- 1 bit per element of grids.three_quarter_json
   bitmap_backstitch BLOB NULL, -- 1 bit per element of grids.backstitch_json, not per cell
   bitmap_knots BLOB NULL,      -- 1 bit per element of grids.french_knots_json
   version INTEGER,        -- incremented on every applied delta
@@ -285,7 +287,7 @@ For 255 × 180: 91.8 KB raw, typically 10–20 KB compressed. No pagination need
 
 ### 6.4 Exportable "machine file" format
 
-An open, documented export must be available from lot 2 onwards, so that the user is never locked into the application (the Cross Stitch Markup lesson): a `.cshp` archive (ZIP) containing `pattern.json` (metadata + palette + segments), `grid.bin` (the full-stitch layer), `progress.bin`, and a `README.txt` describing the format. Since Lot 8 (`format_version` 2), optional files are added when the pattern has that content: `grid_half.bin`/`grid_quarter.bin` (same conventions as `grid.bin`) and `progress_half.bin`/`progress_quarter.bin`/`progress_backstitch.bin`/`progress_knots.bin` — the last two one bit per element of `segments.backstitch`/`french_knots`, never per cell.
+An open, documented export must be available from lot 2 onwards, so that the user is never locked into the application (the Cross Stitch Markup lesson): a `.cshp` archive (ZIP) containing `pattern.json` (metadata + palette + segments), `grid.bin` (the full-stitch layer), `progress.bin`, and a `README.txt` describing the format. Since Lot 8, optional files are added when the pattern has that content: `grid_half.bin` (same conventions as `grid.bin`) and `progress_half.bin`/`progress_quarter.bin`/`progress_three_quarter.bin`/`progress_backstitch.bin`/`progress_knots.bin` — all but the first one bit per element of `segments.quarter_stitches`/`three_quarter_stitches`/`backstitch`/`french_knots`, never per cell. Since `format_version` 3 (issue #83), 1/4 and 3/4 stitches are those `segments` lists (a cell, a corner, a colour) instead of a `grid_quarter.bin` layer.
 
 ---
 
@@ -332,7 +334,7 @@ This is the most used screen, and the most technically demanding.
 
 ### 7.4 Statistics
 
-Overall and per-colour progress (done / remaining / percentage), stitch counts by type (full, half, quarter, knots, backstitch length), estimate of skeins needed and remaining depending on fabric and strand count, activity history and average pace. When the PDF itself provides the counts (Cafe Brasserie case), they are used to verify the extraction and any discrepancy is flagged.
+Overall and per-colour progress (done / remaining / percentage), stitch counts by type (full, half, quarter, three-quarter, knots, backstitch length), estimate of skeins needed and remaining depending on fabric and strand count, activity history and average pace. When the PDF itself provides the counts (Cafe Brasserie case), they are used to verify the extraction and any discrepancy is flagged.
 
 ### 7.5 Settings
 
@@ -424,7 +426,7 @@ This library stays strictly local. Community sharing had been considered as an o
 | POST | `/api/federation/sync` | Pull the linked hosts now (opening the shared tab) |
 | — | `/api/federation/v1/*` | Instance-to-instance protocol, peer token only: `info`, `pair`, `changes?since=`, `patterns/{id}`, `shared` (+ rename, replace, delete if trusted), `requests` (+ accept/reject if trusted, cancel) |
 
-Progress synchronisation works with **versioned deltas**: the client sends the changed cells along with the version it knows; on divergence, the server returns the missing operations and the client replays them. Checking a cell is an idempotent operation, which makes conflicts trivial to resolve. Since Lot 8, each operation also carries a stitch category (`layer`: full, 1/2, 1/4, backstitch, knot) — a single version index for the whole pattern, but an index space specific to each category (never shared, see §6.2).
+Progress synchronisation works with **versioned deltas**: the client sends the changed cells along with the version it knows; on divergence, the server returns the missing operations and the client replays them. Checking a cell is an idempotent operation, which makes conflicts trivial to resolve. Since Lot 8, each operation also carries a stitch category (`layer`: full, 1/2, 1/4, 3/4 since issue #83, backstitch, knot) — a single version index for the whole pattern, but an index space specific to each category (never shared, see §6.2).
 
 ---
 
