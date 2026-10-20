@@ -1,8 +1,8 @@
 """The health endpoint must prove that the whole chain works.
 
 Not just "the server responds": that the database was indeed created in the
-configured data directory and that the Alembic migrations were really applied
-to it at startup.
+configured data directory and that its schema was really created at startup
+(`app/schema.py`).
 """
 
 from __future__ import annotations
@@ -12,9 +12,10 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 from app.config import get_settings
+from app.schema import schema_fingerprint
 
 
-def test_health_reports_ok_and_applied_migration(client: TestClient) -> None:
+def test_health_reports_ok_and_the_schema_fingerprint(client: TestClient) -> None:
     response = client.get("/api/health")
 
     assert response.status_code == 200
@@ -22,7 +23,7 @@ def test_health_reports_ok_and_applied_migration(client: TestClient) -> None:
     assert body["status"] == "ok"
     assert body["version"] == get_settings().app_version
     assert body["database"] == "ok"
-    assert body["schema_revision"] == "0009_federation"
+    assert body["schema_revision"] == schema_fingerprint()
 
 
 def test_database_is_created_inside_the_configured_data_dir(

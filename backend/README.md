@@ -37,19 +37,13 @@ pytest         # tests
 | `app/codec.py` | Compact encoding of the grid (`Uint16Array`) and of the progress bitmap (1 bit/cell). |
 | `app/schemas.py` | Pydantic API schemas. |
 | `app/seed.py` | 255×180 demo pattern, purely synthetic, for rendering performance tests. |
-| `app/migrations.py` | Applies migrations when the container starts. |
+| `app/schema.py` | Creates the schema from the models at startup, recreates it (empty) when they changed. |
 | `app/main.py` | FastAPI application, serving of the built frontend, SPA fallback. |
 | `app/api/` | HTTP routes. |
-| `alembic/` | Schema migrations. |
 | `scripts/seed_demo_pattern.py` | Injects the demo pattern into the database (`python scripts/seed_demo_pattern.py`). |
 
-## Adding a migration
+## Changing the schema
 
-```bash
-alembic revision --autogenerate -m "short description"
-alembic upgrade head
-```
-
-`alembic/env.py` reads the database URL from `app.config`, never from
-`alembic.ini`: a migration run by hand and the container startup therefore
-necessarily target the same file.
+No migrations while in development (`docs/specification.md` §13): change the
+models in `app/models.py`, nothing else. At the next startup the database no
+longer matches their fingerprint and is recreated empty — its data is lost.

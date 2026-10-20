@@ -21,8 +21,8 @@ from sqlalchemy import select
 
 from app import accounts
 from app.db import get_session_factory
-from app.migrations import upgrade_to_head
 from app.models import User
+from app.schema import ensure_schema
 
 
 def _list_profiles() -> int:
@@ -58,7 +58,7 @@ def main(argv: list[str] | None = None) -> int:
     reset.add_argument("email")
     args = parser.parse_args(argv)
 
-    upgrade_to_head()
+    ensure_schema()
     if args.command == "list-profiles":
         return _list_profiles()
     return _reset_password(args.email)

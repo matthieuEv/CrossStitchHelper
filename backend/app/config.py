@@ -52,11 +52,12 @@ class Settings(BaseSettings):
 
     database_filename: str = "crossstitchhelper.db"
 
-    run_migrations_on_startup: bool = True
-    """Apply Alembic migrations at startup.
+    ensure_schema_on_startup: bool = True
+    """Create the database schema at startup, or recreate it if the models
+    changed (`app/schema.py` — no migrations while in development).
 
     True by default: on a self-hosted instance, nobody wants to have to run a
-    migration command by hand after every update.
+    command by hand after every update.
     """
 
     import_max_upload_mb: int = 40
@@ -66,7 +67,7 @@ class Settings(BaseSettings):
     """Start the daily automatic backup loop (Lot 8, `app/auto_backup.py`)
     when the process launches.
 
-    True by default, on the same principle as ``run_migrations_on_startup``:
+    True by default, on the same principle as ``ensure_schema_on_startup``:
     only the tests disable it, so as not to run a background loop in each of
     them."""
 
