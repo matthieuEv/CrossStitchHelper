@@ -154,6 +154,11 @@ export function ImportGridPainter({
   };
 
   const onPointerUp = (): void => {
+    // `pointerleave` also ends a gesture (a drag that leaves the canvas), but
+    // it fires after `pointerup` too — a finger lifting, a mouse moving away
+    // after a click: without this guard the same area was painted twice, so
+    // the first undo seemed to do nothing.
+    if (!dragRef.current.active) return;
     if (tool === "paint" && painter.selection !== null) {
       painter.paint(activeIndex, stitch);
     }
