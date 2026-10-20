@@ -77,6 +77,9 @@ export const en: Record<TranslationKey, string> = {
   "import.palette.remove": "Remove",
   "import.palette.empty": "Add at least one colour to start painting the grid.",
   "import.paint.hint": "Pick a colour, then drag over the grid to paint an area.",
+  "import.paint.hint.backstitch":
+    "Tap a cell corner to start the line, then another corner to end it. With the eraser, tap a line to erase it.",
+  "import.paint.hint.knot": "Tap a cell to place a knot there. With the eraser, tap a knot to erase it.",
   "import.paint.filled": "{filled} / {total} cells painted",
   "import.paint.uncertainHint":
     "{count} cell(s) marked like this: automatic detection was unsure, check these first.",
@@ -90,8 +93,12 @@ export const en: Record<TranslationKey, string> = {
   "import.paint.stitch.half.short": "1/2",
   "import.paint.stitch.quarter": "1/4 stitch",
   "import.paint.stitch.quarter.short": "1/4",
+  "import.paint.stitch.backstitch": "Backstitch",
+  "import.paint.stitch.backstitch.short": "Back",
+  "import.paint.stitch.knot": "French knot",
+  "import.paint.stitch.knot.short": "Knot",
   "import.paint.eraser": "Eraser",
-  "import.paint.undo": "Undo last area",
+  "import.paint.undo": "Undo last change",
   "import.source.title": "Original file",
   "import.source.show": "Show the original file",
   "import.source.hide": "Hide the original file",

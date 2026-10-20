@@ -1,6 +1,8 @@
 /** Conversion of API responses into the pattern core types (`pattern/types.ts`). */
 
 import type {
+  ApiBackstitchSegment,
+  ApiFrenchKnot,
   ApiGrid,
   ApiImportPaletteEntry,
   ApiImportPreview,
@@ -8,7 +10,14 @@ import type {
   ApiProgress,
 } from "./api";
 import { base64ToBytes, decodeUint16Layer, unpackBitmap } from "./codec";
-import type { PaletteEntry, Pattern, Progress, SpecialProgress } from "../pattern/types";
+import type {
+  BackstitchSegment,
+  FrenchKnot,
+  PaletteEntry,
+  Pattern,
+  Progress,
+  SpecialProgress,
+} from "../pattern/types";
 
 export function paletteFromApi(detail: ApiPatternDetail): PaletteEntry[] {
   return detail.palette.map((entry) => ({
@@ -54,11 +63,12 @@ export function patternFromImportPreview(preview: ApiImportPreview, name: string
     cells: Uint8Array.from(layer),
     // 1/2 and 1/4 stitches (Lot 9 detection, issue #41 painting): always
     // present, empty when the server sends none — never `undefined` (see
-    // `Pattern.cellsHalf`). Backstitch and knots are not part of the preview.
+    // `Pattern.cellsHalf`).
     cellsHalf: optionalLayer(preview.layer_half, cellCount),
     cellsQuarter: optionalLayer(preview.layer_quarter, cellCount),
-    backstitch: [],
-    frenchKnots: [],
+    // Detected and/or drawn by hand (issue #82).
+    backstitch: preview.backstitch.map(backstitchFromApi),
+    frenchKnots: preview.french_knots.map(frenchKnotFromApi),
     palette: paletteFromImportEntries(preview.palette),
   };
 }
@@ -87,18 +97,8 @@ export function patternFromApi(detail: ApiPatternDetail, grid: ApiGrid): Pattern
     // tracking thus never have a "missing layer" special case.
     cellsHalf: half !== null ? Uint8Array.from(half) : new Uint8Array(cellCount),
     cellsQuarter: quarter !== null ? Uint8Array.from(quarter) : new Uint8Array(cellCount),
-    backstitch: grid.backstitch.map((segment) => ({
-      x1: segment.x1,
-      y1: segment.y1,
-      x2: segment.x2,
-      y2: segment.y2,
-      paletteIndex: segment.palette_index,
-    })),
-    frenchKnots: grid.french_knots.map((knot) => ({
-      x: knot.x,
-      y: knot.y,
-      paletteIndex: knot.palette_index,
-    })),
+    backstitch: grid.backstitch.map(backstitchFromApi),
+    frenchKnots: grid.french_knots.map(frenchKnotFromApi),
     palette: paletteFromApi(detail),
   };
 }
@@ -135,4 +135,18 @@ export function specialProgressFromApi(grid: ApiGrid, progress: ApiProgress): Sp
         ? unpackBitmap(base64ToBytes(progress.bitmap_knots), knotCount)
         : new Uint8Array(knotCount),
   };
+}
+
+export function backstitchFromApi(segment: ApiBackstitchSegment): BackstitchSegment {
+  return {
+    x1: segment.x1,
+    y1: segment.y1,
+    x2: segment.x2,
+    y2: segment.y2,
+    paletteIndex: segment.palette_index,
+  };
+}
+
+export function frenchKnotFromApi(knot: ApiFrenchKnot): FrenchKnot {
+  return { x: knot.x, y: knot.y, paletteIndex: knot.palette_index };
 }

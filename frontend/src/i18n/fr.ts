@@ -83,6 +83,10 @@ export const fr = {
   "import.palette.empty": "Ajoutez au moins une couleur pour commencer à peindre la grille.",
   "import.paint.hint":
     "Choisissez une couleur, puis dessinez une zone sur la grille pour la peindre.",
+  "import.paint.hint.backstitch":
+    "Touchez un coin de case pour commencer le trait, puis un autre coin pour le finir. Avec la gomme, touchez un trait pour l'effacer.",
+  "import.paint.hint.knot":
+    "Touchez une case pour y placer un nœud. Avec la gomme, touchez un nœud pour l'effacer.",
   "import.paint.filled": "{filled} / {total} cases peintes",
   "import.paint.uncertainHint":
     "{count} case(s) marquée(s) de ce repère : détection automatique incertaine, à vérifier en priorité.",
@@ -96,8 +100,12 @@ export const fr = {
   "import.paint.stitch.half.short": "1/2",
   "import.paint.stitch.quarter": "Point 1/4",
   "import.paint.stitch.quarter.short": "1/4",
+  "import.paint.stitch.backstitch": "Point arrière",
+  "import.paint.stitch.backstitch.short": "Arrière",
+  "import.paint.stitch.knot": "Point de nœud",
+  "import.paint.stitch.knot.short": "Nœud",
   "import.paint.eraser": "Gomme",
-  "import.paint.undo": "Annuler la dernière zone",
+  "import.paint.undo": "Annuler la dernière modification",
   "import.source.title": "Fichier d'origine",
   "import.source.show": "Voir le fichier d'origine",
   "import.source.hide": "Masquer le fichier d'origine",
