@@ -143,6 +143,7 @@ export const en: Record<TranslationKey, string> = {
   "track.layer.full": "Full stitch",
   "track.layer.half": "Half stitch",
   "track.layer.quarter": "Quarter stitch",
+  "track.layer.threeQuarter": "Three-quarter stitch",
   "track.layer.backstitch": "Backstitch",
   "track.layer.knot": "French knot",
   "track.layer.zoomHint": "Zoom in to mark backstitch and French knots",
@@ -162,7 +163,9 @@ export const en: Record<TranslationKey, string> = {
   "track.help.select": "Draw a rectangle, then \"Mark the area\" or \"Unmark the area\". With a colour filtered, only that colour is affected.",
   "track.help.full": "Tapping a cell marks its full cross stitch.",
   "track.help.half": "Tapping a cell marks its half stitch.",
-  "track.help.quarter": "Tapping a cell marks its quarter stitch.",
+  "track.help.quarter": "Tapping a cell's corner marks the quarter stitch in that corner.",
+  "track.help.threeQuarter":
+    "Tapping a cell marks its three-quarter stitch (the one of the nearest corner if there are several).",
   "track.help.backstitch": "Marks the backstitch line closest to your finger. Zoom in first: inactive while the grid is too small.",
   "track.help.knot": "Marks the French knot closest to your finger. Zoom in first: inactive while the grid is too small.",
   "track.remainingStitches": "{count} stitches left · {skeins} skeins",

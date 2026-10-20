@@ -106,7 +106,8 @@ export function useImportPainter(
       // remained Lot 9's scope, not built yet at the time (see
       // `lib/mappers.ts::patternFromImportPreview`).
       cellsHalf: new Uint8Array(columns * rows),
-      cellsQuarter: new Uint8Array(columns * rows),
+      quarterStitches: [],
+      threeQuarterStitches: [],
       backstitch: [],
       frenchKnots: [],
       palette,

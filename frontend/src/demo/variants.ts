@@ -189,7 +189,8 @@ export function createDemoVariants(): DemoLibraryEntry[] {
       // Purely local demo patterns: no special stitch (Lot 8) — see
       // `demo/lavender.ts::createDemoPattern` for the same note.
       cellsHalf: new Uint8Array(built.width * built.height),
-      cellsQuarter: new Uint8Array(built.width * built.height),
+      quarterStitches: [],
+      threeQuarterStitches: [],
       backstitch: [],
       frenchKnots: [],
       palette: paletteFor(definition.kind),

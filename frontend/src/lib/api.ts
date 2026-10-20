@@ -163,6 +163,7 @@ export interface ApiPaletteEntry {
   count_full: number;
   count_half: number;
   count_quarter: number;
+  count_three_quarter: number;
   count_french: number;
   count_beads: number;
   backstitch_length_cm: number | null;
@@ -210,14 +211,30 @@ export interface ApiGrid {
   version: number;
   layer_full: string;
   layer_half: string | null;
-  layer_quarter: string | null;
+  /** 1/4 and 3/4 stitches, each a cell and a corner (issue #83). */
+  quarter_stitches: ApiPartialStitch[];
+  three_quarter_stitches: ApiPartialStitch[];
   backstitch: Array<{ x1: number; y1: number; x2: number; y2: number; palette_index: number }>;
   french_knots: Array<{ x: number; y: number; palette_index: number }>;
 }
 
 /** Same enumeration as `backend/app/schemas.py::ProgressOp.layer` (Lot 8) —
  * never an index space shared between categories. */
-export type ApiStitchLayer = "full" | "half" | "quarter" | "backstitch" | "knot";
+export type ApiStitchLayer =
+  | "full"
+  | "half"
+  | "quarter"
+  | "three_quarter"
+  | "backstitch"
+  | "knot";
+
+/** See `backend/app/schemas.py::PartialStitch`. */
+export interface ApiPartialStitch {
+  x: number;
+  y: number;
+  corner: "tl" | "tr" | "bl" | "br";
+  palette_index: number;
+}
 
 export interface ApiProgress {
   pattern_id: string;
@@ -228,13 +245,17 @@ export interface ApiProgress {
   /** Checked 1/2 stitches (Lot 8), same shape as `bitmap` — `null` if the
    * pattern has no 1/2 content (`ApiGrid.layer_half` absent). */
   bitmap_half: string | null;
+  /** 1 bit per element of `ApiGrid.quarter_stitches`/`three_quarter_stitches`
+   * (issue #83), not per cell. */
   bitmap_quarter: string | null;
+  bitmap_three_quarter: string | null;
   /** 1 bit per element of `ApiGrid.backstitch`/`french_knots`, not per cell —
    * `null` if the corresponding list is empty. */
   bitmap_backstitch: string | null;
   bitmap_knots: string | null;
   stitched_count_half: number;
   stitched_count_quarter: number;
+  stitched_count_three_quarter: number;
   stitched_count_backstitch: number;
   stitched_count_knots: number;
 }

@@ -14,7 +14,7 @@
  * (Lot 9) produces patterns much denser in special stitches.
  */
 
-import type { BackstitchSegment, FrenchKnot } from "./types";
+import type { BackstitchSegment, FrenchKnot, PartialStitch } from "./types";
 
 function distanceToSegment(
   px: number,
@@ -82,6 +82,38 @@ export function nearestKnotIndex(
     if (onlyPaletteIndex !== 0 && knot.paletteIndex !== onlyPaletteIndex) continue;
     const distance = Math.hypot(gx - knot.x, gy - knot.y);
     if (distance <= bestDistance) {
+      bestDistance = distance;
+      best = i;
+    }
+  }
+  return best;
+}
+
+/**
+ * Index (into `items`) of the 1/4 or 3/4 stitch a tap at `(gx, gy)` (grid
+ * coordinates) targets (issue #83): among the stitches of the tapped cell,
+ * the one whose corner is nearest the touch — tapping a cell's top-right
+ * quarter marks its top-right stitch. `null` if the cell holds none.
+ * `onlyPaletteIndex`: same as for `nearestBackstitchIndex`.
+ */
+export function partialStitchAt(
+  items: readonly PartialStitch[],
+  gx: number,
+  gy: number,
+  onlyPaletteIndex = 0,
+): number | null {
+  const x = Math.floor(gx);
+  const y = Math.floor(gy);
+  let best: number | null = null;
+  let bestDistance = Infinity;
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i];
+    if (item === undefined || item.x !== x || item.y !== y) continue;
+    if (onlyPaletteIndex !== 0 && item.paletteIndex !== onlyPaletteIndex) continue;
+    const cornerX = x + (item.corner === "tr" || item.corner === "br" ? 1 : 0);
+    const cornerY = y + (item.corner === "bl" || item.corner === "br" ? 1 : 0);
+    const distance = Math.hypot(gx - cornerX, gy - cornerY);
+    if (distance < bestDistance) {
       bestDistance = distance;
       best = i;
     }
