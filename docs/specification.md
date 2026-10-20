@@ -263,7 +263,7 @@ A step-by-step flow, each step automatically pre-filled and editable, with forwa
 
 **Step 6 — Dimensions.** Number of columns and rows proposed automatically, editable. When the PDF states its dimensions plainly (Cafe Brasserie case: "255w x 180h stitches"), that value is proposed first and flagged as such.
 
-**Step 7 — Legend.** Editable table mapping symbol/colour → thread: add a missing entry, fix a code, merge two entries wrongly detected as distinct, choose the brand (DMC by default). Each row shows the detected colour next to the thread's theoretical colour, to make any doubtful match visible.
+**Step 7 — Legend.** Editable table mapping symbol/colour → thread: add a missing entry, fix a code, merge two entries wrongly detected as distinct. DMC is the only thread chart (§13), named read-only on this step. Each row shows the detected colour next to the thread's theoretical colour, to make any doubtful match visible.
 
 **Step 8 — Multiple pages.** Assembly mosaic proposed automatically (from axis numbers and "1/5"-style mentions), rearrangeable by drag-and-drop, with overlap areas visualised.
 
@@ -286,7 +286,7 @@ Overall and per-colour progress (done / remaining / percentage), stitch counts b
 
 ### 7.5 Settings
 
-Default thread brand, default fabric, retention or deletion of source PDFs, light/dark theme, language (French and English), data backup and restore.
+Default fabric, retention or deletion of source PDFs, light/dark theme, language (French and English), data backup and restore.
 
 ---
 
@@ -462,3 +462,4 @@ Lots 0 to 3 make up the **usable V1** and should be carried out in one go. Lots 
 | 2026-09-23 | **MIT licence** chosen over AGPL — priority on distribution and adoption for a small project, no identified need to prevent a closed fork. See `LICENSE` at the root. |
 | 2026-09-18 | **Community recipe sharing removed from scope** — mentioned as a possible avenue in §8.7, never a commitment; the intended use does not need it |
 | 2026-09-24 | **All documentation, code comments and docstrings are written in English.** French doc filenames renamed (`docs/specification.md`, `docs/features-and-limits.md`). User-facing strings are unaffected: they stay in i18n, French and English |
+| 2026-10-13 | **DMC is the only thread chart** (issue #38): no brand selector, no per-colour brand, no code conversion between brands. The Palette step says so read-only. Completing the 228-shade DMC table waits for a source whose licence allows redistribution |

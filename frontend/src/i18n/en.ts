@@ -75,6 +75,7 @@ export const en: Record<TranslationKey, string> = {
   "import.palette.title": "Palette",
   "import.palette.add": "Add a colour",
   "import.palette.remove": "Remove",
+  "import.palette.chart": "Thread chart: DMC",
   "import.palette.empty": "Add at least one colour to start painting the grid.",
   "import.paint.hint": "Pick a colour, then drag over the grid to paint an area.",
   "import.paint.filled": "{filled} / {total} cells painted",
@@ -171,8 +172,6 @@ export const en: Record<TranslationKey, string> = {
   "stats.activity": "Activity",
 
   "settings.title": "Settings",
-  "settings.brand": "Default thread brand",
-  "settings.brand.hint": "Used to name the colours detected during import.",
   "settings.theme": "Theme",
   "settings.theme.hint": "Dark mode also dims the fabric.",
   "settings.theme.light": "Light",
