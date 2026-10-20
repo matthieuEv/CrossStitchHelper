@@ -521,7 +521,9 @@ def test_special_stitches_survive_commit_into_a_real_pattern(client: TestClient)
 
     grid = client.get(f"/api/patterns/{pattern_id}/grid").json()
     assert grid["layer_half"] is not None
-    assert grid["layer_quarter"] is not None
+    # Read without a corner (Lot 9): top-left items (issue #83).
+    assert len(grid["quarter_stitches"]) == 4
+    assert {item["corner"] for item in grid["quarter_stitches"]} == {"tl"}
     assert len(grid["backstitch"]) > 1000  # 1182 measured (see the Lot 9 report)
     assert len(grid["french_knots"]) == 3
 

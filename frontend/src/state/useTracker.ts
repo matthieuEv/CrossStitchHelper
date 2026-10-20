@@ -2,8 +2,9 @@
  * Tracking screen state: progress, view, current tool.
  *
  * Performance choice: each stitch category (`full`/`half`/`quarter`/
- * `backstitch`/`knot`, Lot 8) is a `Uint8Array` mutated in place, grouped in
- * a single structure (`doneRef.current`) rather than five separate refs — a
+ * `three_quarter`/`backstitch`/`knot`, Lot 8 and issue #83) is a `Uint8Array`
+ * mutated in place, grouped in a single structure (`doneRef.current`)
+ * rather than separate refs — a
  * single object to pass through the undo history and `applyRemote`. A version
  * counter triggers the React render; copying an array on every checked cell
  * would cost a 45 KB allocation per tap on the reference pattern — invisible
@@ -14,7 +15,11 @@ import { useCallback, useMemo, useRef, useState } from "react";
 
 import { countByColor, summarise, type ColorCount, type PatternTotals } from "../pattern/counts";
 import { MAX_CELL, MIN_CELL, SYMBOL_MIN_CELL, panMargin, type GridView } from "../pattern/render";
-import { nearestBackstitchIndex, nearestKnotIndex } from "../pattern/specialHitTest";
+import {
+  nearestBackstitchIndex,
+  nearestKnotIndex,
+  partialStitchAt,
+} from "../pattern/specialHitTest";
 import {
   emptySpecialProgress,
   type Pattern,
@@ -61,6 +66,7 @@ interface TrackerState {
   full: Progress;
   half: Uint8Array;
   quarter: Uint8Array;
+  threeQuarter: Uint8Array;
   backstitch: Uint8Array;
   knot: Uint8Array;
 }
@@ -73,6 +79,8 @@ function layerArray(state: TrackerState, layer: StitchLayer): Uint8Array {
       return state.half;
     case "quarter":
       return state.quarter;
+    case "three_quarter":
+      return state.threeQuarter;
     case "backstitch":
       return state.backstitch;
     case "knot":
@@ -196,6 +204,7 @@ export function useTracker(
     full: initialProgress,
     half: initialSpecial.half,
     quarter: initialSpecial.quarter,
+    threeQuarter: initialSpecial.threeQuarter,
     backstitch: initialSpecial.backstitch,
     knot: initialSpecial.knot,
   });
@@ -250,6 +259,7 @@ export function useTracker(
       full: current.full.slice(),
       half: current.half.slice(),
       quarter: current.quarter.slice(),
+      threeQuarter: current.threeQuarter.slice(),
       backstitch: current.backstitch.slice(),
       knot: current.knot.slice(),
     });
@@ -285,10 +295,10 @@ export function useTracker(
     [pattern, highlight, snapshot],
   );
 
-  /** Like `toggleCell`, for the 1/2 and 1/4 layers — a cell with no stitch in
-   * that category (see `Pattern.cellsHalf`/`cellsQuarter`) is ignored. */
-  const toggleGridLayer = useCallback(
-    (layer: "half" | "quarter", position: CellPosition) => {
+  /** Like `toggleCell`, for the 1/2 layer — a cell with no 1/2 stitch (see
+   * `Pattern.cellsHalf`) is ignored. */
+  const toggleHalf = useCallback(
+    (position: CellPosition) => {
       if (
         position.x < 0 ||
         position.x >= pattern.width ||
@@ -298,29 +308,27 @@ export function useTracker(
         return;
       }
       const index = position.y * pattern.width + position.x;
-      const sourceCells = layer === "half" ? pattern.cellsHalf : pattern.cellsQuarter;
-      const colour = sourceCells[index] ?? 0;
+      const colour = pattern.cellsHalf[index] ?? 0;
       if (colour === 0) return;
       // Same colour filter rule as `toggleCell`.
       if (highlight !== 0 && colour !== highlight) return;
 
       snapshot();
       const current = doneRef.current;
-      const target = layer === "half" ? current.half : current.quarter;
-      const next = target[index] === 1 ? 0 : 1;
-      target[index] = next;
+      const next = current.half[index] === 1 ? 0 : 1;
+      current.half[index] = next;
       setVersion((value) => value + 1);
-      onChangeRef.current?.([{ layer, index, stitched: next }]);
+      onChangeRef.current?.([{ layer: "half", index, stitched: next }]);
     },
     [pattern, highlight, snapshot],
   );
 
-  /** Checks/unchecks a backstitch segment or a knot, by index into
-   * `Pattern.backstitch`/`frenchKnots` — never a grid index. */
+  /** Checks/unchecks a 1/4 or 3/4 stitch, a backstitch segment or a knot,
+   * by index into its list (`Pattern.quarterStitches`, ...) — never a grid
+   * index. */
   const toggleElementLayer = useCallback(
-    (layer: "backstitch" | "knot", index: number) => {
-      const current = doneRef.current;
-      const target = layer === "backstitch" ? current.backstitch : current.knot;
+    (layer: "quarter" | "three_quarter" | "backstitch" | "knot", index: number) => {
+      const target = layerArray(doneRef.current, layer);
       if (index < 0 || index >= target.length) return;
 
       snapshot();
@@ -338,8 +346,17 @@ export function useTracker(
         toggleCell({ x: Math.floor(point.gx), y: Math.floor(point.gy) });
         return;
       }
-      if (activeLayer === "half" || activeLayer === "quarter") {
-        toggleGridLayer(activeLayer, { x: Math.floor(point.gx), y: Math.floor(point.gy) });
+      if (activeLayer === "half") {
+        toggleHalf({ x: Math.floor(point.gx), y: Math.floor(point.gy) });
+        return;
+      }
+      if (activeLayer === "quarter" || activeLayer === "three_quarter") {
+        // The stitch of the tapped cell whose corner is nearest the touch
+        // (issue #83) — with a colour filter, only that colour's.
+        const items =
+          activeLayer === "quarter" ? pattern.quarterStitches : pattern.threeQuarterStitches;
+        const index = partialStitchAt(items, point.gx, point.gy, highlight);
+        if (index !== null) toggleElementLayer(activeLayer, index);
         return;
       }
 
@@ -360,7 +377,7 @@ export function useTracker(
         if (index !== null) toggleElementLayer("knot", index);
       }
     },
-    [activeLayer, cell, highlight, pattern, toggleCell, toggleGridLayer, toggleElementLayer],
+    [activeLayer, cell, highlight, pattern, toggleCell, toggleHalf, toggleElementLayer],
   );
 
   const fillSelection = useCallback(
@@ -414,6 +431,7 @@ export function useTracker(
     restoreLayer("full", previous.full, current.full);
     restoreLayer("half", previous.half, current.half);
     restoreLayer("quarter", previous.quarter, current.quarter);
+    restoreLayer("three_quarter", previous.threeQuarter, current.threeQuarter);
     restoreLayer("backstitch", previous.backstitch, current.backstitch);
     restoreLayer("knot", previous.knot, current.knot);
     setVersion((value) => value + 1);
@@ -490,7 +508,13 @@ export function useTracker(
   return {
     pattern,
     done,
-    special: { half: state.half, quarter: state.quarter, backstitch: state.backstitch, knot: state.knot },
+    special: {
+      half: state.half,
+      quarter: state.quarter,
+      threeQuarter: state.threeQuarter,
+      backstitch: state.backstitch,
+      knot: state.knot,
+    },
     version,
     counts,
     totals,

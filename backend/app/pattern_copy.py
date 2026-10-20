@@ -122,10 +122,12 @@ def replace_content(session: Session, target: Pattern, source: Pattern) -> None:
     session.expire(target, ["palette_entries", "grid"])
 
 
-def _special_counts(pattern: Pattern) -> tuple[int, int]:
+def _special_counts(pattern: Pattern) -> tuple[int, int, int, int]:
     if pattern.grid is None:
-        return (0, 0)
+        return (0, 0, 0, 0)
     return (
+        len(json.loads(pattern.grid.quarter_json)),
+        len(json.loads(pattern.grid.three_quarter_json)),
         len(json.loads(pattern.grid.backstitch_json)),
         len(json.loads(pattern.grid.french_knots_json)),
     )
@@ -133,6 +135,6 @@ def _special_counts(pattern: Pattern) -> tuple[int, int]:
 
 def same_shape(a: Pattern, b: Pattern) -> bool:
     """Whether a progress recorded on `a` keeps its meaning on `b`: same
-    cells, same number of backstitches and knots (their progress is indexed
-    by element, not by cell — `app/models.py::Progress`)."""
+    cells, same number of 1/4 and 3/4 stitches, backstitches and knots (their
+    progress is indexed by element, not by cell — `app/models.py::Progress`)."""
     return (a.width, a.height) == (b.width, b.height) and _special_counts(a) == _special_counts(b)

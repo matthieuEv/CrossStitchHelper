@@ -21,6 +21,7 @@ import {
   QuarterStitchIcon,
   SelectIcon,
   StitchIcon,
+  ThreeQuarterStitchIcon,
   UndoIcon,
 } from "../components/Icons";
 import { useT } from "../i18n";
@@ -83,6 +84,11 @@ const TOOL_HELP: ReadonlyArray<{
       { Icon: StitchIcon, label: "track.layer.full", description: "track.help.full" },
       { Icon: HalfStitchIcon, label: "track.layer.half", description: "track.help.half" },
       { Icon: QuarterStitchIcon, label: "track.layer.quarter", description: "track.help.quarter" },
+      {
+        Icon: ThreeQuarterStitchIcon,
+        label: "track.layer.threeQuarter",
+        description: "track.help.threeQuarter",
+      },
       { Icon: BackstitchIcon, label: "track.layer.backstitch", description: "track.help.backstitch" },
       { Icon: FrenchKnotIcon, label: "track.layer.knot", description: "track.help.knot" },
     ],
@@ -633,6 +639,14 @@ export function TrackScreen({ tracker, wide, onBack }: TrackScreenProps) {
                 aria-label={t("track.layer.quarter")}
               >
                 <QuarterStitchIcon size={17} />
+              </button>
+              <button
+                type="button"
+                aria-pressed={activeLayer === "three_quarter"}
+                onClick={() => tracker.setActiveLayer("three_quarter")}
+                aria-label={t("track.layer.threeQuarter")}
+              >
+                <ThreeQuarterStitchIcon size={17} />
               </button>
               <div className="sep" />
               {/* Backstitch / knots: targets too small for a reliable tap below

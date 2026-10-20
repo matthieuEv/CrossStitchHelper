@@ -163,7 +163,8 @@ export function createDemoPattern(): Pattern {
     // assumes a real backend — see `Pattern.cellsHalf` for the "layer always
     // present, possibly empty" convention.
     cellsHalf: new Uint8Array(DEMO_WIDTH * DEMO_HEIGHT),
-    cellsQuarter: new Uint8Array(DEMO_WIDTH * DEMO_HEIGHT),
+    quarterStitches: [],
+    threeQuarterStitches: [],
     backstitch: [],
     frenchKnots: [],
     palette: DEMO_PALETTE,

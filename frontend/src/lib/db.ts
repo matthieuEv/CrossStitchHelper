@@ -33,6 +33,8 @@ export interface CachedProgress {
    * that lot; treated as "nothing checked" when read. */
   half?: Uint8Array;
   quarter?: Uint8Array;
+  /** Issue #83 — absent for a record cached before it. */
+  threeQuarter?: Uint8Array;
   backstitch?: Uint8Array;
   knot?: Uint8Array;
 }
@@ -84,7 +86,16 @@ export function openOfflineDatabase(userId: string): void {
 }
 
 export async function getCachedPatterns(): Promise<CachedPattern[]> {
-  return db().patterns.toArray();
+  // A pattern cached before issue #83 has no 1/4 or 3/4 lists (its 1/4
+  // stitches were a cell layer then): read as none rather than crash.
+  return (await db().patterns.toArray()).map((row) => ({
+    ...row,
+    pattern: {
+      ...row.pattern,
+      quarterStitches: row.pattern.quarterStitches ?? [],
+      threeQuarterStitches: row.pattern.threeQuarterStitches ?? [],
+    },
+  }));
 }
 
 /** Sends a pattern's queued operations; answers `true` once the server has
@@ -166,6 +177,7 @@ export async function cacheProgress(
     ...(special !== undefined && {
       half: special.half,
       quarter: special.quarter,
+      threeQuarter: special.threeQuarter,
       backstitch: special.backstitch,
       knot: special.knot,
     }),

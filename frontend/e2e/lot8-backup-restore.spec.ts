@@ -128,7 +128,7 @@ test.describe("Lot 8 — data backup/restore", () => {
     expect(content.format).toBe("csh-backup");
     // Version 2 since profiles (Lot 10): the profiles travel with the
     // backup; version 3 since the shared library (Lot 11).
-    expect(content.format_version).toBe(3);
+    expect(content.format_version).toBe(4);
     expect(content.users.some((user) => user.email === E2E_ADMIN.email && user.role === "admin")).toBe(
       true,
     );

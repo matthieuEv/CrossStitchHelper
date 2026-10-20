@@ -56,7 +56,7 @@ def _add_content(session: Session, pattern_id: str, payload: FedPattern) -> None
     for entry in payload.palette:
         session.add(palette_entry_from(entry, pattern_id))
     if payload.grid is not None:
-        session.add(grid_from(payload.grid, pattern_id))
+        session.add(grid_from(payload.grid, pattern_id, payload.width))
 
 
 def new_from_fed(

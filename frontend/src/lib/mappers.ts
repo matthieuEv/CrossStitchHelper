@@ -4,11 +4,18 @@ import type {
   ApiGrid,
   ApiImportPaletteEntry,
   ApiImportPreview,
+  ApiPartialStitch,
   ApiPatternDetail,
   ApiProgress,
 } from "./api";
 import { base64ToBytes, decodeUint16Layer, unpackBitmap } from "./codec";
-import type { PaletteEntry, Pattern, Progress, SpecialProgress } from "../pattern/types";
+import type {
+  PaletteEntry,
+  PartialStitch,
+  Pattern,
+  Progress,
+  SpecialProgress,
+} from "../pattern/types";
 
 export function paletteFromApi(detail: ApiPatternDetail): PaletteEntry[] {
   return detail.palette.map((entry) => ({
@@ -50,7 +57,8 @@ export function patternFromImportPreview(preview: ApiImportPreview, name: string
     // time: layers always present but empty here, never `undefined` (see
     // `Pattern.cellsHalf`).
     cellsHalf: new Uint8Array(cellCount),
-    cellsQuarter: new Uint8Array(cellCount),
+    quarterStitches: [],
+    threeQuarterStitches: [],
     backstitch: [],
     frenchKnots: [],
     palette: paletteFromImportEntries(preview.palette),
@@ -69,8 +77,6 @@ export function patternFromApi(detail: ApiPatternDetail, grid: ApiGrid): Pattern
   const layer = decodeUint16Layer(base64ToBytes(grid.layer_full));
   const cellCount = grid.width * grid.height;
   const half = grid.layer_half !== null ? decodeUint16Layer(base64ToBytes(grid.layer_half)) : null;
-  const quarter =
-    grid.layer_quarter !== null ? decodeUint16Layer(base64ToBytes(grid.layer_quarter)) : null;
   return {
     id: detail.id,
     name: detail.name,
@@ -81,7 +87,8 @@ export function patternFromApi(detail: ApiPatternDetail, grid: ApiGrid): Pattern
     // Always present (even empty) — see `Pattern.cellsHalf`: rendering and
     // tracking thus never have a "missing layer" special case.
     cellsHalf: half !== null ? Uint8Array.from(half) : new Uint8Array(cellCount),
-    cellsQuarter: quarter !== null ? Uint8Array.from(quarter) : new Uint8Array(cellCount),
+    quarterStitches: grid.quarter_stitches.map(partialStitchFromApi),
+    threeQuarterStitches: grid.three_quarter_stitches.map(partialStitchFromApi),
     backstitch: grid.backstitch.map((segment) => ({
       x1: segment.x1,
       y1: segment.y1,
@@ -98,12 +105,16 @@ export function patternFromApi(detail: ApiPatternDetail, grid: ApiGrid): Pattern
   };
 }
 
+function partialStitchFromApi(item: ApiPartialStitch): PartialStitch {
+  return { x: item.x, y: item.y, corner: item.corner, paletteIndex: item.palette_index };
+}
+
 export function progressFromApi(progress: ApiProgress): Progress {
   return unpackBitmap(base64ToBytes(progress.bitmap), progress.cell_count);
 }
 
 /**
- * Builds the progress of the four special stitch categories (Lot 8) from
+ * Builds the progress of the special stitch categories (Lot 8) from
  * `GET /grid` (sizes) and `GET /progress` (bitmaps) — separate from
  * `progressFromApi` (full stitch) so as not to change its shape, see
  * `SpecialProgress`.
@@ -112,15 +123,15 @@ export function specialProgressFromApi(grid: ApiGrid, progress: ApiProgress): Sp
   const cellCount = grid.width * grid.height;
   const backstitchCount = grid.backstitch.length;
   const knotCount = grid.french_knots.length;
+  const elements = (bitmap: string | null, count: number): Uint8Array =>
+    bitmap !== null ? unpackBitmap(base64ToBytes(bitmap), count) : new Uint8Array(count);
   return {
     half:
       progress.bitmap_half !== null
         ? unpackBitmap(base64ToBytes(progress.bitmap_half), cellCount)
         : new Uint8Array(cellCount),
-    quarter:
-      progress.bitmap_quarter !== null
-        ? unpackBitmap(base64ToBytes(progress.bitmap_quarter), cellCount)
-        : new Uint8Array(cellCount),
+    quarter: elements(progress.bitmap_quarter, grid.quarter_stitches.length),
+    threeQuarter: elements(progress.bitmap_three_quarter, grid.three_quarter_stitches.length),
     backstitch:
       progress.bitmap_backstitch !== null
         ? unpackBitmap(base64ToBytes(progress.bitmap_backstitch), backstitchCount)

@@ -101,6 +101,7 @@ _QUARTER_INDEX = 3  # 816, garnet red
 _HALF_INDEX = 8  # 798, dark delft blue
 _BACKSTITCH_INDEX = 1  # 310, black — common convention for an outline
 _KNOT_INDEX = 10  # 3803, very dark mauve pink
+_THREE_QUARTER_INDEX = 5  # 725, medium yellow — issue #83, see `_SPLIT_CELLS`
 
 # Offsets (dx, dy) from the centre (`_CX`, `_CY`) — a small, purely geometric
 # decorative motif (no real creative content, CLAUDE.md), chosen so the five
@@ -110,15 +111,25 @@ _QUARTER_OFFSETS = [
     (-18, -5), (-16, -8), (-14, -11), (14, -11), (16, -8), (18, -5),
     (-18, 5), (-16, 8), (-14, 11), (14, 11), (16, 8), (18, 5),
 ]  # fmt: skip
+# Split cells (issue #83): a 3/4 stitch and, in the opposite corner, a 1/4
+# stitch of another colour — the usual reason a cell holds two partial
+# stitches. (dx, dy, corner of the 3/4 stitch's short leg).
+_SPLIT_CELLS = [(-3, -22, "tl"), (3, -22, "tr"), (-3, 22, "bl"), (3, 22, "br")]
+_OPPOSITE = {"tl": "br", "tr": "bl", "bl": "tr", "br": "tl"}
 _HALF_OFFSETS = [
     (-10, -14), (-6, -16), (0, -17), (6, -16), (10, -14),
     (-10, 14), (-6, 16), (0, 17), (6, 16), (10, 14),
 ]  # fmt: skip
 
 
+Item = dict[str, float | int | str]
+
+
 def _build_special_stitches(
     cell_count: int,
-) -> tuple[list[int], list[int], list[dict[str, float | int]], list[dict[str, float | int]]]:
+) -> tuple[
+    list[Item], list[Item], list[int], list[dict[str, float | int]], list[dict[str, float | int]]
+]:
     """Build, around the pattern's centre, a small backstitch diamond
     surrounding a few 1/2 and 1/4 stitches and knots — enough to really
     exercise the five stitch categories of Lot 8 (no extraction connector
@@ -126,15 +137,27 @@ def _build_special_stitches(
     interface built here would never have had anything to display until that
     future lot existed).
 
-    Returns ``(quarter_cells, half_cells, backstitch, french_knots)`` — the
-    first two in the same convention as `_build_cells` (one value per cell,
-    0 = empty), the last two already in the JSON format expected by
-    `Grid.backstitch_json`/`french_knots_json`
-    (`app/schemas.py::BackstitchSegment`/`FrenchKnot` for the coordinate
-    convention: cell corners for one, cell centre for the other)."""
-    quarter_cells = [0] * cell_count
-    for dx, dy in _QUARTER_OFFSETS:
-        quarter_cells[(_CY + dy) * WIDTH + (_CX + dx)] = _QUARTER_INDEX
+    Returns ``(quarters, three_quarters, half_cells, backstitch,
+    french_knots)`` — ``half_cells`` in the same convention as `_build_cells`
+    (one value per cell, 0 = empty), the others already in the JSON format
+    expected by `Grid.quarter_json`/`three_quarter_json`/`backstitch_json`/
+    `french_knots_json` (`app/schemas.py::PartialStitch`/`BackstitchSegment`/
+    `FrenchKnot` for the coordinate conventions)."""
+    # Each 1/4 stitch's leg points towards the centre: all four corners show.
+    quarters: list[Item] = [
+        {
+            "x": _CX + dx,
+            "y": _CY + dy,
+            "corner": ("b" if dy < 0 else "t") + ("r" if dx < 0 else "l"),
+            "palette_index": _QUARTER_INDEX,
+        }
+        for dx, dy in _QUARTER_OFFSETS
+    ]
+    three_quarters: list[Item] = []
+    for dx, dy, corner in _SPLIT_CELLS:
+        cell = {"x": _CX + dx, "y": _CY + dy}
+        three_quarters.append({**cell, "corner": corner, "palette_index": _THREE_QUARTER_INDEX})
+        quarters.append({**cell, "corner": _OPPOSITE[corner], "palette_index": _QUARTER_INDEX})
 
     half_cells = [0] * cell_count
     for dx, dy in _HALF_OFFSETS:
@@ -159,7 +182,7 @@ def _build_special_stitches(
         for dx, dy in knot_cells
     ]
 
-    return quarter_cells, half_cells, backstitch, french_knots
+    return quarters, three_quarters, half_cells, backstitch, french_knots
 
 
 def seed_demo_pattern(session: Session, *, force: bool = False) -> Pattern:
@@ -183,7 +206,9 @@ def seed_demo_pattern(session: Session, *, force: bool = False) -> Pattern:
     now = datetime.now(UTC)
     cells = _build_cells()
     cell_count = WIDTH * HEIGHT
-    quarter_cells, half_cells, backstitch, french_knots = _build_special_stitches(cell_count)
+    quarters, three_quarters, half_cells, backstitch, french_knots = _build_special_stitches(
+        cell_count
+    )
 
     pattern = Pattern(
         id=DEMO_PATTERN_ID,
@@ -230,7 +255,10 @@ def seed_demo_pattern(session: Session, *, force: bool = False) -> Pattern:
                 strands_back=1,
                 count_full=sum(1 for value in cells if value == index_in_grid),
                 count_half=sum(1 for value in half_cells if value == index_in_grid),
-                count_quarter=sum(1 for value in quarter_cells if value == index_in_grid),
+                count_quarter=sum(1 for item in quarters if item["palette_index"] == index_in_grid),
+                count_three_quarter=sum(
+                    1 for item in three_quarters if item["palette_index"] == index_in_grid
+                ),
                 count_french=sum(
                     1 for knot in french_knots if knot["palette_index"] == index_in_grid
                 ),
@@ -244,7 +272,8 @@ def seed_demo_pattern(session: Session, *, force: bool = False) -> Pattern:
             pattern_id=pattern.id,
             layer_full=encode_uint16_layer(cells),
             layer_half=encode_uint16_layer(half_cells),
-            layer_quarter=encode_uint16_layer(quarter_cells),
+            quarter_json=json.dumps(quarters),
+            three_quarter_json=json.dumps(three_quarters),
             backstitch_json=json.dumps(backstitch),
             french_knots_json=json.dumps(french_knots),
             encoding="uint16le",
@@ -259,7 +288,8 @@ def seed_demo_pattern(session: Session, *, force: bool = False) -> Pattern:
     # a first manual sync.
     stitched_indices = [i for i, value in enumerate(cells) if value == 1]
     half_done = [i for i, value in enumerate(half_cells) if value != 0][:5]
-    quarter_done = [i for i, value in enumerate(quarter_cells) if value != 0][:6]
+    quarter_done = list(range(6))
+    three_quarter_done = [0]
     backstitch_done = [0, 1]
     knots_done = [0, 2, 4]
     session.add(
@@ -267,7 +297,8 @@ def seed_demo_pattern(session: Session, *, force: bool = False) -> Pattern:
             pattern_id=pattern.id,
             bitmap=bitmap_from_indices(stitched_indices, cell_count),
             bitmap_half=bitmap_from_indices(half_done, cell_count),
-            bitmap_quarter=bitmap_from_indices(quarter_done, cell_count),
+            bitmap_quarter=_partial_bitmap(quarter_done, len(quarters)),
+            bitmap_three_quarter=_partial_bitmap(three_quarter_done, len(three_quarters)),
             bitmap_backstitch=_partial_bitmap(backstitch_done, len(backstitch)),
             bitmap_knots=_partial_bitmap(knots_done, len(french_knots)),
             version=1,

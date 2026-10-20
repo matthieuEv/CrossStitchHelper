@@ -7,7 +7,7 @@
  * than the pattern size.
  */
 
-import type { Pattern, Progress, SpecialProgress } from "./types";
+import type { Corner, PartialStitch, Pattern, Progress, SpecialProgress } from "./types";
 
 /** Below this cell size, symbols become unreadable. */
 export const SYMBOL_MIN_CELL = 15;
@@ -216,19 +216,57 @@ function fillHalfTriangle(
   g.fill();
 }
 
-/** 1/4 stitch (Lot 8): a triangle smaller than a 1/2 stitch, same corner. */
-function fillQuarterTriangle(
+/** A corner of the unit cell, as (0|1, 0|1). */
+const CORNER_POINT: Record<Corner, readonly [number, number]> = {
+  tl: [0, 0],
+  tr: [1, 0],
+  bl: [0, 1],
+  br: [1, 1],
+};
+
+/** The shape a 1/4 stitch fills, in unit-cell coordinates: a triangle in
+ * its corner, up to the middle of the two edges meeting there. */
+function quarterShape(corner: Corner): Array<readonly [number, number]> {
+  const [cx, cy] = CORNER_POINT[corner];
+  return [
+    [cx, cy],
+    [0.5, cy],
+    [cx, 0.5],
+  ];
+}
+
+/** The shape a 3/4 stitch fills (issue #83): the whole cell except the
+ * opposite corner's 1/4 triangle — so a 3/4 and a 1/4 in opposite corners,
+ * the usual split cell, tile the cell exactly. */
+function threeQuarterShape(corner: Corner): Array<readonly [number, number]> {
+  const [cx, cy] = CORNER_POINT[corner];
+  const [ox, oy] = [1 - cx, 1 - cy];
+  // Around the square from the stitch's own corner, cutting the opposite one.
+  return [
+    [cx, cy],
+    [ox, cy],
+    [ox, 0.5],
+    [0.5, oy],
+    [cx, oy],
+  ];
+}
+
+function fillShape(
   g: CanvasRenderingContext2D,
   px: number,
   py: number,
   cell: number,
+  shape: ReadonlyArray<readonly [number, number]>,
   fillStyle: string,
 ): void {
   g.fillStyle = fillStyle;
   g.beginPath();
-  g.moveTo(px, py);
-  g.lineTo(px + cell / 2, py);
-  g.lineTo(px, py + cell / 2);
+  shape.forEach(([ux, uy], index) => {
+    const x = px + ux * cell;
+    const y = py + uy * cell;
+    if (index === 0) g.moveTo(x, y);
+    else g.lineTo(x, y);
+  });
   g.closePath();
   g.fill();
 }
@@ -327,8 +365,7 @@ export function drawGrid(canvas: HTMLCanvasElement, options: DrawGridOptions): b
       const index = y * pattern.width + x;
       const value = pattern.cells[index] ?? 0;
       const halfValue = pattern.cellsHalf[index] ?? 0;
-      const quarterValue = pattern.cellsQuarter[index] ?? 0;
-      if (value === 0 && halfValue === 0 && quarterValue === 0) continue;
+      if (value === 0 && halfValue === 0) continue;
 
       const px = (x - x0) * cell;
       const py = (y - y0) * cell;
@@ -375,9 +412,9 @@ export function drawGrid(canvas: HTMLCanvasElement, options: DrawGridOptions): b
         }
       }
 
-      // 1/2 and 1/4 stitches (Lot 8): layers independent of the full stitch
-      // above, a cell can carry one, the other, both, or neither — see
-      // `Pattern.cellsHalf`/`cellsQuarter`.
+      // 1/2 stitches (Lot 8): a layer independent of the full stitch above,
+      // a cell can carry one, the other, both, or neither — see
+      // `Pattern.cellsHalf`.
       if (halfValue !== 0) {
         const entry = pattern.palette[halfValue - 1];
         if (entry !== undefined) {
@@ -396,25 +433,41 @@ export function drawGrid(canvas: HTMLCanvasElement, options: DrawGridOptions): b
         }
       }
 
-      if (quarterValue !== 0) {
-        const entry = pattern.palette[quarterValue - 1];
-        if (entry !== undefined) {
-          const isDone = special !== null && special.quarter[index] === 1;
-          if (!(isDone && options.hideDone === true)) {
-            g.globalAlpha = highlight !== 0 && highlight !== quarterValue ? 0.14 : 1;
-            fillQuarterTriangle(
-              g,
-              px,
-              py,
-              cell,
-              isDone ? mix(entry.hex, theme.ground, 0.62) : entry.hex,
-            );
-            g.globalAlpha = 1;
-          }
-        }
-      }
     }
   }
+
+  // 1/4 and 3/4 stitches (issue #83): lists of a cell and a corner, not
+  // layers — a cell may hold several. Linear scan with culling to the view,
+  // as for backstitch below: partial stitches are a few dozen to a few
+  // hundred in a real pattern.
+  const drawPartials = (
+    items: readonly PartialStitch[],
+    doneItems: Uint8Array | null,
+    shapeOf: (corner: Corner) => Array<readonly [number, number]>,
+  ): void => {
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (item === undefined) continue;
+      if (item.x < firstColumn - 1 || item.x > firstColumn + columns) continue;
+      if (item.y < firstRow - 1 || item.y > firstRow + rows) continue;
+      const entry = pattern.palette[item.paletteIndex - 1];
+      if (entry === undefined) continue;
+      const isDone = doneItems !== null && doneItems[i] === 1;
+      if (isDone && options.hideDone === true) continue;
+      g.globalAlpha = highlight !== 0 && highlight !== item.paletteIndex ? 0.14 : 1;
+      fillShape(
+        g,
+        (item.x - x0) * cell,
+        (item.y - y0) * cell,
+        cell,
+        shapeOf(item.corner),
+        isDone ? mix(entry.hex, theme.ground, 0.62) : entry.hex,
+      );
+    }
+    g.globalAlpha = 1;
+  };
+  drawPartials(pattern.threeQuarterStitches, special?.threeQuarter ?? null, threeQuarterShape);
+  drawPartials(pattern.quarterStitches, special?.quarter ?? null, quarterShape);
 
   // Backstitch and knots (Lot 8): rendered at every zoom level, unlike
   // symbols (`withSymbols`) — on a real paper diagram, these strokes stay

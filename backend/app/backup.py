@@ -20,6 +20,11 @@ with them (Lot 11b), are never in a backup: they belong to that instance and
 are pulled again from it after a restore (`_after_restore`). The pairings
 themselves stay as they are — a restore is about this instance's data.
 
+Format version 4 (issue #83) stores 1/4 stitches as a list of cells with a
+corner (`quarter_json`) and adds 3/4 stitches. An older document's 1/4
+layer is read as top-left items — where they were always drawn — with their
+progress and their activity log moved along (`_upgrade_legacy_quarters`).
+
 Format version 3 (Lot 11) adds the shared library: each pattern's library,
 revision and links, and the requests about shared patterns. Version 2
 documents restore with every pattern personal.
@@ -37,6 +42,7 @@ ambiguity about conflicting identifiers.
 
 from __future__ import annotations
 
+import json
 import uuid
 from datetime import UTC, datetime
 from typing import Literal
@@ -44,7 +50,14 @@ from typing import Literal
 from sqlalchemy import delete, select, update
 from sqlalchemy.orm import Session, selectinload
 
-from app.codec import base64_to_bytes, bytes_to_base64
+from app.codec import (
+    base64_to_bytes,
+    bitmap_byte_length,
+    bytes_to_base64,
+    decode_uint16_layer,
+    get_bit,
+    set_bit,
+)
 from app.instance import next_seq
 from app.labels import labels_from_json, labels_to_json
 from app.models import (
@@ -73,8 +86,8 @@ from app.schemas import (
 )
 
 FORMAT: Literal["csh-backup"] = "csh-backup"
-FORMAT_VERSION = 3
-SUPPORTED_VERSIONS = (1, 2, 3)
+FORMAT_VERSION = 4
+SUPPORTED_VERSIONS = (1, 2, 3, 4)
 
 
 class BackupFormatError(ValueError):
@@ -207,6 +220,7 @@ def dump_palette_entry(entry: PaletteEntry) -> BackupPaletteEntry:
         count_full=entry.count_full,
         count_half=entry.count_half,
         count_quarter=entry.count_quarter,
+        count_three_quarter=entry.count_three_quarter,
         count_french=entry.count_french,
         count_beads=entry.count_beads,
         backstitch_length_cm=entry.backstitch_length_cm,
@@ -234,20 +248,74 @@ def palette_entry_from(
         count_full=entry.count_full,
         count_half=entry.count_half,
         count_quarter=entry.count_quarter,
+        count_three_quarter=entry.count_three_quarter,
         count_french=entry.count_french,
         count_beads=entry.count_beads,
         backstitch_length_cm=entry.backstitch_length_cm,
     )
 
 
-def grid_from(grid: BackupGrid, pattern_id: str) -> Grid:
+def _legacy_quarter_cells(grid: BackupGrid) -> list[tuple[int, int]]:
+    """(cell index, palette index) of each 1/4 stitch of a format 1-3 grid —
+    a cell layer then, without a corner — in row order."""
+    if grid.layer_quarter is None:
+        return []
+    cells = decode_uint16_layer(base64_to_bytes(grid.layer_quarter))
+    return [(index, value) for index, value in enumerate(cells) if value]
+
+
+def _quarter_json(grid: BackupGrid, width: int) -> str:
+    legacy = _legacy_quarter_cells(grid)
+    if not legacy:
+        return grid.quarter_json
+    # Top-left: where a 1/4 stitch without a corner was always drawn.
+    return json.dumps(
+        [
+            {"x": index % width, "y": index // width, "corner": "tl", "palette_index": value}
+            for index, value in legacy
+        ]
+    )
+
+
+def _upgrade_legacy_quarters(pattern_data: BackupPattern) -> None:
+    """A format 1-3 pattern's checked 1/4 stitches and logged 1/4 operations
+    were per cell: move them to the index of the item made for that cell
+    (`_quarter_json`), so no progress and no activity is lost."""
+    legacy = (
+        _legacy_quarter_cells(pattern_data.grid) if pattern_data.grid is not None else []
+    )
+    if not legacy:
+        return
+    item_of_cell = {cell: item for item, (cell, _value) in enumerate(legacy)}
+
+    progress = pattern_data.progress
+    if progress is not None and progress.bitmap_quarter is not None:
+        old = base64_to_bytes(progress.bitmap_quarter)
+        new = bytearray(bitmap_byte_length(len(legacy)))
+        for cell, item in item_of_cell.items():
+            if cell < len(old) * 8 and get_bit(old, cell):
+                set_bit(new, item, True)
+        progress.bitmap_quarter = bytes_to_base64(bytes(new))
+
+    for event in pattern_data.progress_events:
+        ops = json.loads(event.ops_json)
+        upgraded = []
+        for op in ops:
+            if op.get("layer") == "quarter":
+                if op["index"] not in item_of_cell:
+                    continue
+                op = {**op, "index": item_of_cell[op["index"]]}
+            upgraded.append(op)
+        event.ops_json = json.dumps(upgraded)
+
+
+def grid_from(grid: BackupGrid, pattern_id: str, width: int) -> Grid:
     return Grid(
         pattern_id=pattern_id,
         layer_full=base64_to_bytes(grid.layer_full),
         layer_half=base64_to_bytes(grid.layer_half) if grid.layer_half is not None else None,
-        layer_quarter=base64_to_bytes(grid.layer_quarter)
-        if grid.layer_quarter is not None
-        else None,
+        quarter_json=_quarter_json(grid, width),
+        three_quarter_json=grid.three_quarter_json,
         backstitch_json=grid.backstitch_json,
         french_knots_json=grid.french_knots_json,
         encoding=grid.encoding,
@@ -259,9 +327,8 @@ def dump_grid(grid: Grid) -> BackupGrid:
     return BackupGrid(
         layer_full=bytes_to_base64(grid.layer_full),
         layer_half=bytes_to_base64(grid.layer_half) if grid.layer_half is not None else None,
-        layer_quarter=bytes_to_base64(grid.layer_quarter)
-        if grid.layer_quarter is not None
-        else None,
+        quarter_json=grid.quarter_json,
+        three_quarter_json=grid.three_quarter_json,
         backstitch_json=grid.backstitch_json,
         french_knots_json=grid.french_knots_json,
         encoding=grid.encoding,
@@ -277,6 +344,9 @@ def _dump_progress(progress: Progress) -> BackupProgress:
         else None,
         bitmap_quarter=bytes_to_base64(progress.bitmap_quarter)
         if progress.bitmap_quarter is not None
+        else None,
+        bitmap_three_quarter=bytes_to_base64(progress.bitmap_three_quarter)
+        if progress.bitmap_three_quarter is not None
         else None,
         bitmap_backstitch=bytes_to_base64(progress.bitmap_backstitch)
         if progress.bitmap_backstitch is not None
@@ -390,8 +460,9 @@ def restore_backup(
         for entry in pattern_data.palette:
             session.add(palette_entry_from(entry, pattern.id, keep_id=True))
 
+        _upgrade_legacy_quarters(pattern_data)
         if pattern_data.grid is not None:
-            session.add(grid_from(pattern_data.grid, pattern.id))
+            session.add(grid_from(pattern_data.grid, pattern.id, pattern_data.width))
 
         if pattern_data.progress is not None:
             progress = pattern_data.progress
@@ -404,6 +475,9 @@ def restore_backup(
                     else None,
                     bitmap_quarter=base64_to_bytes(progress.bitmap_quarter)
                     if progress.bitmap_quarter is not None
+                    else None,
+                    bitmap_three_quarter=base64_to_bytes(progress.bitmap_three_quarter)
+                    if progress.bitmap_three_quarter is not None
                     else None,
                     bitmap_backstitch=base64_to_bytes(progress.bitmap_backstitch)
                     if progress.bitmap_backstitch is not None

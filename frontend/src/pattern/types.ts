@@ -41,11 +41,29 @@ export interface FrenchKnot {
   readonly paletteIndex: number;
 }
 
-/** The five tracked stitch categories (Lot 8) — same enumeration as
- * `backend/app/schemas.py::ProgressOp.layer`, never an index space shared
- * between categories (a grid index for `full`/`half`/`quarter`, an index into
- * `Pattern.backstitch`/`frenchKnots` for `backstitch`/`knot`). */
-export type StitchLayer = "full" | "half" | "quarter" | "backstitch" | "knot";
+/** A cell's corner: top-left, top-right, bottom-left, bottom-right. */
+export type Corner = "tl" | "tr" | "bl" | "br";
+
+/**
+ * A 1/4 or 3/4 stitch (issue #83): the cell `(x, y)` and a corner. A 1/4
+ * stitch goes from that corner to the cell's centre; a 3/4 stitch is that
+ * same short leg plus the long diagonal that does not pass through the
+ * corner. A cell may hold several. Same convention as
+ * `backend/app/schemas.py::PartialStitch`.
+ */
+export interface PartialStitch {
+  readonly x: number;
+  readonly y: number;
+  readonly corner: Corner;
+  readonly paletteIndex: number;
+}
+
+/** The tracked stitch categories (Lot 8, 3/4 since issue #83) — same
+ * enumeration as `backend/app/schemas.py::ProgressOp.layer`, never an index
+ * space shared between categories (a grid index for `full`/`half`, an index
+ * into `Pattern.quarterStitches`/`threeQuarterStitches`/`backstitch`/
+ * `frenchKnots` for the others). */
+export type StitchLayer = "full" | "half" | "quarter" | "three_quarter" | "backstitch" | "knot";
 
 /**
  * A pattern grid.
@@ -54,12 +72,13 @@ export type StitchLayer = "full" | "half" | "quarter" | "backstitch" | "knot";
  * byte per cell: a 255 × 180 pattern fits in 45 KB, which allows keeping it
  * entirely in memory and redrawing only the visible portion.
  *
- * `cellsHalf`/`cellsQuarter` (Lot 8) follow exactly the same convention as
- * `cells`, same size — always present (never `undefined`), filled with zeros
- * when the pattern has no 1/2 or 1/4 stitch: rendering and tracking thus
- * never need a "missing layer" special case. A cell can carry a non-zero
- * value in several of these layers at once (§6.3: they are independent
- * layers, not mutually exclusive variants of the same cell).
+ * `cellsHalf` (Lot 8) follows exactly the same convention as `cells`, same
+ * size — always present (never `undefined`), filled with zeros when the
+ * pattern has no 1/2 stitch: rendering and tracking thus never need a
+ * "missing layer" special case. A cell can carry a non-zero value in both at
+ * once (§6.3: they are independent layers, not mutually exclusive variants
+ * of the same cell). 1/4 and 3/4 stitches are lists rather than layers
+ * (issue #83): one cell may hold several, each in its own corner.
  */
 export interface Pattern {
   readonly id: string;
@@ -71,7 +90,8 @@ export interface Pattern {
   readonly height: number;
   readonly cells: Uint8Array;
   readonly cellsHalf: Uint8Array;
-  readonly cellsQuarter: Uint8Array;
+  readonly quarterStitches: readonly PartialStitch[];
+  readonly threeQuarterStitches: readonly PartialStitch[];
   readonly backstitch: readonly BackstitchSegment[];
   readonly frenchKnots: readonly FrenchKnot[];
   readonly palette: readonly PaletteEntry[];
@@ -84,14 +104,15 @@ export interface Pattern {
  * demo...): `Progress` still represents only the full stitch, the only one
  * counting towards the overall percentage (§7.1).
  *
- * `half`/`quarter` have the same size as `Pattern.cells` (one 0/1 byte per
- * cell, like `Progress`); `backstitch`/`knot` have the size of
- * `Pattern.backstitch`/`frenchKnots` (one 0/1 byte per element, never per
- * cell — these are not grids).
+ * `half` has the same size as `Pattern.cells` (one 0/1 byte per cell, like
+ * `Progress`); the others have the size of `Pattern.quarterStitches`/
+ * `threeQuarterStitches`/`backstitch`/`frenchKnots` (one 0/1 byte per
+ * element, never per cell — these are not grids).
  */
 export interface SpecialProgress {
   half: Uint8Array;
   quarter: Uint8Array;
+  threeQuarter: Uint8Array;
   backstitch: Uint8Array;
   knot: Uint8Array;
 }
@@ -99,7 +120,8 @@ export interface SpecialProgress {
 export function emptySpecialProgress(pattern: Pattern): SpecialProgress {
   return {
     half: new Uint8Array(pattern.width * pattern.height),
-    quarter: new Uint8Array(pattern.width * pattern.height),
+    quarter: new Uint8Array(pattern.quarterStitches.length),
+    threeQuarter: new Uint8Array(pattern.threeQuarterStitches.length),
     backstitch: new Uint8Array(pattern.backstitch.length),
     knot: new Uint8Array(pattern.frenchKnots.length),
   };

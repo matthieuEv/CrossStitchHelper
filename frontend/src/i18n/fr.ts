@@ -150,6 +150,7 @@ export const fr = {
   "track.layer.full": "Point entier",
   "track.layer.half": "Point 1/2",
   "track.layer.quarter": "Point 1/4",
+  "track.layer.threeQuarter": "Point 3/4",
   "track.layer.backstitch": "Point arrière",
   "track.layer.knot": "Nœud",
   "track.layer.zoomHint": "Zoomez pour cocher le point arrière et les nœuds",
@@ -169,7 +170,10 @@ export const fr = {
   "track.help.select": "Tracer un rectangle, puis « Cocher la zone » ou « Décocher la zone ». Avec une couleur filtrée, seule cette couleur est concernée.",
   "track.help.full": "Le toucher d'une case coche son point de croix entier.",
   "track.help.half": "Le toucher d'une case coche son demi-point.",
-  "track.help.quarter": "Le toucher d'une case coche son quart de point.",
+  "track.help.quarter":
+    "Le toucher d'un coin de case coche le quart de point de ce coin.",
+  "track.help.threeQuarter":
+    "Le toucher d'une case coche son point 3/4 (celui du coin le plus proche s'il y en a plusieurs).",
   "track.help.backstitch": "Coche le trait de point arrière le plus proche du doigt. Zoomez d'abord : inactif quand la grille est trop petite.",
   "track.help.knot": "Coche le nœud le plus proche du doigt. Zoomez d'abord : inactif quand la grille est trop petite.",
   "track.remainingStitches": "{count} points restants · {skeins} écheveaux",

@@ -461,8 +461,8 @@ def _run_auto_detection(job_id: str, source_path: Path) -> None:
                 # Lot 9: special stitches, type A only (B/C/E leave these
                 # lists empty — see `_Detected`). No manual correction
                 # mechanism for these layers; `or None` to stay consistent
-                # with `Grid.layer_half`/`layer_quarter` (`NULL`, not an
-                # empty list, when the pattern has none).
+                # with `Grid.layer_half` (`NULL`, not an empty list, when the
+                # pattern has none).
                 config["detected_half"] = detected.cells_half or None
                 config["detected_quarter"] = detected.cells_quarter or None
                 config["detected_backstitch"] = [
@@ -650,7 +650,15 @@ def commit(
     # (`_detected_layer`).
     config = result["config"]
     cells_half = _detected_layer(config, "detected_half", columns, rows)
-    cells_quarter = _detected_layer(config, "detected_quarter", columns, rows)
+    # Detection reads 1/4 stitches without a corner (Lot 9): they become
+    # top-left items (issue #83), where such stitches were always drawn.
+    quarters = [
+        {"x": index % columns, "y": index // columns, "corner": "tl", "palette_index": value}
+        for index, value in enumerate(
+            _detected_layer(config, "detected_quarter", columns, rows) or []
+        )
+        if value
+    ]
     palette_size = len(config["palette"])
     backstitch = _detected_special_items(config, "detected_backstitch", palette_size)
     french_knots = _detected_special_items(config, "detected_french_knots", palette_size)
@@ -713,7 +721,7 @@ def commit(
                 strands_back=1,
                 count_full=sum(1 for value in cells if value == index_in_grid),
                 count_half=sum(1 for value in cells_half or () if value == index_in_grid),
-                count_quarter=sum(1 for value in cells_quarter or () if value == index_in_grid),
+                count_quarter=sum(1 for item in quarters if item["palette_index"] == index_in_grid),
                 count_french=sum(
                     1 for knot in french_knots if knot["palette_index"] == index_in_grid
                 ),
@@ -731,7 +739,7 @@ def commit(
             pattern_id=pattern_id,
             layer_full=encode_uint16_layer(cells),
             layer_half=encode_uint16_layer(cells_half) if cells_half else None,
-            layer_quarter=encode_uint16_layer(cells_quarter) if cells_quarter else None,
+            quarter_json=json.dumps(quarters),
             backstitch_json=json.dumps(backstitch),
             french_knots_json=json.dumps(french_knots),
             encoding="uint16le",

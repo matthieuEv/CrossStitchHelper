@@ -35,7 +35,7 @@ test("the tool help names and explains every toolbar button", async ({ page, req
   const tools = await toolbarNames("Suivi");
   const layers = await toolbarNames("Catégorie de point");
   expect(tools.length).toBeGreaterThan(5);
-  expect(layers).toHaveLength(5);
+  expect(layers).toHaveLength(6);
 
   await page.getByRole("button", { name: "Aide des outils" }).click();
   const help = page.getByRole("dialog", { name: "À quoi servent les outils" });

@@ -61,7 +61,7 @@ interface LayeredBase {
 /**
  * Replays the operations still queued (not yet confirmed by the server) on
  * top of a base progress, so the display never "goes backwards" after a
- * reload during a network outage — all five stitch categories (Lot 8) at
+ * reload during a network outage — every stitch category (Lot 8) at
  * once, a queued operation always carries its own `layer`.
  */
 async function applyPending(patternId: string, base: LayeredBase): Promise<LayeredBase> {
@@ -72,6 +72,7 @@ async function applyPending(patternId: string, base: LayeredBase): Promise<Layer
     special: {
       half: base.special.half.slice(),
       quarter: base.special.quarter.slice(),
+      threeQuarter: base.special.threeQuarter.slice(),
       backstitch: base.special.backstitch.slice(),
       knot: base.special.knot.slice(),
     },
@@ -84,6 +85,8 @@ async function applyPending(patternId: string, base: LayeredBase): Promise<Layer
         return next.special.half;
       case "quarter":
         return next.special.quarter;
+      case "three_quarter":
+        return next.special.threeQuarter;
       case "backstitch":
         return next.special.backstitch;
       case "knot":
@@ -131,11 +134,19 @@ async function loadEntriesFromCache(): Promise<LibraryPattern[]> {
   for (const row of cachedPatterns) {
     const cachedProgress = await getCachedProgress(row.id);
     const cellCount = row.pattern.width * row.pattern.height;
+    // A cached array is only trusted if it still has its category's size: a
+    // 1/4 progress cached before issue #83 was one byte per cell.
+    const sized = (cached: Uint8Array | undefined, size: number): Uint8Array =>
+      cached !== undefined && cached.length === size ? cached : new Uint8Array(size);
     const base: LayeredBase = {
       full: cachedProgress?.done ?? new Uint8Array(cellCount),
       special: {
         half: cachedProgress?.half ?? new Uint8Array(cellCount),
-        quarter: cachedProgress?.quarter ?? new Uint8Array(cellCount),
+        quarter: sized(cachedProgress?.quarter, row.pattern.quarterStitches.length),
+        threeQuarter: sized(
+          cachedProgress?.threeQuarter,
+          row.pattern.threeQuarterStitches.length,
+        ),
         backstitch: cachedProgress?.backstitch ?? new Uint8Array(row.pattern.backstitch.length),
         knot: cachedProgress?.knot ?? new Uint8Array(row.pattern.frenchKnots.length),
       },

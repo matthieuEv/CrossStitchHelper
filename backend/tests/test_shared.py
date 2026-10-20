@@ -385,7 +385,7 @@ def test_backup_round_trip_keeps_the_shared_library(
     )
     before = _shared(bea)
     snapshot = client.get("/api/backup").json()
-    assert snapshot["format_version"] == 3
+    assert snapshot["format_version"] == 4
 
     assert client.post("/api/backup/restore", json=snapshot).status_code == 200
     after = _shared(bea)

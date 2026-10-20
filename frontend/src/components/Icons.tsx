@@ -167,6 +167,17 @@ export function QuarterStitchIcon(props: IconProps) {
   );
 }
 
+/** 3/4 stitch (issue #83): the long diagonal plus the short leg from the
+ * top-left corner to the centre. */
+export function ThreeQuarterStitchIcon(props: IconProps) {
+  return (
+    <Svg {...props}>
+      <rect x="4" y="4" width="16" height="16" rx="2" />
+      <path d="M20 4L4 20M4 4l8 8" />
+    </Svg>
+  );
+}
+
 /** Backstitch (Lot 8): a stroke along cell corners. */
 export function BackstitchIcon(props: IconProps) {
   return (
