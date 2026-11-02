@@ -19,6 +19,13 @@ import {
   storeLibrarySort,
   type LibrarySort,
 } from "../lib/librarySort";
+import {
+  SHARED_SORTS,
+  SharedSortContext,
+  readStoredSharedSort,
+  storeSharedSort,
+  type SharedSort,
+} from "../lib/sharedSort";
 import { summarise, countByColor } from "../pattern/counts";
 import type { Pattern, Progress, SpecialProgress } from "../pattern/types";
 
@@ -182,6 +189,8 @@ export function LibraryScreen({
   const now = Date.now();
   const compareText = useCompareText();
   const [sort, setSort] = useState<LibrarySort>(readStoredLibrarySort);
+  // The "Shared" tab has its own order (issue #91), from the same button.
+  const [sharedSort, setSharedSort] = useState<SharedSort>(readStoredSharedSort);
   const [sortMenuOpen, setSortMenuOpen] = useState(false);
   const sortMenuRef = useRef<HTMLDivElement>(null);
 
@@ -205,6 +214,11 @@ export function LibraryScreen({
   const chooseSort = (next: LibrarySort): void => {
     setSort(next);
     storeLibrarySort(next);
+    setSortMenuOpen(false);
+  };
+  const chooseSharedSort = (next: SharedSort): void => {
+    setSharedSort(next);
+    storeSharedSort(next);
     setSortMenuOpen(false);
   };
 
@@ -264,7 +278,7 @@ export function LibraryScreen({
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           {headerAccessory}
-          <div ref={sortMenuRef} style={{ position: "relative", ...(showingShared && { display: "none" }) }}>
+          <div ref={sortMenuRef} style={{ position: "relative" }}>
             <button
               type="button"
               className="btn btn-secondary"
@@ -277,18 +291,31 @@ export function LibraryScreen({
             </button>
             {sortMenuOpen && (
               <div role="menu" aria-label={t("library.sort")} className="menu elev-md">
-                {LIBRARY_SORTS.map((option) => (
-                  <button
-                    key={option}
-                    type="button"
-                    role="menuitemradio"
-                    aria-checked={sort === option}
-                    className="menu-item"
-                    onClick={() => chooseSort(option)}
-                  >
-                    {t(`library.sort.${option}`)}
-                  </button>
-                ))}
+                {showingShared
+                  ? SHARED_SORTS.map((option) => (
+                      <button
+                        key={option}
+                        type="button"
+                        role="menuitemradio"
+                        aria-checked={sharedSort === option}
+                        className="menu-item"
+                        onClick={() => chooseSharedSort(option)}
+                      >
+                        {t(`library.sort.${option}`)}
+                      </button>
+                    ))
+                  : LIBRARY_SORTS.map((option) => (
+                      <button
+                        key={option}
+                        type="button"
+                        role="menuitemradio"
+                        aria-checked={sort === option}
+                        className="menu-item"
+                        onClick={() => chooseSort(option)}
+                      >
+                        {t(`library.sort.${option}`)}
+                      </button>
+                    ))}
               </div>
             )}
           </div>
@@ -330,7 +357,7 @@ export function LibraryScreen({
       )}
 
       {showingShared ? (
-        sharedView
+        <SharedSortContext.Provider value={sharedSort}>{sharedView}</SharedSortContext.Provider>
       ) : (
       <>
       {knownLabels.length > 0 && (
