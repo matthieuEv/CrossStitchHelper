@@ -14,8 +14,10 @@ import { BackIcon, UploadIcon } from "../components/Icons";
 import { PatternThumbnail } from "../components/PatternThumbnail";
 import { useT } from "../i18n";
 import { useWideLayout } from "../lib/hooks";
+import { clearImportDraft, loadImportDraft, saveImportDraft } from "../lib/importDraft";
 import { unresolvedUncertainCells } from "../lib/importFills";
 import {
+  ApiError,
   commitImport,
   createImport,
   createRecipe,
@@ -111,6 +113,9 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
   const [saveAsRecipe, setSaveAsRecipe] = useState(false);
   const [recipeLabel, setRecipeLabel] = useState("");
   const [recipeError, setRecipeError] = useState<string | null>(null);
+  // An import left in the middle (page reload, issue #102) is being read
+  // back from the server: the empty file step must not flash meanwhile.
+  const [resuming, setResuming] = useState(() => loadImportDraft() !== null);
 
   const stageRef = useRef<HTMLDivElement>(null);
   const dragEdgeRef = useRef<Edge | null>(null);
@@ -149,6 +154,57 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
     if (!manualFabricEditRef.current && config.detected_fabric_count !== null) {
       setFabricCount(String(config.detected_fabric_count));
     }
+  };
+
+  // Resume the import this device was in the middle of (issue #102). The
+  // server already has its whole configuration; only the step, the page and
+  // the not-yet-sent name and fabric count come from the device.
+  useEffect(() => {
+    const draft = loadImportDraft();
+    if (draft === null) return;
+    const controller = new AbortController();
+    fetchImport(draft.jobId, controller.signal)
+      .then((restored) => {
+        if (restored.status === "committed") {
+          clearImportDraft();
+          return;
+        }
+        setJob(restored);
+        applyConfig(restored.config);
+        setDetection(restored.detection);
+        setPreview(restored.preview);
+        setName(draft.name);
+        setFabricCount(draft.fabricCount);
+        setPage(Math.min(draft.page, restored.page_count));
+        // Never past what the saved configuration allows: no dimensions yet
+        // means the crop step, no preview yet means the palette step.
+        const hasDimensions = restored.config.columns !== null && restored.config.rows !== null;
+        setStep(
+          !hasDimensions ? 2 : draft.step === 4 && restored.preview === null ? 3 : draft.step,
+        );
+      })
+      .catch((error: unknown) => {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        // A job the server no longer has will never come back; any other
+        // failure (offline…) keeps the draft for the next visit.
+        if (error instanceof ApiError && error.status === 404) clearImportDraft();
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setResuming(false);
+      });
+    return () => controller.abort();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const jobId = job?.id ?? null;
+  useEffect(() => {
+    if (jobId === null || step < 2) return;
+    saveImportDraft({ jobId, step, page, name, fabricCount });
+  }, [jobId, step, page, name, fabricCount]);
+
+  const cancel = (): void => {
+    clearImportDraft();
+    onCancel();
   };
 
   const upload = async (file: File): Promise<void> => {
@@ -394,6 +450,7 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
         name: name.trim(),
         ...(Number.isFinite(fabric) && fabric > 0 && { fabric_count: fabric }),
       });
+      clearImportDraft();
       onFinish(response.pattern_id);
     } catch (error) {
       setCommitError(translateApiError(t, error));
@@ -417,7 +474,7 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
           }}
         >
           <h3 style={{ margin: 0 }}>{t("import.title")}</h3>
-          <button type="button" className="btn btn-ghost" style={{ minHeight: 44 }} onClick={onCancel}>
+          <button type="button" className="btn btn-ghost" style={{ minHeight: 44 }} onClick={cancel}>
             {t("import.cancel")}
           </button>
         </div>
@@ -455,7 +512,13 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
       </div>
 
       <div style={{ flex: 1, minHeight: 0, overflow: "auto", padding: "6px 20px 20px" }}>
-        {step === 1 && (
+        {resuming && (
+          <p className="text-muted" style={{ fontSize: 13, margin: 0 }}>
+            {t("import.resuming")}
+          </p>
+        )}
+
+        {step === 1 && !resuming && (
           <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
             <div className="dropzone">
               <UploadIcon size={40} />
