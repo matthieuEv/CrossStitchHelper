@@ -352,7 +352,16 @@ export const fr = {
   "shared.target": "Bibliothèque partagée",
   "federation.title": "Sites reliés",
   "federation.hint":
-    "Reliez cette instance à une autre instance auto-hébergée pour partager une bibliothèque commune. Le site qui héberge la bibliothèque invite ; l'autre la rejoint avec le code. Seul le site hôte doit être joignable par le serveur de l'autre (reverse proxy HTTPS, Tailscale…). Les bibliothèques personnelles et la progression ne quittent jamais leur instance.",
+    "Partagez la bibliothèque « Partagés » avec une autre installation de CrossStitchHelper, chez quelqu'un d'autre. Vous n'avez qu'une seule installation ? Cette section ne vous concerne pas.",
+  "federation.help.title": "À quoi ça sert ?",
+  "federation.help.what":
+    "Ici, tous les profils voient déjà la même bibliothèque « Partagés ». Relier deux sites, c'est l'étendre à une autre installation, sur un autre serveur : les profils des deux sites voient les mêmes motifs partagés, peuvent en ajouter et les copier dans leur bibliothèque pour les broder.",
+  "federation.help.examples":
+    "Par exemple : une amie a sa propre installation chez elle et vous voulez échanger des grilles ; un club de broderie où chaque membre a son serveur et où l'une tient la bibliothèque commune ; deux maisons d'une même famille.",
+  "federation.help.private":
+    "Ce qui ne quitte jamais votre site : « Mes motifs », votre progression, vos statistiques et vos profils. Seuls les motifs que quelqu'un met volontairement dans « Partagés » sont visibles de l'autre site.",
+  "federation.help.how":
+    "Comment faire : sur le site qui garde la bibliothèque commune, « Inviter un site » crée un code valable 24 h ; sur l'autre site, « Rejoindre un site » avec ce code. Le site qui invite doit être joignable depuis le serveur de l'autre : le même accès à distance que pour votre téléphone hors de la maison (adresse HTTPS, Tailscale…).",
   "federation.instanceName": "Nom de cette instance (vu par l'autre site)",
   "federation.peer.host": "Nous affichons sa bibliothèque partagée",
   "federation.peer.subscriber": "Affiche notre bibliothèque partagée",
