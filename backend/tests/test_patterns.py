@@ -443,3 +443,49 @@ def test_duplicate_requires_a_name_and_an_existing_pattern(seeded_client: TestCl
     assert empty.status_code == 422
     missing = seeded_client.post("/api/patterns/nope/duplicate", json={"name": "x"})
     assert missing.status_code == 404
+
+
+def test_edit_pattern_name_and_labels(seeded_client: TestClient) -> None:
+    """Issue #57: the library's "Edit" action changes the name and the labels
+    only. Labels are trimmed and deduplicated ignoring case, and editing is
+    not stitching activity: `updated_at` (the "Recent" sort) is kept."""
+    before = seeded_client.get(f"/api/patterns/{DEMO_PATTERN_ID}").json()
+    assert before["labels"] == []
+
+    response = seeded_client.patch(
+        f"/api/patterns/{DEMO_PATTERN_ID}",
+        json={"name": "Koi", "labels": [" Mini ", "Mer", "mini", "", "  Animaux  sauvages "]},
+    )
+    assert response.status_code == 200
+    detail = response.json()
+    assert detail["name"] == "Koi"
+    assert detail["labels"] == ["Mini", "Mer", "Animaux sauvages"]
+    assert detail["updated_at"] == before["updated_at"]
+
+    [summary] = seeded_client.get("/api/patterns").json()
+    assert summary["labels"] == ["Mini", "Mer", "Animaux sauvages"]
+
+    # A field left out is left as is; an empty list removes every label.
+    seeded_client.patch(f"/api/patterns/{DEMO_PATTERN_ID}", json={"labels": []})
+    detail = seeded_client.get(f"/api/patterns/{DEMO_PATTERN_ID}").json()
+    assert detail["name"] == "Koi"
+    assert detail["labels"] == []
+
+
+def test_edit_pattern_rejects_an_empty_name_and_an_unknown_pattern(
+    seeded_client: TestClient,
+) -> None:
+    assert (
+        seeded_client.patch(f"/api/patterns/{DEMO_PATTERN_ID}", json={"name": ""}).status_code
+        == 422
+    )
+    unknown = seeded_client.patch("/api/patterns/inconnu", json={"labels": ["Mini"]})
+    assert unknown.status_code == 404
+
+
+def test_duplicate_keeps_the_labels(seeded_client: TestClient) -> None:
+    seeded_client.patch(f"/api/patterns/{DEMO_PATTERN_ID}", json={"labels": ["Mini"]})
+    copy_id = seeded_client.post(
+        f"/api/patterns/{DEMO_PATTERN_ID}/duplicate", json={"name": "Copie"}
+    ).json()["id"]
+    assert seeded_client.get(f"/api/patterns/{copy_id}").json()["labels"] == ["Mini"]

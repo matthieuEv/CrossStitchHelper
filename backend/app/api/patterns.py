@@ -17,6 +17,7 @@ from fastapi import APIRouter, Depends
 from fastapi.responses import Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
+from sqlalchemy.orm.attributes import flag_modified
 
 from app.activity import compute_activity
 from app.codec import (
@@ -30,6 +31,7 @@ from app.codec import (
 from app.db import get_session
 from app.export_cshp import build_cshp_archive
 from app.http import api_error, content_disposition
+from app.labels import labels_from_json, labels_to_json
 from app.models import Grid, PaletteEntry, Pattern, Progress, ProgressEvent
 from app.schemas import (
     GridOut,
@@ -39,6 +41,7 @@ from app.schemas import (
     PatternDuplicateIn,
     PatternDuplicateOut,
     PatternSummary,
+    PatternUpdate,
     ProgressOp,
     ProgressOut,
     ProgressSyncRequest,
@@ -95,6 +98,7 @@ def list_patterns(session: Annotated[Session, Depends(get_session)]) -> list[Pat
                 stitched_count=stitched_count,
                 cell_count=cell_count,
                 percent=percent,
+                labels=labels_from_json(pattern.labels_json),
                 created_at=pattern.created_at,
                 updated_at=pattern.updated_at,
             )
@@ -106,7 +110,33 @@ def list_patterns(session: Annotated[Session, Depends(get_session)]) -> list[Pat
 def get_pattern(
     pattern_id: str, session: Annotated[Session, Depends(get_session)]
 ) -> PatternDetail:
+    return _pattern_detail(_get_pattern(session, pattern_id))
+
+
+@router.patch("/{pattern_id}", response_model=PatternDetail, summary="Edit name and labels")
+def update_pattern(
+    pattern_id: str,
+    payload: PatternUpdate,
+    session: Annotated[Session, Depends(get_session)],
+) -> PatternDetail:
+    """The library's "Edit" action (issue #57): name and labels only. Never
+    touches the grid or the progress."""
     pattern = _get_pattern(session, pattern_id)
+    last_activity = pattern.updated_at
+    if payload.name is not None:
+        pattern.name = payload.name
+    if payload.labels is not None:
+        pattern.labels_json = labels_to_json(payload.labels)
+    # Tidying the library is not stitching activity: keep `updated_at`, which
+    # orders the "Recent" sort, rather than let its `onupdate` move every
+    # labelled pattern to the top.
+    pattern.updated_at = last_activity
+    flag_modified(pattern, "updated_at")
+    session.commit()
+    return _pattern_detail(pattern)
+
+
+def _pattern_detail(pattern: Pattern) -> PatternDetail:
     return PatternDetail(
         id=pattern.id,
         owner_id=pattern.owner_id,
@@ -116,6 +146,7 @@ def get_pattern(
         width=pattern.width,
         height=pattern.height,
         notes=pattern.notes,
+        labels=labels_from_json(pattern.labels_json),
         created_at=pattern.created_at,
         updated_at=pattern.updated_at,
         palette=[PaletteEntryOut.model_validate(entry) for entry in pattern.palette_entries],

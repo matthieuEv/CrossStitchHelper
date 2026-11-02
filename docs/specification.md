@@ -181,7 +181,8 @@ patterns (
   width, height, fabric_count, created_at, updated_at,
   import_config_json,        -- configuration validated in the wizard
   recipe_id NULL,
-  notes
+  notes,
+  labels_json                -- JSON list of labels (issue #57), no table of their own
 )
 
 palette_entries (
@@ -245,7 +246,7 @@ An open, documented export must be available from lot 2 onwards, so that the use
 
 ### 7.1 Project library
 
-Home screen: list of imported patterns with thumbnail, dimensions, percentage complete, date of last activity. Actions: open, rename, duplicate, export, delete, import a new pattern.
+Home screen: list of imported patterns with thumbnail, dimensions, percentage complete, date of last activity. Actions: open, edit (name and labels), duplicate, export, delete, import a new pattern. A row of label filters ("All" by default) narrows the list to the patterns carrying one label; labels are also chosen on the import summary step.
 
 ### 7.2 Import wizard
 
@@ -338,6 +339,7 @@ This library stays strictly local. Community sharing had been considered as an o
 | POST | `/api/imports/{id}/commit` | Create the final pattern |
 | GET | `/api/patterns` | List of patterns |
 | GET | `/api/patterns/{id}` | Metadata and palette |
+| PATCH | `/api/patterns/{id}` | Edit a pattern's name and labels |
 | DELETE | `/api/patterns/{id}` | Delete a pattern with its palette, grid, progress and activity log |
 | POST | `/api/patterns/{id}/duplicate` | Copy a pattern (palette and grid) under a new name, with empty progress |
 | GET | `/api/patterns/{id}/grid` | Grid layers (compact blob) |

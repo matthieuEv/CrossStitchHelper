@@ -81,6 +81,10 @@ class Pattern(Base):
     import_config_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     recipe_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Issue #57: JSON list of labels, see `app/labels.py`.
+    labels_json: Mapped[str] = mapped_column(
+        Text, nullable=False, default="[]", server_default="[]"
+    )
 
     palette_entries: Mapped[list[PaletteEntry]] = relationship(
         back_populates="pattern",
