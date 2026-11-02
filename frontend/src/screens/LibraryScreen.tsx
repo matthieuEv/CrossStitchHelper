@@ -176,8 +176,20 @@ export function LibraryScreen({
     a.entry.hoursAgo - b.entry.hoursAgo;
   const byName = (a: (typeof cards)[number], b: (typeof cards)[number]): number =>
     compareText(a.entry.pattern.name, b.entry.pattern.name);
+  // By label (issue #90): a pattern files under its first label in
+  // alphabetical order, so patterns sharing a label end up side by side;
+  // patterns without any label come last.
+  const firstLabel = (card: (typeof cards)[number]): string | null =>
+    [...(card.entry.pattern.labels ?? [])].sort(compareText)[0] ?? null;
+  const byLabel = (a: (typeof cards)[number], b: (typeof cards)[number]): number => {
+    const labelA = firstLabel(a);
+    const labelB = firstLabel(b);
+    if (labelA === null || labelB === null) return labelA === labelB ? 0 : labelA === null ? 1 : -1;
+    return compareText(labelA, labelB);
+  };
   cards.sort((a, b) => {
     if (sort === "name") return byName(a, b) || byRecent(a, b);
+    if (sort === "label") return byLabel(a, b) || byName(a, b) || byRecent(a, b);
     if (sort === "progress") return b.totals.percent - a.totals.percent || byRecent(a, b) || byName(a, b);
     return byRecent(a, b) || byName(a, b);
   });

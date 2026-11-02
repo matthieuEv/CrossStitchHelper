@@ -35,6 +35,7 @@ export const fr = {
   "library.sort.recent": "Activité récente",
   "library.sort.name": "Nom (A → Z)",
   "library.sort.progress": "Avancement",
+  "library.sort.label": "Étiquette (A → Z)",
   "library.actions": "Actions pour « {name} »",
   "library.duplicate": "Dupliquer",
   "library.delete": "Supprimer",
