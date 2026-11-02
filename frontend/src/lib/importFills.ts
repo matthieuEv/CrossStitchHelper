@@ -4,7 +4,12 @@
  * painting is always identical to what the server will compute.
  */
 
-import type { ApiImportFillZone } from "./api";
+import type {
+  ApiBackstitchSegment,
+  ApiFrenchKnot,
+  ApiImportFillZone,
+  ApiImportStitchEdit,
+} from "./api";
 
 /** The three cell layers an import paints — see `PaintedLayers` on the server. */
 export interface PaintedLayers {
@@ -92,4 +97,71 @@ export function unresolvedUncertainCells(
     }
   }
   return uncertain.filter((index) => index >= 0 && index < covered.length && covered[index] === 0);
+}
+
+function samePoint(ax: number, ay: number, bx: number, by: number): boolean {
+  return Math.abs(ax - bx) < 1e-6 && Math.abs(ay - by) < 1e-6;
+}
+
+/** Same two ends, in either direction. */
+function sameSegment(
+  segment: Pick<ApiBackstitchSegment, "x1" | "y1" | "x2" | "y2">,
+  other: Pick<ApiBackstitchSegment, "x1" | "y1" | "x2" | "y2">,
+): boolean {
+  return (
+    (samePoint(segment.x1, segment.y1, other.x1, other.y1) &&
+      samePoint(segment.x2, segment.y2, other.x2, other.y2)) ||
+    (samePoint(segment.x1, segment.y1, other.x2, other.y2) &&
+      samePoint(segment.x2, segment.y2, other.x1, other.y1))
+  );
+}
+
+/**
+ * Backstitches and knots drawn or erased by hand (issue #82), applied in
+ * order on top of the detected ones — exact mirror of
+ * `backend/app/imports_engine.py::apply_stitch_edits`, so what the wizard
+ * shows is what the created pattern will hold.
+ */
+export function applyStitchEditsLocal(
+  columns: number,
+  rows: number,
+  backstitch: readonly ApiBackstitchSegment[],
+  frenchKnots: readonly ApiFrenchKnot[],
+  edits: readonly ApiImportStitchEdit[],
+): { backstitch: ApiBackstitchSegment[]; frenchKnots: ApiFrenchKnot[] } {
+  let segments = [...backstitch];
+  let knots = [...frenchKnots];
+  for (const edit of edits) {
+    if (edit.kind === "knot") {
+      knots = knots.filter(
+        (knot) => !(Math.floor(knot.x) === edit.x && Math.floor(knot.y) === edit.y),
+      );
+      if (edit.op === "add" && edit.x < columns && edit.y < rows) {
+        knots.push({
+          x: edit.x + 0.5,
+          y: edit.y + 0.5,
+          palette_index: edit.palette_index,
+        });
+      }
+    } else {
+      segments = segments.filter((segment) => !sameSegment(segment, edit));
+      const inside = (x: number, y: number): boolean =>
+        x >= 0 && x <= columns && y >= 0 && y <= rows;
+      if (
+        edit.op === "add" &&
+        inside(edit.x1, edit.y1) &&
+        inside(edit.x2, edit.y2) &&
+        !samePoint(edit.x1, edit.y1, edit.x2, edit.y2)
+      ) {
+        segments.push({
+          x1: edit.x1,
+          y1: edit.y1,
+          x2: edit.x2,
+          y2: edit.y2,
+          palette_index: edit.palette_index,
+        });
+      }
+    }
+  }
+  return { backstitch: segments, frenchKnots: knots };
 }

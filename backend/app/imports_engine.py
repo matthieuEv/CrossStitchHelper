@@ -202,3 +202,72 @@ def apply_fills(
                 row_offset = y * columns
                 cells[row_offset + x0 : row_offset + x1 + 1] = [value] * (x1 - x0 + 1)
     return PaintedLayers(full=layers["full"], half=layers["half"], quarter=layers["quarter"])
+
+
+def _same_point(ax: float, ay: float, bx: float, by: float) -> bool:
+    return abs(ax - bx) < 1e-6 and abs(ay - by) < 1e-6
+
+
+def _same_segment(segment: dict[str, Any], edit: dict[str, Any]) -> bool:
+    """Same two ends, in either direction."""
+    s1, s2 = (segment["x1"], segment["y1"]), (segment["x2"], segment["y2"])
+    e1, e2 = (edit["x1"], edit["y1"]), (edit["x2"], edit["y2"])
+    return (_same_point(*s1, *e1) and _same_point(*s2, *e2)) or (
+        _same_point(*s1, *e2) and _same_point(*s2, *e1)
+    )
+
+
+def apply_stitch_edits(
+    columns: int,
+    rows: int,
+    backstitch: list[dict[str, Any]],
+    french_knots: list[dict[str, Any]],
+    edits: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Backstitch segments and knots drawn or erased by hand in the import
+    wizard (issue #82), applied in order on top of the detected ones — the
+    counterpart of `apply_fills` for the two stitch kinds that are not cells.
+
+    - A drawn segment replaces any segment with the same two ends (whatever
+      their order), so drawing it again in another colour recolours it; an
+      erased one removes every segment with those ends.
+    - A knot belongs to a cell and is stored at its centre (`FrenchKnot`):
+      placing one replaces the cell's knot, erasing removes it.
+    - Drawn items outside the grid (dimensions changed since) are dropped, so
+      the created pattern never references a cell that does not exist.
+
+    Mirror: `frontend/src/lib/importFills.ts::applyStitchEditsLocal`.
+    """
+    segments = [dict(segment) for segment in backstitch]
+    knots = [dict(knot) for knot in french_knots]
+    for edit in edits:
+        if edit.get("kind") == "knot":
+            x, y = edit["x"], edit["y"]
+            knots = [
+                knot
+                for knot in knots
+                if not (int(knot["x"] // 1) == x and int(knot["y"] // 1) == y)
+            ]
+            if edit["op"] == "add" and x < columns and y < rows:
+                knots.append({"x": x + 0.5, "y": y + 0.5, "palette_index": edit["palette_index"]})
+        else:
+            segments = [segment for segment in segments if not _same_segment(segment, edit)]
+            inside = all(
+                0 <= edit[x] <= columns and 0 <= edit[y] <= rows
+                for x, y in (("x1", "y1"), ("x2", "y2"))
+            )
+            if (
+                edit["op"] == "add"
+                and inside
+                and not _same_point(edit["x1"], edit["y1"], edit["x2"], edit["y2"])
+            ):
+                segments.append(
+                    {
+                        "x1": edit["x1"],
+                        "y1": edit["y1"],
+                        "x2": edit["x2"],
+                        "y2": edit["y2"],
+                        "palette_index": edit["palette_index"],
+                    }
+                )
+    return segments, knots

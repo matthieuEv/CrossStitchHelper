@@ -8,7 +8,11 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from "react";
 
-import { ImportGridPainter, StitchTypeBar } from "../components/ImportGridPainter";
+import {
+  ImportGridPainter,
+  StitchTypeBar,
+  type ImportBrush,
+} from "../components/ImportGridPainter";
 import { SourcePreview } from "../components/SourcePreview";
 import { BackIcon, UploadIcon } from "../components/Icons";
 import { PatternThumbnail } from "../components/PatternThumbnail";
@@ -27,8 +31,10 @@ import {
   translateApiError,
   translateDetectionWarning,
   type ApiImportConfig,
+  type ApiBackstitchSegment,
+  type ApiFrenchKnot,
   type ApiImportFillZone,
-  type ApiImportStitch,
+  type ApiImportStitchEdit,
   type ApiImportJob,
   type ApiImportPaletteEntry,
 } from "../lib/api";
@@ -94,6 +100,12 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
   // Row whose symbol field has just replaced a PDF symbol: focused right away.
   const [focusSymbolIndex, setFocusSymbolIndex] = useState<number | null>(null);
   const [fills, setFills] = useState<ApiImportFillZone[]>([]);
+  // Backstitches and knots drawn by hand (issue #82), on top of the detected ones.
+  const [stitchEdits, setStitchEdits] = useState<ApiImportStitchEdit[]>([]);
+  const [detectedBackstitch, setDetectedBackstitch] = useState<ApiBackstitchSegment[] | null>(
+    null,
+  );
+  const [detectedKnots, setDetectedKnots] = useState<ApiFrenchKnot[] | null>(null);
   const [detectedCells, setDetectedCells] = useState<number[] | null>(null);
   const [uncertainCells, setUncertainCells] = useState<number[] | null>(null);
   const [detectedHalf, setDetectedHalf] = useState<number[] | null>(null);
@@ -101,7 +113,7 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
   const [detection, setDetection] = useState<ApiImportJob["detection"]>(null);
   const [activeIndex, setActiveIndex] = useState(1);
   // Stitch type the brush paints (issue #41).
-  const [stitch, setStitch] = useState<ApiImportStitch>("full");
+  const [stitch, setStitch] = useState<ImportBrush>("full");
 
   const [name, setName] = useState("");
   const [fabricCount, setFabricCount] = useState("14");
@@ -142,6 +154,9 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
     if (config.rows !== null) setRows(String(config.rows));
     setPalette(config.palette);
     setFills(config.fills);
+    setStitchEdits(config.stitch_edits);
+    setDetectedBackstitch(config.detected_backstitch);
+    setDetectedKnots(config.detected_french_knots);
     setDetectedCells(config.detected_cells);
     setUncertainCells(config.uncertain_cells);
     setDetectedHalf(config.detected_half);
@@ -314,6 +329,15 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
     },
     name,
     { full: detectedCells, half: detectedHalf, quarter: detectedQuarter },
+    {
+      detectedBackstitch,
+      detectedKnots,
+      edits: stitchEdits,
+      onChange: (nextEdits) => {
+        setStitchEdits(nextEdits);
+        if (job !== null) void saveConfig(job.id, { stitch_edits: nextEdits });
+      },
+    },
   );
 
   const addPaletteEntry = (): void => {
@@ -697,7 +721,13 @@ export function ImportScreen({ onCancel, onFinish }: ImportScreenProps) {
         {step === 3 && (
           <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
             <div className="text-muted" style={{ fontSize: 13 }}>
-              {t("import.paint.hint")}
+              {t(
+                stitch === "backstitch"
+                  ? "import.paint.hint.backstitch"
+                  : stitch === "knot"
+                    ? "import.paint.hint.knot"
+                    : "import.paint.hint",
+              )}
             </div>
 
             <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field
 
@@ -271,6 +271,47 @@ class ImportFillZone(BaseModel):
     )
 
 
+class ImportBackstitchEdit(BaseModel):
+    """A backstitch drawn (``add``) or erased (``remove``) by hand in the
+    import wizard (issue #82), in cell **corner** coordinates like
+    `BackstitchSegment`. Applied in order on top of the detected segments —
+    see `app.imports_engine.apply_stitch_edits`."""
+
+    kind: Literal["backstitch"] = "backstitch"
+    op: Literal["add", "remove"]
+    x1: float = Field(ge=0)
+    y1: float = Field(ge=0)
+    x2: float = Field(ge=0)
+    y2: float = Field(ge=0)
+    palette_index: int = Field(default=0, ge=0, description="Ignored by ``remove``.")
+    after_fills: int = Field(
+        default=0,
+        ge=0,
+        description=(
+            "Number of `fills` when the edit was made — only lets the wizard undo "
+            "painted areas and drawn stitches in the order they were made."
+        ),
+    )
+
+
+class ImportKnotEdit(BaseModel):
+    """A French knot placed (``add``) or erased (``remove``) by hand in the
+    import wizard (issue #82), on the cell ``(x, y)`` — stored at its centre,
+    like `FrenchKnot`. One knot per cell: placing one replaces the cell's."""
+
+    kind: Literal["knot"]
+    op: Literal["add", "remove"]
+    x: int = Field(ge=0)
+    y: int = Field(ge=0)
+    palette_index: int = Field(default=0, ge=0, description="Ignored by ``remove``.")
+    after_fills: int = Field(default=0, ge=0, description="See `ImportBackstitchEdit`.")
+
+
+ImportStitchEdit = Annotated[
+    ImportBackstitchEdit | ImportKnotEdit, Field(discriminator="kind")
+]
+
+
 class ImportConfig(BaseModel):
     crop_by_page: dict[str, ImportCrop] = Field(
         default_factory=dict,
@@ -284,6 +325,13 @@ class ImportConfig(BaseModel):
     rows: int | None = Field(default=None, ge=1, le=1000)
     palette: list[ImportPaletteEntry] = Field(default_factory=list)
     fills: list[ImportFillZone] = Field(default_factory=list)
+    stitch_edits: list[ImportStitchEdit] = Field(
+        default_factory=list,
+        description=(
+            "Backstitches and knots drawn or erased by hand (issue #82), applied in "
+            "order on top of `detected_backstitch`/`detected_french_knots`."
+        ),
+    )
     detected_cells: list[int] | None = Field(
         default=None,
         description=(
@@ -347,6 +395,7 @@ class ImportConfigPatch(BaseModel):
     rows: int | None = Field(default=None, ge=1, le=1000)
     palette: list[ImportPaletteEntry] | None = None
     fills: list[ImportFillZone] | None = None
+    stitch_edits: list[ImportStitchEdit] | None = None
     detected_cells: list[int] | None = None
     uncertain_cells: list[int] | None = None
     detected_half: list[int] | None = None
@@ -371,6 +420,10 @@ class ImportPreview(BaseModel):
     layer_quarter: str | None = Field(
         default=None, description="Same encoding, `None` when there is no 1/4 stitch."
     )
+    backstitch: list[BackstitchSegment] = Field(
+        default_factory=list, description="Detected and/or drawn by hand (issue #82)."
+    )
+    french_knots: list[FrenchKnot] = Field(default_factory=list)
     palette: list[ImportPaletteEntry]
 
 

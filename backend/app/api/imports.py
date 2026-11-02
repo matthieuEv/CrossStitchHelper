@@ -47,6 +47,7 @@ from app.imports_engine import (
     PageOutOfRangeError,
     PaintedLayers,
     apply_fills,
+    apply_stitch_edits,
     pdf_page_count,
     render_image_page,
     render_pdf_page,
@@ -156,6 +157,7 @@ def _compute_preview(config: dict[str, Any]) -> dict[str, Any] | None:
         return None
 
     layers = _painted_layers(config, columns, rows)
+    backstitch, french_knots = _special_stitches(config, columns, rows)
     filled_count = sum(
         1 for cell in zip(layers.full, layers.half, layers.quarter, strict=True) if any(cell)
     )
@@ -167,6 +169,8 @@ def _compute_preview(config: dict[str, Any]) -> dict[str, Any] | None:
         "layer_full": bytes_to_base64(encode_uint16_layer(layers.full)),
         "layer_half": _optional_layer_base64(layers.half),
         "layer_quarter": _optional_layer_base64(layers.quarter),
+        "backstitch": backstitch,
+        "french_knots": french_knots,
         "palette": palette,
     }
 
@@ -182,6 +186,27 @@ def _painted_layers(config: dict[str, Any], columns: int, rows: int) -> PaintedL
         base=_detected_base(config, columns, rows),
         base_half=_detected_layer(config, "detected_half", columns, rows),
         base_quarter=_detected_layer(config, "detected_quarter", columns, rows),
+    )
+
+
+def _special_stitches(
+    config: dict[str, Any], columns: int, rows: int
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Backstitch segments and knots: detected (Lot 9, type A), with the ones
+    drawn or erased by hand on top (issue #82) — the single place the preview
+    and the commit build them from. Items whose palette index no longer
+    refers to anything are dropped (`_detected_special_items`)."""
+    palette_size = len(config.get("palette") or [])
+    return apply_stitch_edits(
+        columns,
+        rows,
+        _detected_special_items(config, "detected_backstitch", palette_size),
+        _detected_special_items(config, "detected_french_knots", palette_size),
+        [
+            edit
+            for edit in config.get("stitch_edits") or []
+            if edit.get("palette_index", 0) <= palette_size
+        ],
     )
 
 
@@ -583,6 +608,8 @@ def patch_config(
         config["palette"] = [entry.model_dump() for entry in payload.palette]
     if payload.fills is not None:
         config["fills"] = [fill.model_dump() for fill in payload.fills]
+    if payload.stitch_edits is not None:
+        config["stitch_edits"] = [edit.model_dump() for edit in payload.stitch_edits]
     if payload.detected_cells is not None:
         config["detected_cells"] = payload.detected_cells
     if payload.uncertain_cells is not None:
@@ -652,11 +679,9 @@ def commit(
     cells_half = layers.half if any(layers.half) else None
     cells_quarter = layers.quarter if any(layers.quarter) else None
 
-    # Backstitch and knots (Lot 9, type A only): no manual correction
-    # mechanism yet — committed as detected.
-    palette_size = len(config["palette"])
-    backstitch = _detected_special_items(config, "detected_backstitch", palette_size)
-    french_knots = _detected_special_items(config, "detected_french_knots", palette_size)
+    # Backstitch and knots: detected (Lot 9, type A) and/or drawn by hand
+    # (issue #82).
+    backstitch, french_knots = _special_stitches(config, columns, rows)
 
     pattern = Pattern(
         id=pattern_id,

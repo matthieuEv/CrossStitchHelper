@@ -556,6 +556,11 @@ export interface OverlayOptions {
   accent: string;
   cursor: { x: number; y: number } | null;
   selection: { x0: number; y0: number; x1: number; y1: number } | null;
+  /** Backstitch drawing in the import wizard (issue #82), in cell corner
+   * coordinates: the corner under the pointer, and the start of the segment
+   * being drawn — joined by a dashed guide while both are known. */
+  hoverCorner?: { x: number; y: number } | null;
+  pendingCorner?: { x: number; y: number } | null;
 }
 
 /** Position and selection markers, drawn on top of the grid. */
@@ -598,6 +603,42 @@ export function drawOverlay(canvas: HTMLCanvasElement, options: OverlayOptions):
     g.setLineDash([6, 4]);
     g.strokeRect(x, y, w, h);
     g.setLineDash([]);
+  }
+
+  const pending = options.pendingCorner ?? null;
+  const hover = options.hoverCorner ?? null;
+  const toScreen = (corner: { x: number; y: number }): [number, number] => [
+    (corner.x - x0) * cell,
+    (corner.y - y0) * cell,
+  ];
+  if (pending !== null && hover !== null) {
+    const [px, py] = toScreen(pending);
+    const [hx, hy] = toScreen(hover);
+    g.strokeStyle = options.accent;
+    g.lineWidth = Math.max(1.4, cell * 0.14);
+    g.globalAlpha = 0.6;
+    g.setLineDash([6, 4]);
+    g.beginPath();
+    g.moveTo(px, py);
+    g.lineTo(hx, hy);
+    g.stroke();
+    g.setLineDash([]);
+    g.globalAlpha = 1;
+  }
+  if (hover !== null) {
+    const [hx, hy] = toScreen(hover);
+    g.strokeStyle = options.accent;
+    g.lineWidth = 2;
+    g.beginPath();
+    g.arc(hx, hy, Math.max(5, cell * 0.22), 0, Math.PI * 2);
+    g.stroke();
+  }
+  if (pending !== null) {
+    const [px, py] = toScreen(pending);
+    g.fillStyle = options.accent;
+    g.beginPath();
+    g.arc(px, py, Math.max(5, cell * 0.22), 0, Math.PI * 2);
+    g.fill();
   }
 }
 
