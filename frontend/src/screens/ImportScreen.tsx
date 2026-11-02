@@ -8,7 +8,11 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from "react";
 
-import { ImportGridPainter } from "../components/ImportGridPainter";
+import {
+  ImportGridPainter,
+  StitchTypeBar,
+  type ImportBrush,
+} from "../components/ImportGridPainter";
 import { LabelPicker } from "../components/LabelPicker";
 import { SourcePreview } from "../components/SourcePreview";
 import { BackIcon, UploadIcon } from "../components/Icons";
@@ -33,11 +37,15 @@ import {
   translateApiError,
   translateDetectionWarning,
   type ApiImportConfig,
+  type ApiBackstitchSegment,
+  type ApiFrenchKnot,
   type ApiImportFillZone,
+  type ApiImportStitchEdit,
   type ApiImportJob,
   type ApiImportPaletteEntry,
 } from "../lib/api";
 import { patternFromImportPreview } from "../lib/mappers";
+import type { Corner } from "../pattern/types";
 import { useImportPainter } from "../state/useImportPainter";
 
 type Edge = "left" | "top" | "right" | "bottom";
@@ -104,10 +112,22 @@ export function ImportScreen({ onCancel, onFinish, sharedTargets = [] }: ImportS
   // Row whose symbol field has just replaced a PDF symbol: focused right away.
   const [focusSymbolIndex, setFocusSymbolIndex] = useState<number | null>(null);
   const [fills, setFills] = useState<ApiImportFillZone[]>([]);
+  // Backstitches and knots drawn by hand (issue #82), on top of the detected ones.
+  const [stitchEdits, setStitchEdits] = useState<ApiImportStitchEdit[]>([]);
+  const [detectedBackstitch, setDetectedBackstitch] = useState<ApiBackstitchSegment[] | null>(
+    null,
+  );
+  const [detectedKnots, setDetectedKnots] = useState<ApiFrenchKnot[] | null>(null);
   const [detectedCells, setDetectedCells] = useState<number[] | null>(null);
   const [uncertainCells, setUncertainCells] = useState<number[] | null>(null);
+  const [detectedHalf, setDetectedHalf] = useState<number[] | null>(null);
+  const [detectedQuarter, setDetectedQuarter] = useState<number[] | null>(null);
   const [detection, setDetection] = useState<ApiImportJob["detection"]>(null);
   const [activeIndex, setActiveIndex] = useState(1);
+  // Stitch type the brush paints (issue #41).
+  const [stitch, setStitch] = useState<ImportBrush>("full");
+  // Corner of the 1/4 and 3/4 stitches the brush paints (issue #83).
+  const [corner, setCorner] = useState<Corner>("tl");
 
   const [name, setName] = useState("");
   // Labels given to the new pattern (issue #57), and those the library
@@ -166,8 +186,13 @@ export function ImportScreen({ onCancel, onFinish, sharedTargets = [] }: ImportS
     if (config.rows !== null) setRows(String(config.rows));
     setPalette(config.palette);
     setFills(config.fills);
+    setStitchEdits(config.stitch_edits);
+    setDetectedBackstitch(config.detected_backstitch);
+    setDetectedKnots(config.detected_french_knots);
     setDetectedCells(config.detected_cells);
     setUncertainCells(config.uncertain_cells);
+    setDetectedHalf(config.detected_half);
+    setDetectedQuarter(config.detected_quarter);
     if (!manualFabricEditRef.current && config.detected_fabric_count !== null) {
       setFabricCount(String(config.detected_fabric_count));
     }
@@ -335,7 +360,16 @@ export function ImportScreen({ onCancel, onFinish, sharedTargets = [] }: ImportS
       if (job !== null) void saveConfig(job.id, { fills: nextFills });
     },
     name,
-    detectedCells,
+    { full: detectedCells, half: detectedHalf, quarter: detectedQuarter },
+    {
+      detectedBackstitch,
+      detectedKnots,
+      edits: stitchEdits,
+      onChange: (nextEdits) => {
+        setStitchEdits(nextEdits);
+        if (job !== null) void saveConfig(job.id, { stitch_edits: nextEdits });
+      },
+    },
   );
 
   const addPaletteEntry = (): void => {
@@ -722,7 +756,13 @@ export function ImportScreen({ onCancel, onFinish, sharedTargets = [] }: ImportS
         {step === 3 && (
           <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
             <div className="text-muted" style={{ fontSize: 13 }}>
-              {t("import.paint.hint")}
+              {t(
+                stitch === "backstitch"
+                  ? "import.paint.hint.backstitch"
+                  : stitch === "knot"
+                    ? "import.paint.hint.knot"
+                    : "import.paint.hint",
+              )}
             </div>
 
             <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
@@ -772,6 +812,13 @@ export function ImportScreen({ onCancel, onFinish, sharedTargets = [] }: ImportS
               </button>
             </div>
 
+            <StitchTypeBar
+              stitch={stitch}
+              onChange={setStitch}
+              corner={corner}
+              onCornerChange={setCorner}
+            />
+
             {/* The generated grid, and the imported file next to it to check
                 it against (issue #40): side by side when there is room, on
                 demand below the grid on a phone. */}
@@ -791,6 +838,8 @@ export function ImportScreen({ onCancel, onFinish, sharedTargets = [] }: ImportS
                 <ImportGridPainter
                   painter={painter}
                   activeIndex={activeIndex}
+                  stitch={stitch}
+                  corner={corner}
                   uncertainCells={uncertainCellsSet}
                 />
               )}

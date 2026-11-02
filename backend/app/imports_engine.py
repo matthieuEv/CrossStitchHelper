@@ -12,7 +12,9 @@ from __future__ import annotations
 import base64
 import hashlib
 import io
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import pymupdf
 from PIL import Image
@@ -135,9 +137,59 @@ def render_image_page(path: Path, max_dimension: int = MAX_PREVIEW_DIMENSION) ->
         return buffer.getvalue()
 
 
+@dataclass(frozen=True)
+class PaintedLayers:
+    """What an import paints (issue #41): the full and 1/2 stitch cell layers,
+    same convention as the grid blob (0 = no stitch, n = 1-based palette
+    index), and the 1/4 and 3/4 stitches as items with a corner (issue #83),
+    like `Grid.quarter_json` — ``{"x", "y", "corner", "palette_index"}``,
+    sorted by cell then corner."""
+
+    full: list[int]
+    half: list[int]
+    quarter: list[dict[str, Any]]
+    three_quarter: list[dict[str, Any]]
+
+
+_CORNERS = ("tl", "tr", "bl", "br")
+_OPPOSITE = {"tl": "br", "tr": "bl", "bl": "tr", "br": "tl"}
+
+
+def _layer(base: list[int] | None, size: int) -> list[int]:
+    if base is None:
+        return [0] * size
+    if len(base) != size:
+        raise ValueError("a base layer must have exactly columns*rows cells")
+    return list(base)
+
+
+def _paint_partial(
+    quarters: dict[str, int],
+    three_quarter: tuple[str, int] | None,
+    stitch: str,
+    corner: str,
+    value: int,
+) -> tuple[dict[str, int], tuple[str, int] | None]:
+    """A cell's 1/4 stitches (corner → palette index) and 3/4 stitch after
+    painting `stitch` in `corner` (issue #83). What stays is only what still
+    fits beside it: a 3/4 stitch leaves its opposite corner free, where a 1/4
+    stitch of another colour can sit — a split cell."""
+    if stitch == "quarter":
+        if three_quarter is not None and _OPPOSITE[three_quarter[0]] != corner:
+            three_quarter = None
+        return {**quarters, corner: value}, three_quarter
+    free = _OPPOSITE[corner]
+    return ({free: quarters[free]} if free in quarters else {}), (corner, value)
+
+
 def apply_fills(
-    columns: int, rows: int, fills: list[dict[str, int]], base: list[int] | None = None
-) -> list[int]:
+    columns: int,
+    rows: int,
+    fills: list[dict[str, Any]],
+    base: list[int] | None = None,
+    base_half: list[int] | None = None,
+    base_quarter: list[int] | None = None,
+) -> PaintedLayers:
     """Assemble a `columns` × `rows` grid from the painted areas.
 
     Each area is an inclusive rectangle of cell coordinates
@@ -147,25 +199,145 @@ def apply_fills(
     (`frontend/src/state/useTracker.ts`), so the brush behaves identically
     during import and during tracking.
 
-    `base` (Lot 4): an automatically detected grid (`app/type_a.py`) serves
-    as the background rather than an empty cell — areas painted by the user
-    remain *corrections* on top of the proposal, with no new painting
-    mechanism to write on the client.
+    ``stitch`` (issue #41, ``"full"`` when absent) picks what an area paints.
+    A full or 1/2 stitch is alone in its cell: painting one clears every
+    other stitch of the cell, and the eraser (index 0) clears them all — so
+    repainting an area as 1/2 stitches never leaves the full stitches
+    underneath. A 1/4 or 3/4 stitch (issue #83) goes in ``corner`` (top-left
+    when absent) and keeps the partial stitches that still fit beside it
+    (`_paint_partial`): up to four 1/4, or a 3/4 and the 1/4 in its free
+    corner.
+
+    `base`/`base_half`/`base_quarter` (Lots 4 and 9): the automatically
+    detected layers serve as the background rather than empty cells — areas
+    painted by the user remain *corrections* on top of the proposal. Detected
+    1/4 stitches have no corner (Lot 9): top-left, where they were always
+    drawn.
     """
-    if base is not None:
-        if len(base) != columns * rows:
-            raise ValueError("`base` must have exactly columns*rows cells")
-        cells = list(base)
-    else:
-        cells = [0] * (columns * rows)
+    size = columns * rows
+    full = _layer(base, size)
+    half = _layer(base_half, size)
+    quarters: dict[int, dict[str, int]] = {
+        index: {"tl": value} for index, value in enumerate(_layer(base_quarter, size)) if value
+    }
+    three_quarters: dict[int, tuple[str, int]] = {}
     for fill in fills:
         x0 = max(0, min(fill["x0"], fill["x1"]))
         x1 = min(columns - 1, max(fill["x0"], fill["x1"]))
         y0 = max(0, min(fill["y0"], fill["y1"]))
         y1 = min(rows - 1, max(fill["y0"], fill["y1"]))
-        palette_index = fill["palette_index"]
+        value = fill["palette_index"]
+        stitch = fill.get("stitch") or "full"
+        corner = fill.get("corner") or "tl"
+        partial = value != 0 and stitch in ("quarter", "three_quarter")
         for y in range(y0, y1 + 1):
-            row_offset = y * columns
             for x in range(x0, x1 + 1):
-                cells[row_offset + x] = palette_index
-    return cells
+                index = y * columns + x
+                full[index] = value if stitch == "full" else 0
+                half[index] = value if stitch == "half" else 0
+                if partial:
+                    cell_quarters, cell_three = _paint_partial(
+                        quarters.get(index, {}), three_quarters.get(index), stitch, corner, value
+                    )
+                else:
+                    cell_quarters, cell_three = {}, None
+                if cell_quarters:
+                    quarters[index] = cell_quarters
+                else:
+                    quarters.pop(index, None)
+                if cell_three is not None:
+                    three_quarters[index] = cell_three
+                else:
+                    three_quarters.pop(index, None)
+
+    def item(index: int, corner: str, palette_index: int) -> dict[str, Any]:
+        return {
+            "x": index % columns,
+            "y": index // columns,
+            "corner": corner,
+            "palette_index": palette_index,
+        }
+
+    return PaintedLayers(
+        full=full,
+        half=half,
+        quarter=[
+            item(index, corner, cell[corner])
+            for index, cell in sorted(quarters.items())
+            for corner in _CORNERS
+            if corner in cell
+        ],
+        three_quarter=[
+            item(index, corner, palette_index)
+            for index, (corner, palette_index) in sorted(three_quarters.items())
+        ],
+    )
+
+
+def _same_point(ax: float, ay: float, bx: float, by: float) -> bool:
+    return abs(ax - bx) < 1e-6 and abs(ay - by) < 1e-6
+
+
+def _same_segment(segment: dict[str, Any], edit: dict[str, Any]) -> bool:
+    """Same two ends, in either direction."""
+    s1, s2 = (segment["x1"], segment["y1"]), (segment["x2"], segment["y2"])
+    e1, e2 = (edit["x1"], edit["y1"]), (edit["x2"], edit["y2"])
+    return (_same_point(*s1, *e1) and _same_point(*s2, *e2)) or (
+        _same_point(*s1, *e2) and _same_point(*s2, *e1)
+    )
+
+
+def apply_stitch_edits(
+    columns: int,
+    rows: int,
+    backstitch: list[dict[str, Any]],
+    french_knots: list[dict[str, Any]],
+    edits: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Backstitch segments and knots drawn or erased by hand in the import
+    wizard (issue #82), applied in order on top of the detected ones — the
+    counterpart of `apply_fills` for the two stitch kinds that are not cells.
+
+    - A drawn segment replaces any segment with the same two ends (whatever
+      their order), so drawing it again in another colour recolours it; an
+      erased one removes every segment with those ends.
+    - A knot belongs to a cell and is stored at its centre (`FrenchKnot`):
+      placing one replaces the cell's knot, erasing removes it.
+    - Drawn items outside the grid (dimensions changed since) are dropped, so
+      the created pattern never references a cell that does not exist.
+
+    Mirror: `frontend/src/lib/importFills.ts::applyStitchEditsLocal`.
+    """
+    segments = [dict(segment) for segment in backstitch]
+    knots = [dict(knot) for knot in french_knots]
+    for edit in edits:
+        if edit.get("kind") == "knot":
+            x, y = edit["x"], edit["y"]
+            knots = [
+                knot
+                for knot in knots
+                if not (int(knot["x"] // 1) == x and int(knot["y"] // 1) == y)
+            ]
+            if edit["op"] == "add" and x < columns and y < rows:
+                knots.append({"x": x + 0.5, "y": y + 0.5, "palette_index": edit["palette_index"]})
+        else:
+            segments = [segment for segment in segments if not _same_segment(segment, edit)]
+            inside = all(
+                0 <= edit[x] <= columns and 0 <= edit[y] <= rows
+                for x, y in (("x1", "y1"), ("x2", "y2"))
+            )
+            if (
+                edit["op"] == "add"
+                and inside
+                and not _same_point(edit["x1"], edit["y1"], edit["x2"], edit["y2"])
+            ):
+                segments.append(
+                    {
+                        "x1": edit["x1"],
+                        "y1": edit["y1"],
+                        "x2": edit["x2"],
+                        "y2": edit["y2"],
+                        "palette_index": edit["palette_index"],
+                    }
+                )
+    return segments, knots

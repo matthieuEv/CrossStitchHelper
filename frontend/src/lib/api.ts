@@ -214,8 +214,24 @@ export interface ApiGrid {
   /** 1/4 and 3/4 stitches, each a cell and a corner (issue #83). */
   quarter_stitches: ApiPartialStitch[];
   three_quarter_stitches: ApiPartialStitch[];
-  backstitch: Array<{ x1: number; y1: number; x2: number; y2: number; palette_index: number }>;
-  french_knots: Array<{ x: number; y: number; palette_index: number }>;
+  backstitch: ApiBackstitchSegment[];
+  french_knots: ApiFrenchKnot[];
+}
+
+/** See `backend/app/schemas.py::BackstitchSegment` — cell corner coordinates. */
+export interface ApiBackstitchSegment {
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+  palette_index: number;
+}
+
+/** See `backend/app/schemas.py::FrenchKnot` — cell centre coordinates. */
+export interface ApiFrenchKnot {
+  x: number;
+  y: number;
+  palette_index: number;
 }
 
 /** Same enumeration as `backend/app/schemas.py::ProgressOp.layer` (Lot 8) —
@@ -371,13 +387,47 @@ export interface ApiImportPaletteEntry {
   symbol_svg?: string | null;
 }
 
+/** Cell layers the import wizard paints (issue #41). */
+export type ApiImportStitch = "full" | "half" | "quarter" | "three_quarter";
+
 export interface ApiImportFillZone {
   x0: number;
   y0: number;
   x1: number;
   y1: number;
   palette_index: number;
+  /** What the area paints — `"full"` when absent (areas saved before #41). */
+  stitch?: ApiImportStitch;
+  /** Corner of a 1/4 or 3/4 stitch (issue #83) — top-left when absent. */
+  corner?: ApiPartialStitch["corner"];
 }
+
+/**
+ * A backstitch or knot drawn (`add`) or erased (`remove`) by hand in the
+ * import wizard (issue #82) — see `backend/app/schemas.py::ImportBackstitchEdit`
+ * and `ImportKnotEdit`. `after_fills` is the number of painted areas when the
+ * edit was made, so undo follows the order things were done in.
+ */
+export type ApiImportStitchEdit =
+  | {
+      kind: "backstitch";
+      op: "add" | "remove";
+      x1: number;
+      y1: number;
+      x2: number;
+      y2: number;
+      palette_index: number;
+      after_fills: number;
+    }
+  | {
+      kind: "knot";
+      op: "add" | "remove";
+      /** The cell, not its centre. */
+      x: number;
+      y: number;
+      palette_index: number;
+      after_fills: number;
+    };
 
 export interface ApiImportConfig {
   /** Manual cropping by page number (str key), a purely visual aid — see
@@ -387,12 +437,22 @@ export interface ApiImportConfig {
   rows: number | null;
   palette: ApiImportPaletteEntry[];
   fills: ApiImportFillZone[];
+  /** Backstitches and knots drawn or erased by hand (issue #82), on top of
+   * `detected_backstitch`/`detected_french_knots`. */
+  stitch_edits: ApiImportStitchEdit[];
   /** Automatically detected grid (Lot 4), background under `fills` — see `apply_fills`. */
   detected_cells: number[] | null;
   /** Indices into `detected_cells` of the cells flagged uncertain by type
    * B/C detection (Lot 5) — doubtful colour and/or ambiguous symbol, never a
    * wrong cell left without indication. */
   uncertain_cells: number[] | null;
+  /** 1/2 and 1/4 stitches detected in a type A PDF (Lot 9), same convention
+   * as `detected_cells` — background under the `fills` of those layers. */
+  detected_half: number[] | null;
+  detected_quarter: number[] | null;
+  /** Backstitch and knots detected in a type A PDF (Lot 9). */
+  detected_backstitch: ApiBackstitchSegment[] | null;
+  detected_french_knots: ApiFrenchKnot[] | null;
   /** Fabric count read from the PDF (type A, Lot 9) — pre-fills the Summary
    * screen's field, never imposed: manual input always wins, see
    * `manualFabricEditRef` in `ImportScreen.tsx`. */
@@ -405,6 +465,7 @@ export interface ApiImportConfigPatch {
   rows?: number;
   palette?: ApiImportPaletteEntry[];
   fills?: ApiImportFillZone[];
+  stitch_edits?: ApiImportStitchEdit[];
   detected_cells?: number[] | null;
   uncertain_cells?: number[] | null;
 }
@@ -437,6 +498,14 @@ export interface ApiImportPreview {
   cell_count: number;
   filled_count: number;
   layer_full: string;
+  /** Same encoding as `layer_full`, `null` when the layer has no stitch. */
+  layer_half: string | null;
+  /** 1/4 and 3/4 stitches, detected and/or painted (issue #83). */
+  quarter_stitches: ApiPartialStitch[];
+  three_quarter_stitches: ApiPartialStitch[];
+  /** Detected and/or drawn by hand (issue #82). */
+  backstitch: ApiBackstitchSegment[];
+  french_knots: ApiFrenchKnot[];
   palette: ApiImportPaletteEntry[];
 }
 

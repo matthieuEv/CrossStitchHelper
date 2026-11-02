@@ -50,7 +50,7 @@ test("the last painted areas can be undone, and the saved configuration follows"
 
   const canvas = page.locator("canvas.track-canvas");
   await expect(canvas).toBeVisible();
-  const undo = page.getByRole("button", { name: "Annuler la dernière zone" });
+  const undo = page.getByRole("button", { name: "Annuler la dernière modification" });
   await expect(undo).toBeDisabled();
 
   // Two separate areas: a small one, then a larger one that adds cells.
