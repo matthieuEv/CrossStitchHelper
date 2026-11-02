@@ -32,6 +32,7 @@ export function FederationPanel() {
   const [joinCode, setJoinCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [helpOpen, setHelpOpen] = useState(false);
 
   const reload = async (): Promise<void> => {
     const loaded = await fetchFederation();
@@ -84,6 +85,24 @@ export function FederationPanel() {
           {t("federation.hint")}
         </div>
       </div>
+
+      {/* What linking sites is for, with examples (issue #92) — closed by
+          default, so the section stays short for whoever already knows. */}
+      <details
+        className="help-details"
+        open={helpOpen}
+        onToggle={(event) => setHelpOpen(event.currentTarget.open)}
+      >
+        <summary>{t("federation.help.title")}</summary>
+        {helpOpen && (
+          <>
+            <p>{t("federation.help.what")}</p>
+            <p>{t("federation.help.examples")}</p>
+            <p>{t("federation.help.private")}</p>
+            <p>{t("federation.help.how")}</p>
+          </>
+        )}
+      </details>
 
       {message !== null && (
         <div role="status" className="text-muted" style={{ fontSize: 13 }}>

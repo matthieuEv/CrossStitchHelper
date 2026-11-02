@@ -342,7 +342,16 @@ export const en: Record<TranslationKey, string> = {
   "shared.target": "Shared library",
   "federation.title": "Linked sites",
   "federation.hint":
-    "Link this instance with another self-hosted one to share one common library. The site hosting the library invites; the other joins with the code. Only the host must be reachable by the other's server (HTTPS reverse proxy, Tailscale…). Personal libraries and progress never leave their instance.",
+    "Share the “Shared” library with another CrossStitchHelper installation, at someone else's place. Only one installation? You don't need this section.",
+  "federation.help.title": "What is this for?",
+  "federation.help.what":
+    "Here, every profile already sees the same “Shared” library. Linking two sites extends it to another installation, on another server: the profiles of both sites see the same shared patterns, can add to them and copy them into their own library to stitch them.",
+  "federation.help.examples":
+    "For example: a friend has their own installation at home and you want to swap charts; a stitching club where each member has a server and one of them keeps the common library; two homes of the same family.",
+  "federation.help.private":
+    "What never leaves your site: “My patterns”, your progress, your statistics and your profiles. Only patterns someone deliberately puts in “Shared” can be seen from the other site.",
+  "federation.help.how":
+    "How: on the site that keeps the common library, “Invite a site” creates a code valid for 24 hours; on the other site, “Join a site” with that code. The inviting site must be reachable from the other one's server: the same remote access you would set up for your phone outside the house (HTTPS address, Tailscale…).",
   "federation.instanceName": "This instance's name (shown to the other site)",
   "federation.peer.host": "We show its shared library",
   "federation.peer.subscriber": "Shows our shared library",
