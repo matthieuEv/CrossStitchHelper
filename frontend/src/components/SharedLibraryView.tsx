@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useContext, useEffect, useState, type ReactNode } from "react";
 
 import { useT } from "../i18n";
 import {
@@ -13,6 +13,7 @@ import {
 } from "../lib/api";
 import { useCompareText } from "../lib/format";
 import { allLabels } from "../lib/labels";
+import { SharedSortContext, compareShared } from "../lib/sharedSort";
 import type { Pattern } from "../pattern/types";
 import { loadSharedPattern, type SharedEntry, type SharedLibrary } from "../state/useSharedLibrary";
 import { CloseIcon } from "./Icons";
@@ -102,7 +103,12 @@ export function SharedLibraryView({
   const [error, setError] = useState<string | null>(null);
   const [requestError, setRequestError] = useState<string | null>(null);
 
+  const sort = useContext(SharedSortContext);
   const knownLabels = allLabels(shared.entries.map((entry) => entry.pattern.labels), compareText);
+  // In the order chosen from the Library's "Sort" button (issue #91).
+  const sortedEntries = [...shared.entries].sort((a, b) =>
+    compareShared(sort, a.summary, b.summary, compareText),
+  );
   const byId = new Map(shared.entries.map((entry) => [entry.summary.id, entry]));
   const pending = shared.requests.filter((request) => request.status === "pending");
   // Admins decide on every pending request; anybody follows their own.
@@ -335,7 +341,7 @@ export function SharedLibraryView({
       )}
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(230px, 1fr))", gap: 16 }}>
-        {shared.entries.map((entry) => (
+        {sortedEntries.map((entry) => (
           <button
             key={entry.summary.id}
             type="button"
