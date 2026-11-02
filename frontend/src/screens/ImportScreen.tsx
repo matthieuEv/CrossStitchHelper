@@ -45,6 +45,7 @@ import {
   type ApiImportPaletteEntry,
 } from "../lib/api";
 import { patternFromImportPreview } from "../lib/mappers";
+import type { Corner } from "../pattern/types";
 import { useImportPainter } from "../state/useImportPainter";
 
 type Edge = "left" | "top" | "right" | "bottom";
@@ -125,6 +126,8 @@ export function ImportScreen({ onCancel, onFinish, sharedTargets = [] }: ImportS
   const [activeIndex, setActiveIndex] = useState(1);
   // Stitch type the brush paints (issue #41).
   const [stitch, setStitch] = useState<ImportBrush>("full");
+  // Corner of the 1/4 and 3/4 stitches the brush paints (issue #83).
+  const [corner, setCorner] = useState<Corner>("tl");
 
   const [name, setName] = useState("");
   // Labels given to the new pattern (issue #57), and those the library
@@ -809,7 +812,12 @@ export function ImportScreen({ onCancel, onFinish, sharedTargets = [] }: ImportS
               </button>
             </div>
 
-            <StitchTypeBar stitch={stitch} onChange={setStitch} />
+            <StitchTypeBar
+              stitch={stitch}
+              onChange={setStitch}
+              corner={corner}
+              onCornerChange={setCorner}
+            />
 
             {/* The generated grid, and the imported file next to it to check
                 it against (issue #40): side by side when there is room, on
@@ -831,6 +839,7 @@ export function ImportScreen({ onCancel, onFinish, sharedTargets = [] }: ImportS
                   painter={painter}
                   activeIndex={activeIndex}
                   stitch={stitch}
+                  corner={corner}
                   uncertainCells={uncertainCellsSet}
                 />
               )}

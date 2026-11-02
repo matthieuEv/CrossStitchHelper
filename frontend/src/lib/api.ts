@@ -388,7 +388,7 @@ export interface ApiImportPaletteEntry {
 }
 
 /** Cell layers the import wizard paints (issue #41). */
-export type ApiImportStitch = "full" | "half" | "quarter";
+export type ApiImportStitch = "full" | "half" | "quarter" | "three_quarter";
 
 export interface ApiImportFillZone {
   x0: number;
@@ -396,8 +396,10 @@ export interface ApiImportFillZone {
   x1: number;
   y1: number;
   palette_index: number;
-  /** Layer the area paints — `"full"` when absent (areas saved before #41). */
+  /** What the area paints — `"full"` when absent (areas saved before #41). */
   stitch?: ApiImportStitch;
+  /** Corner of a 1/4 or 3/4 stitch (issue #83) — top-left when absent. */
+  corner?: ApiPartialStitch["corner"];
 }
 
 /**
@@ -498,7 +500,9 @@ export interface ApiImportPreview {
   layer_full: string;
   /** Same encoding as `layer_full`, `null` when the layer has no stitch. */
   layer_half: string | null;
-  layer_quarter: string | null;
+  /** 1/4 and 3/4 stitches, detected and/or painted (issue #83). */
+  quarter_stitches: ApiPartialStitch[];
+  three_quarter_stitches: ApiPartialStitch[];
   /** Detected and/or drawn by hand (issue #82). */
   backstitch: ApiBackstitchSegment[];
   french_knots: ApiFrenchKnot[];

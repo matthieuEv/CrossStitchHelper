@@ -20,10 +20,10 @@ import type {
   ApiImportStitchEdit,
 } from "../lib/api";
 import { applyFillsLocal, applyStitchEditsLocal, type DetectedLayers } from "../lib/importFills";
-import { backstitchFromApi, frenchKnotFromApi, topLeftQuarters } from "../lib/mappers";
+import { backstitchFromApi, frenchKnotFromApi } from "../lib/mappers";
 import { nearestBackstitchIndex } from "../pattern/specialHitTest";
 import { MAX_CELL, MIN_CELL, panMargin, type GridView } from "../pattern/render";
-import type { PaletteEntry, Pattern } from "../pattern/types";
+import type { Corner, PaletteEntry, Pattern } from "../pattern/types";
 
 export interface PainterSelection {
   x0: number;
@@ -83,7 +83,7 @@ export interface ImportPainter {
 
   /** Paints the current selection as `stitch` (issue #41) or, with
    * `paletteIndex = 0`, erases it — every layer, see `applyFillsLocal`. */
-  paint: (paletteIndex: number, stitch: ApiImportStitch) => void;
+  paint: (paletteIndex: number, stitch: ApiImportStitch, corner?: Corner) => void;
   /** Backstitch (issue #82): the corner a segment starts from, waiting for
    * the tap on its other end — `null` when none is pending. */
   pendingCorner: CellPosition | null;
@@ -130,15 +130,17 @@ export function useImportPainter(
       }),
     [columns, rows, fills, detectedFull, detectedHalf, detectedQuarter],
   );
+  // Same count as the server's preview: every cell holding any stitch.
   const filledCount = useMemo(() => {
-    let count = 0;
+    const filled = new Set<number>();
     for (let index = 0; index < layers.full.length; index++) {
-      if (layers.full[index] !== 0 || layers.half[index] !== 0 || layers.quarter[index] !== 0) {
-        count++;
-      }
+      if (layers.full[index] !== 0 || layers.half[index] !== 0) filled.add(index);
     }
-    return count;
-  }, [layers]);
+    for (const item of [...layers.quarter, ...layers.threeQuarter]) {
+      filled.add(item.y * columns + item.x);
+    }
+    return filled.size;
+  }, [layers, columns]);
 
   // Same palette guard as the server (`_special_stitches`): a stitch whose
   // colour has been removed from the palette since is dropped.
@@ -166,11 +168,11 @@ export function useImportPainter(
       width: columns,
       height: rows,
       cells: layers.full,
-      // 1/2 stitches, detected and/or painted (issue #41); 1/4 stitches
-      // painted per cell, without a corner: top-left (issue #83).
+      // 1/2 stitches, detected and/or painted (issue #41); 1/4 and 3/4
+      // stitches with their corner (issue #83).
       cellsHalf: layers.half,
-      quarterStitches: topLeftQuarters(layers.quarter, columns),
-      threeQuarterStitches: [],
+      quarterStitches: layers.quarter,
+      threeQuarterStitches: layers.threeQuarter,
       // Detected and/or drawn by hand (issue #82).
       backstitch: special.backstitch,
       frenchKnots: special.frenchKnots,
@@ -233,7 +235,7 @@ export function useImportPainter(
   );
 
   const paint = useCallback(
-    (paletteIndex: number, stitch: ApiImportStitch) => {
+    (paletteIndex: number, stitch: ApiImportStitch, corner?: Corner) => {
       if (selection === null) return;
       const zone: ApiImportFillZone = {
         x0: Math.max(0, Math.min(selection.x0, selection.x1)),
@@ -243,6 +245,8 @@ export function useImportPainter(
         palette_index: paletteIndex,
         // Full stitches stay without the field, as before issue #41.
         ...(stitch !== "full" && { stitch }),
+        // 1/4 and 3/4 stitches go in a corner (issue #83).
+        ...((stitch === "quarter" || stitch === "three_quarter") && { corner: corner ?? "tl" }),
       };
       onFillsChange([...fills, zone]);
     },

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPoi
 
 import { useT } from "../i18n";
 import type { ApiImportStitch } from "../lib/api";
+import type { Corner } from "../pattern/types";
 
 /** The import brush (issues #41, #82): a cell stitch type painted by area,
  * or a backstitch drawn corner to corner, or a knot placed on a cell. */
@@ -30,6 +31,8 @@ interface ImportGridPainterProps {
   activeIndex: number;
   /** What the brush does (issues #41, #82), chosen in `StitchTypeBar`. */
   stitch: ImportBrush;
+  /** Corner a 1/4 or 3/4 stitch is painted in (issue #83). */
+  corner: Corner;
   /** Cells flagged uncertain by type B/C detection (Lot 5) — see
    * `pattern/render.ts::DrawGridOptions.uncertainCells`. */
   uncertainCells?: ReadonlySet<number> | null;
@@ -46,6 +49,7 @@ export function ImportGridPainter({
   painter,
   activeIndex,
   stitch,
+  corner,
   uncertainCells = null,
 }: ImportGridPainterProps) {
   const t = useT();
@@ -281,7 +285,7 @@ export function ImportGridPainter({
       stitch !== "backstitch" &&
       stitch !== "knot"
     ) {
-      painter.paint(activeIndex, stitch);
+      painter.paint(activeIndex, stitch, corner);
     }
     dragRef.current = { ...dragRef.current, active: false };
   };
@@ -400,42 +404,89 @@ export function ImportGridPainter({
   );
 }
 
-const STITCHES: readonly ImportBrush[] = ["full", "half", "quarter", "backstitch", "knot"];
+const STITCHES: readonly ImportBrush[] = [
+  "full",
+  "half",
+  "quarter",
+  "three_quarter",
+  "backstitch",
+  "knot",
+];
 
-/** Stitch-type toolbar of the import brush (issues #41, #82): full, 1/2 or
- * 1/4 painted by area, backstitch drawn corner to corner, knot on a cell.
- * Kept outside `ImportGridPainter` so the grid stays level with the source
- * file shown beside it on a wide screen (issue #40). */
+/** The corner picker's order: as the corners sit in a cell, row by row. */
+const CORNERS: readonly { corner: Corner; arrow: string }[] = [
+  { corner: "tl", arrow: "↖" },
+  { corner: "tr", arrow: "↗" },
+  { corner: "bl", arrow: "↙" },
+  { corner: "br", arrow: "↘" },
+];
+
+/** Stitch-type toolbar of the import brush (issues #41, #82): full, 1/2,
+ * 1/4 or 3/4 painted by area, backstitch drawn corner to corner, knot on a
+ * cell. With 1/4 or 3/4, a second row picks the stitch's corner (issue
+ * #83). Kept outside `ImportGridPainter` so the grid stays level with the
+ * source file shown beside it on a wide screen (issue #40). */
 export function StitchTypeBar({
   stitch,
   onChange,
+  corner,
+  onCornerChange,
 }: {
   stitch: ImportBrush;
   onChange: (stitch: ImportBrush) => void;
+  corner: Corner;
+  onCornerChange: (corner: Corner) => void;
 }) {
   const t = useT();
+  const partial = stitch === "quarter" || stitch === "three_quarter";
   return (
-    <div
-      className="seg"
-      role="group"
-      aria-label={t("import.paint.stitch")}
-      // Five entries (issue #82): narrower than the default `.seg` padding,
-      // so the bar still fits a 320 px wide phone.
-      style={{ alignSelf: "flex-start", maxWidth: "100%" }}
-    >
-      {STITCHES.map((item) => (
-        <button
-          key={item}
-          type="button"
-          style={{ padding: "0 10px", flex: "1 1 auto" }}
-          aria-pressed={stitch === item}
-          aria-label={t(`import.paint.stitch.${item}`)}
-          title={t(`import.paint.stitch.${item}`)}
-          onClick={() => onChange(item)}
-        >
-          {t(`import.paint.stitch.${item}.short`)}
-        </button>
-      ))}
+    <div style={{ display: "flex", flexDirection: "column", gap: 8, alignItems: "flex-start" }}>
+      <div
+        className="seg"
+        role="group"
+        aria-label={t("import.paint.stitch")}
+        // Six entries (issues #82, #83): narrower than the default `.seg`
+        // padding, so the bar still fits a 320 px wide phone.
+        style={{ maxWidth: "100%" }}
+      >
+        {STITCHES.map((item) => (
+          <button
+            key={item}
+            type="button"
+            style={{ padding: "0 10px", flex: "1 1 auto" }}
+            aria-pressed={stitch === item}
+            aria-label={t(`import.paint.stitch.${item}`)}
+            title={t(`import.paint.stitch.${item}`)}
+            onClick={() => onChange(item)}
+          >
+            {t(`import.paint.stitch.${item}.short`)}
+          </button>
+        ))}
+      </div>
+      {partial && (
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+          <div className="seg" role="group" aria-label={t("import.paint.corner")}>
+            {CORNERS.map((item) => (
+              <button
+                key={item.corner}
+                type="button"
+                style={{ padding: "0 12px", fontSize: 18 }}
+                aria-pressed={corner === item.corner}
+                aria-label={t(`import.paint.corner.${item.corner}`)}
+                title={t(`import.paint.corner.${item.corner}`)}
+                onClick={() => onCornerChange(item.corner)}
+              >
+                {item.arrow}
+              </button>
+            ))}
+          </div>
+          {stitch === "three_quarter" && (
+            <span className="text-muted" style={{ fontSize: 12, maxWidth: "34ch" }}>
+              {t("import.paint.corner.threeQuarterHint")}
+            </span>
+          )}
+        </div>
+      )}
     </div>
   );
 }

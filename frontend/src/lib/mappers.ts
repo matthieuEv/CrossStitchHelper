@@ -63,13 +63,12 @@ export function patternFromImportPreview(preview: ApiImportPreview, name: string
     width: preview.width,
     height: preview.height,
     cells: Uint8Array.from(layer),
-    // 1/2 and 1/4 stitches (Lot 9 detection, issue #41 painting): always
-    // present, empty when the server sends none — never `undefined` (see
-    // `Pattern.cellsHalf`).
+    // 1/2 stitches (Lot 9 detection, issue #41 painting): always present,
+    // empty when the server sends none — never `undefined` (see
+    // `Pattern.cellsHalf`). 1/4 and 3/4 stitches with their corner (#83).
     cellsHalf: optionalLayer(preview.layer_half, cellCount),
-    // 1/4 stitches painted per cell, without a corner: top-left (issue #83).
-    quarterStitches: topLeftQuarters(optionalLayer(preview.layer_quarter, cellCount), preview.width),
-    threeQuarterStitches: [],
+    quarterStitches: preview.quarter_stitches.map(partialStitchFromApi),
+    threeQuarterStitches: preview.three_quarter_stitches.map(partialStitchFromApi),
     // Detected and/or drawn by hand (issue #82).
     backstitch: preview.backstitch.map(backstitchFromApi),
     frenchKnots: preview.french_knots.map(frenchKnotFromApi),
@@ -105,19 +104,6 @@ export function patternFromApi(detail: ApiPatternDetail, grid: ApiGrid): Pattern
     frenchKnots: grid.french_knots.map(frenchKnotFromApi),
     palette: paletteFromApi(detail),
   };
-}
-
-/** The 1/4 stitches of a per-cell layer (import wizard, issue #41), as
- * top-left items (issue #83) — where such stitches were always drawn. */
-export function topLeftQuarters(layer: ArrayLike<number>, width: number): PartialStitch[] {
-  const items: PartialStitch[] = [];
-  for (let index = 0; index < layer.length; index++) {
-    const paletteIndex = layer[index]!;
-    if (paletteIndex !== 0) {
-      items.push({ x: index % width, y: Math.floor(index / width), corner: "tl", paletteIndex });
-    }
-  }
-  return items;
 }
 
 function partialStitchFromApi(item: ApiPartialStitch): PartialStitch {

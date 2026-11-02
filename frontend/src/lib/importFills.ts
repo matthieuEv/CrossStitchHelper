@@ -10,12 +10,16 @@ import type {
   ApiImportFillZone,
   ApiImportStitchEdit,
 } from "./api";
+import type { Corner, PartialStitch } from "../pattern/types";
 
-/** The three cell layers an import paints — see `PaintedLayers` on the server. */
+/** What an import paints — see `PaintedLayers` on the server: the full and
+ * 1/2 stitch cell layers, and the 1/4 and 3/4 stitches as items with a
+ * corner (issue #83), sorted by cell then corner. */
 export interface PaintedLayers {
   full: Uint8Array;
   half: Uint8Array;
-  quarter: Uint8Array;
+  quarter: PartialStitch[];
+  threeQuarter: PartialStitch[];
 }
 
 /** Detected layers (Lots 4 and 9), used as the background rather than empty
@@ -26,10 +30,49 @@ export interface DetectedLayers {
   quarter: readonly number[] | null;
 }
 
+const CORNERS: readonly Corner[] = ["tl", "tr", "bl", "br"];
+const OPPOSITE: Record<Corner, Corner> = { tl: "br", tr: "bl", bl: "tr", br: "tl" };
+
+/** A cell's 1/4 stitches (corner → palette index) and 3/4 stitch. */
+interface PartialCell {
+  quarters: Partial<Record<Corner, number>>;
+  threeQuarter: { corner: Corner; paletteIndex: number } | null;
+}
+
 /**
- * A cell painted by hand holds one stitch type only (issue #41): painting a
- * colour clears the cell's other two layers, and the eraser (index 0) clears
- * all three.
+ * Mirror of the server-side `_paint_partial`: the partial stitches of a
+ * cell after painting a 1/4 or 3/4 stitch in `corner` (issue #83). What stays
+ * is only what still fits beside it: a 3/4 stitch leaves its opposite corner
+ * free, where a 1/4 stitch of another colour can sit — a split cell.
+ */
+function paintPartial(
+  cell: PartialCell,
+  stitch: "quarter" | "three_quarter",
+  corner: Corner,
+  paletteIndex: number,
+): PartialCell {
+  if (stitch === "quarter") {
+    const keepThree =
+      cell.threeQuarter !== null && OPPOSITE[cell.threeQuarter.corner] === corner;
+    return {
+      quarters: { ...cell.quarters, [corner]: paletteIndex },
+      threeQuarter: keepThree ? cell.threeQuarter : null,
+    };
+  }
+  const free = OPPOSITE[corner];
+  const kept = cell.quarters[free];
+  return {
+    quarters: kept !== undefined ? { [free]: kept } : {},
+    threeQuarter: { corner, paletteIndex },
+  };
+}
+
+/**
+ * A full or 1/2 stitch painted by hand is alone in its cell (issue #41):
+ * painting one clears every other stitch of the cell, and the eraser (index
+ * 0) clears them all. A 1/4 or 3/4 stitch (issue #83) goes in its corner
+ * (top-left when absent) and keeps the partial stitches that still fit
+ * beside it — see `paintPartial`.
  */
 export function applyFillsLocal(
   columns: number,
@@ -50,26 +93,48 @@ export function applyFillsLocal(
     if (detected !== null && detected.length === size) cells.set(detected);
     return cells;
   };
-  const layers: PaintedLayers = {
-    full: layer(base.full),
-    half: layer(base.half),
-    quarter: layer(base.quarter),
-  };
+  const full = layer(base.full);
+  const half = layer(base.half);
+  // Detected 1/4 stitches have no corner (Lot 9): top-left.
+  const partials = new Map<number, PartialCell>();
+  layer(base.quarter).forEach((paletteIndex, index) => {
+    if (paletteIndex !== 0) partials.set(index, { quarters: { tl: paletteIndex }, threeQuarter: null });
+  });
   for (const fill of fills) {
     const x0 = Math.max(0, Math.min(fill.x0, fill.x1));
     const x1 = Math.min(columns - 1, Math.max(fill.x0, fill.x1));
     const y0 = Math.max(0, Math.min(fill.y0, fill.y1));
     const y1 = Math.min(rows - 1, Math.max(fill.y0, fill.y1));
     const stitch = fill.stitch ?? "full";
-    for (const name of ["full", "half", "quarter"] as const) {
-      const value = name === stitch ? fill.palette_index : 0;
-      const cells = layers[name];
-      for (let y = y0; y <= y1; y++) {
-        cells.fill(value, y * columns + x0, y * columns + x1 + 1);
+    const corner = fill.corner ?? "tl";
+    const value = fill.palette_index;
+    for (let y = y0; y <= y1; y++) {
+      for (let x = x0; x <= x1; x++) {
+        const index = y * columns + x;
+        full[index] = stitch === "full" ? value : 0;
+        half[index] = stitch === "half" ? value : 0;
+        if (value !== 0 && (stitch === "quarter" || stitch === "three_quarter")) {
+          const cell = partials.get(index) ?? { quarters: {}, threeQuarter: null };
+          partials.set(index, paintPartial(cell, stitch, corner, value));
+        } else {
+          partials.delete(index);
+        }
       }
     }
   }
-  return layers;
+  const quarter: PartialStitch[] = [];
+  const threeQuarter: PartialStitch[] = [];
+  for (const index of [...partials.keys()].sort((a, b) => a - b)) {
+    const cell = partials.get(index)!;
+    const x = index % columns;
+    const y = Math.floor(index / columns);
+    for (const corner of CORNERS) {
+      const paletteIndex = cell.quarters[corner];
+      if (paletteIndex !== undefined) quarter.push({ x, y, corner, paletteIndex });
+    }
+    if (cell.threeQuarter !== null) threeQuarter.push({ x, y, ...cell.threeQuarter });
+  }
+  return { full, half, quarter, threeQuarter };
 }
 
 /**
