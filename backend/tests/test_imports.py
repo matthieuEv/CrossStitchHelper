@@ -12,6 +12,7 @@ from fastapi.testclient import TestClient
 from PIL import Image
 
 from app.codec import base64_to_bytes, decode_uint16_layer
+from app.imports_engine import apply_stitch_edits
 
 
 def _wait_for_detection(client: TestClient, job_id: str, timeout: float = 20.0) -> dict[str, Any]:
@@ -82,6 +83,7 @@ def test_create_import_accepts_pdf(client: TestClient) -> None:
         "rows": None,
         "palette": [],
         "fills": [],
+        "stitch_edits": [],
         "detected_cells": None,
         "uncertain_cells": None,
         # Special stitches (Lot 9, type A): nothing at this step, before the
@@ -362,6 +364,152 @@ def test_commit_saves_the_labels_chosen_in_the_summary(client: TestClient) -> No
         f"/api/imports/{job_id}/commit", json={"name": "Koi", "labels": ["Mini", "Mer"]}
     ).json()["pattern_id"]
     assert client.get(f"/api/patterns/{pattern_id}").json()["labels"] == ["Mini", "Mer"]
+
+
+def test_half_and_quarter_stitches_painted_by_hand_reach_the_pattern(
+    client: TestClient,
+) -> None:
+    """Issue #41: an area painted as 1/2 or 1/4 stitches lands in that
+    layer, not in the full-stitch one. A cell painted by hand holds one
+    stitch type only (the last area wins), and the eraser clears all three."""
+    job = _upload_pdf(client)
+    job_id = job["id"]
+    client.patch(
+        f"/api/imports/{job_id}/config",
+        json={
+            "columns": 4,
+            "rows": 1,
+            "palette": _SAMPLE_PALETTE,
+            "fills": [
+                {"x0": 0, "y0": 0, "x1": 3, "y1": 0, "palette_index": 1},
+                {"x0": 1, "y0": 0, "x1": 1, "y1": 0, "palette_index": 2, "stitch": "half"},
+                {"x0": 2, "y0": 0, "x1": 3, "y1": 0, "palette_index": 2, "stitch": "quarter"},
+                {"x0": 3, "y0": 0, "x1": 3, "y1": 0, "palette_index": 0, "stitch": "half"},
+            ],
+        },
+    )
+
+    preview = client.post(f"/api/imports/{job_id}/extract").json()["preview"]
+    assert preview["filled_count"] == 3  # cell 3 erased, every layer
+    assert decode_uint16_layer(base64_to_bytes(preview["layer_full"])) == [1, 0, 0, 0]
+    assert decode_uint16_layer(base64_to_bytes(preview["layer_half"])) == [0, 2, 0, 0]
+    assert decode_uint16_layer(base64_to_bytes(preview["layer_quarter"])) == [0, 0, 2, 0]
+
+    response = client.post(f"/api/imports/{job_id}/commit", json={"name": "Points partiels"})
+    assert response.status_code == 200
+    pattern_id = response.json()["pattern_id"]
+    detail = client.get(f"/api/patterns/{pattern_id}").json()
+    counts = {
+        entry["code"]: (entry["count_full"], entry["count_half"], entry["count_quarter"])
+        for entry in detail["palette"]
+    }
+    assert counts == {"310": (1, 0, 0), "666": (0, 1, 1)}
+    grid = client.get(f"/api/patterns/{pattern_id}/grid").json()
+    assert decode_uint16_layer(base64_to_bytes(grid["layer_half"])) == [0, 2, 0, 0]
+    # Painted without a corner: a top-left item (issue #83).
+    assert grid["quarter_stitches"] == [{"x": 2, "y": 0, "corner": "tl", "palette_index": 2}]
+
+
+def test_full_stitch_only_import_keeps_no_fractional_layer(client: TestClient) -> None:
+    """Without any 1/2 or 1/4 stitch, those layers stay absent (`None`), as
+    before issue #41 — never an all-zero blob."""
+    job = _upload_pdf(client)
+    job_id = job["id"]
+    client.patch(
+        f"/api/imports/{job_id}/config",
+        json={
+            "columns": 2,
+            "rows": 1,
+            "palette": _SAMPLE_PALETTE,
+            "fills": [{"x0": 0, "y0": 0, "x1": 1, "y1": 0, "palette_index": 1}],
+        },
+    )
+    preview = client.post(f"/api/imports/{job_id}/extract").json()["preview"]
+    assert preview["layer_half"] is None
+    assert preview["layer_quarter"] is None
+    pattern_id = client.post(
+        f"/api/imports/{job_id}/commit", json={"name": "Points complets"}
+    ).json()["pattern_id"]
+    grid = client.get(f"/api/patterns/{pattern_id}/grid").json()
+    assert grid["layer_half"] is None
+    assert grid["quarter_stitches"] == []
+
+
+def test_backstitch_and_knots_drawn_by_hand_reach_the_pattern(client: TestClient) -> None:
+    """Issue #82: backstitches drawn corner to corner and knots placed on a
+    cell in the import wizard reach the preview and the created pattern —
+    redrawing a segment recolours it, erasing removes it, a cell holds one
+    knot, and anything outside the grid is dropped."""
+    job_id = _upload_pdf(client)["id"]
+    edits: list[dict[str, Any]] = [
+        {"kind": "backstitch", "op": "add", "x1": 0, "y1": 0, "x2": 2, "y2": 1, "palette_index": 1},
+        {"kind": "backstitch", "op": "add", "x1": 1, "y1": 1, "x2": 1, "y2": 3, "palette_index": 2},
+        # Same segment drawn backwards in another colour: recoloured.
+        {"kind": "backstitch", "op": "add", "x1": 2, "y1": 1, "x2": 0, "y2": 0, "palette_index": 2},
+        {"kind": "backstitch", "op": "remove", "x1": 1, "y1": 3, "x2": 1, "y2": 1},
+        {"kind": "backstitch", "op": "add", "x1": 0, "y1": 0, "x2": 9, "y2": 9, "palette_index": 1},
+        {"kind": "knot", "op": "add", "x": 3, "y": 2, "palette_index": 1},
+        {"kind": "knot", "op": "add", "x": 3, "y": 2, "palette_index": 2},
+        {"kind": "knot", "op": "add", "x": 0, "y": 0, "palette_index": 1},
+        {"kind": "knot", "op": "remove", "x": 0, "y": 0},
+        {"kind": "knot", "op": "add", "x": 9, "y": 9, "palette_index": 1},
+    ]
+    response = client.patch(
+        f"/api/imports/{job_id}/config",
+        json={
+            "columns": 4,
+            "rows": 3,
+            "palette": _SAMPLE_PALETTE,
+            "fills": [{"x0": 0, "y0": 0, "x1": 0, "y1": 0, "palette_index": 1}],
+            "stitch_edits": edits,
+        },
+    )
+    assert response.status_code == 200
+    assert len(response.json()["config"]["stitch_edits"]) == len(edits)
+
+    preview = client.post(f"/api/imports/{job_id}/extract").json()["preview"]
+    expected_segment = {"x1": 2, "y1": 1, "x2": 0, "y2": 0, "palette_index": 2}
+    expected_knot = {"x": 3.5, "y": 2.5, "palette_index": 2}
+    assert preview["backstitch"] == [expected_segment]
+    assert preview["french_knots"] == [expected_knot]
+
+    pattern_id = client.post(
+        f"/api/imports/{job_id}/commit", json={"name": "Contours", "fabric_count": 14}
+    ).json()["pattern_id"]
+    grid = client.get(f"/api/patterns/{pattern_id}/grid").json()
+    assert grid["backstitch"] == [expected_segment]
+    assert grid["french_knots"] == [expected_knot]
+    detail = client.get(f"/api/patterns/{pattern_id}").json()
+    palette = {entry["code"]: entry for entry in detail["palette"]}
+    assert palette["666"]["count_french"] == 1
+    assert palette["310"]["count_french"] == 0
+    assert palette["666"]["backstitch_length_cm"] == pytest.approx(5**0.5 * 2.54 / 14)
+    assert palette["310"]["backstitch_length_cm"] is None
+
+
+def test_stitch_edits_apply_on_top_of_detected_ones() -> None:
+    """Issue #82: erasing works on detected segments and knots too (type A
+    detection gives non-integer coordinates), like painted areas correct a
+    detected grid."""
+    detected_segments: list[dict[str, Any]] = [
+        {"x1": 0.0, "y1": 0.0, "x2": 1.0, "y2": 1.0, "palette_index": 1},
+        {"x1": 1.0, "y1": 1.0, "x2": 2.0, "y2": 1.0, "palette_index": 1},
+    ]
+    detected_knots: list[dict[str, Any]] = [{"x": 1.48, "y": 0.52, "palette_index": 1}]
+    segments, knots = apply_stitch_edits(
+        3,
+        2,
+        detected_segments,
+        detected_knots,
+        [
+            {"kind": "backstitch", "op": "remove", "x1": 1.0, "y1": 1.0, "x2": 0.0, "y2": 0.0},
+            {"kind": "knot", "op": "remove", "x": 1, "y": 0},
+        ],
+    )
+    assert segments == [detected_segments[1]]
+    assert knots == []
+    # The detected lists themselves are left untouched.
+    assert len(detected_segments) == 2 and len(detected_knots) == 1
 
 
 def test_commit_is_final(client: TestClient) -> None:

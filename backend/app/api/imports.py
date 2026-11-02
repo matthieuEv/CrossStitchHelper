@@ -48,7 +48,9 @@ from app.http import api_error
 from app.imports_engine import (
     MAX_PREVIEW_DIMENSION,
     PageOutOfRangeError,
+    PaintedLayers,
     apply_fills,
+    apply_stitch_edits,
     pdf_page_count,
     render_image_page,
     render_pdf_page,
@@ -160,18 +162,64 @@ def _compute_preview(config: dict[str, Any]) -> dict[str, Any] | None:
     if columns is None or rows is None or not palette:
         return None
 
-    cells = apply_fills(
-        columns, rows, config.get("fills") or [], base=_detected_base(config, columns, rows)
+    layers = _painted_layers(config, columns, rows)
+    backstitch, french_knots = _special_stitches(config, columns, rows)
+    filled_count = sum(
+        1 for cell in zip(layers.full, layers.half, layers.quarter, strict=True) if any(cell)
     )
-    filled_count = sum(1 for value in cells if value != 0)
     return {
         "width": columns,
         "height": rows,
         "cell_count": columns * rows,
         "filled_count": filled_count,
-        "layer_full": bytes_to_base64(encode_uint16_layer(cells)),
+        "layer_full": bytes_to_base64(encode_uint16_layer(layers.full)),
+        "layer_half": _optional_layer_base64(layers.half),
+        "layer_quarter": _optional_layer_base64(layers.quarter),
+        "backstitch": backstitch,
+        "french_knots": french_knots,
         "palette": palette,
     }
+
+
+def _painted_layers(config: dict[str, Any], columns: int, rows: int) -> PaintedLayers:
+    """The detected layers (when they still match the dimensions) with the
+    areas painted by hand on top — the single place the preview and the
+    commit build the grid from."""
+    return apply_fills(
+        columns,
+        rows,
+        config.get("fills") or [],
+        base=_detected_base(config, columns, rows),
+        base_half=_detected_layer(config, "detected_half", columns, rows),
+        base_quarter=_detected_layer(config, "detected_quarter", columns, rows),
+    )
+
+
+def _special_stitches(
+    config: dict[str, Any], columns: int, rows: int
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Backstitch segments and knots: detected (Lot 9, type A), with the ones
+    drawn or erased by hand on top (issue #82) — the single place the preview
+    and the commit build them from. Items whose palette index no longer
+    refers to anything are dropped (`_detected_special_items`)."""
+    palette_size = len(config.get("palette") or [])
+    return apply_stitch_edits(
+        columns,
+        rows,
+        _detected_special_items(config, "detected_backstitch", palette_size),
+        _detected_special_items(config, "detected_french_knots", palette_size),
+        [
+            edit
+            for edit in config.get("stitch_edits") or []
+            if edit.get("palette_index", 0) <= palette_size
+        ],
+    )
+
+
+def _optional_layer_base64(cells: list[int]) -> str | None:
+    """`None` for a layer without any stitch — same convention as
+    `Grid.layer_half`/`layer_quarter`."""
+    return bytes_to_base64(encode_uint16_layer(cells)) if any(cells) else None
 
 
 def _job_out(job: ImportJob) -> ImportJobOut:
@@ -572,6 +620,8 @@ def patch_config(
         config["palette"] = [entry.model_dump() for entry in payload.palette]
     if payload.fills is not None:
         config["fills"] = [fill.model_dump() for fill in payload.fills]
+    if payload.stitch_edits is not None:
+        config["stitch_edits"] = [edit.model_dump() for edit in payload.stitch_edits]
     if payload.detected_cells is not None:
         config["detected_cells"] = payload.detected_cells
     if payload.uncertain_cells is not None:
@@ -636,32 +686,23 @@ def commit(
     now = datetime.now(UTC)
     pattern_id = uuid.uuid4().hex
     columns, rows = preview["width"], preview["height"]
-    cells = apply_fills(
-        columns,
-        rows,
-        result["config"].get("fills") or [],
-        base=_detected_base(result["config"], columns, rows),
-    )
-
-    # Fractional and special stitches (Lot 9, type A only): no manual
-    # correction mechanism for these layers (unlike `cells`, never an
-    # equivalent of `fills`) — they are committed as detected, or absent if
-    # detection did not produce them or if the dimensions have changed since
-    # (`_detected_layer`).
     config = result["config"]
-    cells_half = _detected_layer(config, "detected_half", columns, rows)
-    # Detection reads 1/4 stitches without a corner (Lot 9): they become
-    # top-left items (issue #83), where such stitches were always drawn.
+    layers = _painted_layers(config, columns, rows)
+    cells = layers.full
+    # 1/2 stitches: detected (Lot 9, type A) and/or painted by hand (issue
+    # #41) — absent (`None`) when the layer has no stitch at all.
+    cells_half = layers.half if any(layers.half) else None
+    # 1/4 stitches, detected (Lot 9) or painted (issue #41) per cell without a
+    # corner: top-left items (issue #83), where such stitches were always drawn.
     quarters = [
         {"x": index % columns, "y": index // columns, "corner": "tl", "palette_index": value}
-        for index, value in enumerate(
-            _detected_layer(config, "detected_quarter", columns, rows) or []
-        )
+        for index, value in enumerate(layers.quarter)
         if value
     ]
-    palette_size = len(config["palette"])
-    backstitch = _detected_special_items(config, "detected_backstitch", palette_size)
-    french_knots = _detected_special_items(config, "detected_french_knots", palette_size)
+
+    # Backstitch and knots: detected (Lot 9, type A) and/or drawn by hand
+    # (issue #82).
+    backstitch, french_knots = _special_stitches(config, columns, rows)
 
     # Lot 11: straight into the shared library (no owner, no progress), or
     # into one's own library — then shared too for "both", below. Into a

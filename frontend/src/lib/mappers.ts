@@ -1,6 +1,8 @@
 /** Conversion of API responses into the pattern core types (`pattern/types.ts`). */
 
 import type {
+  ApiBackstitchSegment,
+  ApiFrenchKnot,
   ApiGrid,
   ApiImportPaletteEntry,
   ApiImportPreview,
@@ -10,6 +12,8 @@ import type {
 } from "./api";
 import { base64ToBytes, decodeUint16Layer, unpackBitmap } from "./codec";
 import type {
+  BackstitchSegment,
+  FrenchKnot,
   PaletteEntry,
   PartialStitch,
   Pattern,
@@ -38,6 +42,13 @@ function paletteFromImportEntries(entries: ApiImportPaletteEntry[]): PaletteEntr
   }));
 }
 
+/** A 1/2 or 1/4 layer of the import preview, empty when absent. */
+function optionalLayer(encoded: string | null, cellCount: number): Uint8Array {
+  return encoded === null
+    ? new Uint8Array(cellCount)
+    : Uint8Array.from(decodeUint16Layer(base64ToBytes(encoded)));
+}
+
 /**
  * Builds a `Pattern` from the preview computed by the import wizard (Lot 2) —
  * same compact format as `patternFromApi`, so the area-painting screen and
@@ -52,15 +63,16 @@ export function patternFromImportPreview(preview: ApiImportPreview, name: string
     width: preview.width,
     height: preview.height,
     cells: Uint8Array.from(layer),
-    // The import wizard (Lots 2, 4, 5) only produces full stitches —
-    // backstitch/knots/1-2/1-4 remained Lot 9's scope, not built yet at the
-    // time: layers always present but empty here, never `undefined` (see
+    // 1/2 and 1/4 stitches (Lot 9 detection, issue #41 painting): always
+    // present, empty when the server sends none — never `undefined` (see
     // `Pattern.cellsHalf`).
-    cellsHalf: new Uint8Array(cellCount),
-    quarterStitches: [],
+    cellsHalf: optionalLayer(preview.layer_half, cellCount),
+    // 1/4 stitches painted per cell, without a corner: top-left (issue #83).
+    quarterStitches: topLeftQuarters(optionalLayer(preview.layer_quarter, cellCount), preview.width),
     threeQuarterStitches: [],
-    backstitch: [],
-    frenchKnots: [],
+    // Detected and/or drawn by hand (issue #82).
+    backstitch: preview.backstitch.map(backstitchFromApi),
+    frenchKnots: preview.french_knots.map(frenchKnotFromApi),
     palette: paletteFromImportEntries(preview.palette),
   };
 }
@@ -89,20 +101,23 @@ export function patternFromApi(detail: ApiPatternDetail, grid: ApiGrid): Pattern
     cellsHalf: half !== null ? Uint8Array.from(half) : new Uint8Array(cellCount),
     quarterStitches: grid.quarter_stitches.map(partialStitchFromApi),
     threeQuarterStitches: grid.three_quarter_stitches.map(partialStitchFromApi),
-    backstitch: grid.backstitch.map((segment) => ({
-      x1: segment.x1,
-      y1: segment.y1,
-      x2: segment.x2,
-      y2: segment.y2,
-      paletteIndex: segment.palette_index,
-    })),
-    frenchKnots: grid.french_knots.map((knot) => ({
-      x: knot.x,
-      y: knot.y,
-      paletteIndex: knot.palette_index,
-    })),
+    backstitch: grid.backstitch.map(backstitchFromApi),
+    frenchKnots: grid.french_knots.map(frenchKnotFromApi),
     palette: paletteFromApi(detail),
   };
+}
+
+/** The 1/4 stitches of a per-cell layer (import wizard, issue #41), as
+ * top-left items (issue #83) — where such stitches were always drawn. */
+export function topLeftQuarters(layer: ArrayLike<number>, width: number): PartialStitch[] {
+  const items: PartialStitch[] = [];
+  for (let index = 0; index < layer.length; index++) {
+    const paletteIndex = layer[index]!;
+    if (paletteIndex !== 0) {
+      items.push({ x: index % width, y: Math.floor(index / width), corner: "tl", paletteIndex });
+    }
+  }
+  return items;
 }
 
 function partialStitchFromApi(item: ApiPartialStitch): PartialStitch {
@@ -141,4 +156,18 @@ export function specialProgressFromApi(grid: ApiGrid, progress: ApiProgress): Sp
         ? unpackBitmap(base64ToBytes(progress.bitmap_knots), knotCount)
         : new Uint8Array(knotCount),
   };
+}
+
+export function backstitchFromApi(segment: ApiBackstitchSegment): BackstitchSegment {
+  return {
+    x1: segment.x1,
+    y1: segment.y1,
+    x2: segment.x2,
+    y2: segment.y2,
+    paletteIndex: segment.palette_index,
+  };
+}
+
+export function frenchKnotFromApi(knot: ApiFrenchKnot): FrenchKnot {
+  return { x: knot.x, y: knot.y, paletteIndex: knot.palette_index };
 }
