@@ -393,7 +393,8 @@ def test_half_and_quarter_stitches_painted_by_hand_reach_the_pattern(
     assert preview["filled_count"] == 3  # cell 3 erased, every layer
     assert decode_uint16_layer(base64_to_bytes(preview["layer_full"])) == [1, 0, 0, 0]
     assert decode_uint16_layer(base64_to_bytes(preview["layer_half"])) == [0, 2, 0, 0]
-    assert decode_uint16_layer(base64_to_bytes(preview["layer_quarter"])) == [0, 0, 2, 0]
+    # Painted without a corner: top-left (issue #83).
+    assert preview["quarter_stitches"] == [{"x": 2, "y": 0, "corner": "tl", "palette_index": 2}]
 
     response = client.post(f"/api/imports/{job_id}/commit", json={"name": "Points partiels"})
     assert response.status_code == 200
@@ -426,13 +427,85 @@ def test_full_stitch_only_import_keeps_no_fractional_layer(client: TestClient) -
     )
     preview = client.post(f"/api/imports/{job_id}/extract").json()["preview"]
     assert preview["layer_half"] is None
-    assert preview["layer_quarter"] is None
+    assert preview["quarter_stitches"] == []
     pattern_id = client.post(
         f"/api/imports/{job_id}/commit", json={"name": "Points complets"}
     ).json()["pattern_id"]
     grid = client.get(f"/api/patterns/{pattern_id}/grid").json()
     assert grid["layer_half"] is None
     assert grid["quarter_stitches"] == []
+
+
+def test_quarter_and_three_quarter_stitches_painted_by_corner(client: TestClient) -> None:
+    """Issue #83: 1/4 and 3/4 areas are painted in a corner. A split cell
+    holds a 3/4 and the 1/4 in its free corner; a 1/4 elsewhere replaces
+    that 3/4; up to four 1/4 share a cell; a full stitch or the eraser
+    clears them all."""
+    job_id = _upload_pdf(client)["id"]
+
+    def area(x0: int, x1: int, palette_index: int, stitch: str, corner: str) -> dict[str, Any]:
+        return {
+            "x0": x0,
+            "y0": 0,
+            "x1": x1,
+            "y1": 0,
+            "palette_index": palette_index,
+            "stitch": stitch,
+            "corner": corner,
+        }
+
+    fills: list[dict[str, Any]] = [
+        # Cell 0: a split cell — 3/4 top-left, then 1/4 in its free corner.
+        area(0, 0, 1, "three_quarter", "tl"),
+        area(0, 0, 2, "quarter", "br"),
+        # Cell 1: a 3/4, then a 1/4 where the 3/4 sits: the 3/4 goes.
+        area(1, 1, 1, "three_quarter", "tr"),
+        area(1, 1, 2, "quarter", "tr"),
+        # Cell 2: two 1/4, then a 3/4 keeps only the one in its free corner.
+        area(2, 2, 1, "quarter", "tl"),
+        area(2, 2, 2, "quarter", "tr"),
+        area(2, 2, 1, "three_quarter", "bl"),
+        # Cells 3 and 4: four 1/4, then a full stitch on 3 and the eraser on 4.
+        *(area(3, 4, 2, "quarter", corner) for corner in ("tl", "tr", "bl", "br")),
+        {"x0": 3, "y0": 0, "x1": 3, "y1": 0, "palette_index": 1},
+        area(4, 4, 0, "quarter", "tl"),
+        # Cell 5: four 1/4 in one cell.
+        *(area(5, 5, 1, "quarter", corner) for corner in ("br", "bl", "tr", "tl")),
+    ]
+    response = client.patch(
+        f"/api/imports/{job_id}/config",
+        json={"columns": 6, "rows": 1, "palette": _SAMPLE_PALETTE, "fills": fills},
+    )
+    assert response.status_code == 200
+
+    def item(x: int, corner: str, palette_index: int) -> dict[str, Any]:
+        return {"x": x, "y": 0, "corner": corner, "palette_index": palette_index}
+
+    quarters = [
+        item(0, "br", 2),
+        item(1, "tr", 2),
+        item(2, "tr", 2),
+        *(item(5, corner, 1) for corner in ("tl", "tr", "bl", "br")),
+    ]
+    three_quarters = [item(0, "tl", 1), item(2, "bl", 1)]
+    preview = client.post(f"/api/imports/{job_id}/extract").json()["preview"]
+    assert preview["quarter_stitches"] == quarters
+    assert preview["three_quarter_stitches"] == three_quarters
+    assert preview["filled_count"] == 5  # every cell but the erased one
+    assert decode_uint16_layer(base64_to_bytes(preview["layer_full"])) == [0, 0, 0, 1, 0, 0]
+
+    pattern_id = client.post(
+        f"/api/imports/{job_id}/commit", json={"name": "Coins"}
+    ).json()["pattern_id"]
+    grid = client.get(f"/api/patterns/{pattern_id}/grid").json()
+    assert grid["quarter_stitches"] == quarters
+    assert grid["three_quarter_stitches"] == three_quarters
+    detail = client.get(f"/api/patterns/{pattern_id}").json()
+    counts = {
+        entry["code"]: (entry["count_full"], entry["count_quarter"], entry["count_three_quarter"])
+        for entry in detail["palette"]
+    }
+    assert counts == {"310": (1, 4, 2), "666": (0, 3, 0)}
 
 
 def test_backstitch_and_knots_drawn_by_hand_reach_the_pattern(client: TestClient) -> None:

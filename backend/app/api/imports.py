@@ -164,17 +164,21 @@ def _compute_preview(config: dict[str, Any]) -> dict[str, Any] | None:
 
     layers = _painted_layers(config, columns, rows)
     backstitch, french_knots = _special_stitches(config, columns, rows)
-    filled_count = sum(
-        1 for cell in zip(layers.full, layers.half, layers.quarter, strict=True) if any(cell)
+    filled = {
+        index for index, cell in enumerate(zip(layers.full, layers.half, strict=True)) if any(cell)
+    }
+    filled.update(
+        item["y"] * columns + item["x"] for item in (*layers.quarter, *layers.three_quarter)
     )
     return {
         "width": columns,
         "height": rows,
         "cell_count": columns * rows,
-        "filled_count": filled_count,
+        "filled_count": len(filled),
         "layer_full": bytes_to_base64(encode_uint16_layer(layers.full)),
         "layer_half": _optional_layer_base64(layers.half),
-        "layer_quarter": _optional_layer_base64(layers.quarter),
+        "quarter_stitches": layers.quarter,
+        "three_quarter_stitches": layers.three_quarter,
         "backstitch": backstitch,
         "french_knots": french_knots,
         "palette": palette,
@@ -692,13 +696,10 @@ def commit(
     # 1/2 stitches: detected (Lot 9, type A) and/or painted by hand (issue
     # #41) — absent (`None`) when the layer has no stitch at all.
     cells_half = layers.half if any(layers.half) else None
-    # 1/4 stitches, detected (Lot 9) or painted (issue #41) per cell without a
-    # corner: top-left items (issue #83), where such stitches were always drawn.
-    quarters = [
-        {"x": index % columns, "y": index // columns, "corner": "tl", "palette_index": value}
-        for index, value in enumerate(layers.quarter)
-        if value
-    ]
+    # 1/4 and 3/4 stitches: items with a corner (issue #83), detected (Lot 9,
+    # top-left) and/or painted by hand.
+    quarters = layers.quarter
+    three_quarters = layers.three_quarter
 
     # Backstitch and knots: detected (Lot 9, type A) and/or drawn by hand
     # (issue #82).
@@ -763,6 +764,9 @@ def commit(
                 count_full=sum(1 for value in cells if value == index_in_grid),
                 count_half=sum(1 for value in cells_half or () if value == index_in_grid),
                 count_quarter=sum(1 for item in quarters if item["palette_index"] == index_in_grid),
+                count_three_quarter=sum(
+                    1 for item in three_quarters if item["palette_index"] == index_in_grid
+                ),
                 count_french=sum(
                     1 for knot in french_knots if knot["palette_index"] == index_in_grid
                 ),
@@ -781,6 +785,7 @@ def commit(
             layer_full=encode_uint16_layer(cells),
             layer_half=encode_uint16_layer(cells_half) if cells_half else None,
             quarter_json=json.dumps(quarters),
+            three_quarter_json=json.dumps(three_quarters),
             backstitch_json=json.dumps(backstitch),
             french_knots_json=json.dumps(french_knots),
             encoding="uint16le",

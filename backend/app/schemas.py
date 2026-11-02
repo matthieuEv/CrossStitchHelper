@@ -306,9 +306,13 @@ class ImportFillZone(BaseModel):
     x1: int = Field(ge=0)
     y1: int = Field(ge=0)
     palette_index: int = Field(ge=0)
-    stitch: Literal["full", "half", "quarter"] = Field(
+    stitch: Literal["full", "half", "quarter", "three_quarter"] = Field(
         default="full",
-        description="Layer the area paints (issue #41) — see `apply_fills`.",
+        description="What the area paints (issue #41, 3/4 since #83) — see `apply_fills`.",
+    )
+    corner: Corner | None = Field(
+        default=None,
+        description="Corner of a 1/4 or 3/4 stitch (issue #83), top-left when absent.",
     )
 
 
@@ -458,9 +462,10 @@ class ImportPreview(BaseModel):
     layer_half: str | None = Field(
         default=None, description="Same encoding, `None` when there is no 1/2 stitch."
     )
-    layer_quarter: str | None = Field(
-        default=None, description="Same encoding, `None` when there is no 1/4 stitch."
+    quarter_stitches: list[PartialStitch] = Field(
+        default_factory=list, description="Detected and/or painted (issue #83), like `GridOut`."
     )
+    three_quarter_stitches: list[PartialStitch] = Field(default_factory=list)
     backstitch: list[BackstitchSegment] = Field(
         default_factory=list, description="Detected and/or drawn by hand (issue #82)."
     )

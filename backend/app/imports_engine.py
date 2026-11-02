@@ -139,13 +139,20 @@ def render_image_page(path: Path, max_dimension: int = MAX_PREVIEW_DIMENSION) ->
 
 @dataclass(frozen=True)
 class PaintedLayers:
-    """The three cell layers an import paints (issue #41): full, 1/2 and 1/4
-    stitches, same convention as the grid blob (0 = no stitch, n = 1-based
-    palette index)."""
+    """What an import paints (issue #41): the full and 1/2 stitch cell layers,
+    same convention as the grid blob (0 = no stitch, n = 1-based palette
+    index), and the 1/4 and 3/4 stitches as items with a corner (issue #83),
+    like `Grid.quarter_json` — ``{"x", "y", "corner", "palette_index"}``,
+    sorted by cell then corner."""
 
     full: list[int]
     half: list[int]
-    quarter: list[int]
+    quarter: list[dict[str, Any]]
+    three_quarter: list[dict[str, Any]]
+
+
+_CORNERS = ("tl", "tr", "bl", "br")
+_OPPOSITE = {"tl": "br", "tr": "bl", "bl": "tr", "br": "tl"}
 
 
 def _layer(base: list[int] | None, size: int) -> list[int]:
@@ -154,6 +161,25 @@ def _layer(base: list[int] | None, size: int) -> list[int]:
     if len(base) != size:
         raise ValueError("a base layer must have exactly columns*rows cells")
     return list(base)
+
+
+def _paint_partial(
+    quarters: dict[str, int],
+    three_quarter: tuple[str, int] | None,
+    stitch: str,
+    corner: str,
+    value: int,
+) -> tuple[dict[str, int], tuple[str, int] | None]:
+    """A cell's 1/4 stitches (corner → palette index) and 3/4 stitch after
+    painting `stitch` in `corner` (issue #83). What stays is only what still
+    fits beside it: a 3/4 stitch leaves its opposite corner free, where a 1/4
+    stitch of another colour can sit — a split cell."""
+    if stitch == "quarter":
+        if three_quarter is not None and _OPPOSITE[three_quarter[0]] != corner:
+            three_quarter = None
+        return {**quarters, corner: value}, three_quarter
+    free = _OPPOSITE[corner]
+    return ({free: quarters[free]} if free in quarters else {}), (corner, value)
 
 
 def apply_fills(
@@ -173,35 +199,79 @@ def apply_fills(
     (`frontend/src/state/useTracker.ts`), so the brush behaves identically
     during import and during tracking.
 
-    ``stitch`` (issue #41, ``"full"`` when absent) picks the layer an area
-    paints. A cell painted by hand holds one stitch type only: painting a
-    colour clears the cell's other two layers, and the eraser (index 0)
-    clears all three — so repainting an area as 1/2 stitches never leaves the
-    full stitches underneath.
+    ``stitch`` (issue #41, ``"full"`` when absent) picks what an area paints.
+    A full or 1/2 stitch is alone in its cell: painting one clears every
+    other stitch of the cell, and the eraser (index 0) clears them all — so
+    repainting an area as 1/2 stitches never leaves the full stitches
+    underneath. A 1/4 or 3/4 stitch (issue #83) goes in ``corner`` (top-left
+    when absent) and keeps the partial stitches that still fit beside it
+    (`_paint_partial`): up to four 1/4, or a 3/4 and the 1/4 in its free
+    corner.
 
     `base`/`base_half`/`base_quarter` (Lots 4 and 9): the automatically
     detected layers serve as the background rather than empty cells — areas
-    painted by the user remain *corrections* on top of the proposal.
+    painted by the user remain *corrections* on top of the proposal. Detected
+    1/4 stitches have no corner (Lot 9): top-left, where they were always
+    drawn.
     """
     size = columns * rows
-    layers = {
-        "full": _layer(base, size),
-        "half": _layer(base_half, size),
-        "quarter": _layer(base_quarter, size),
+    full = _layer(base, size)
+    half = _layer(base_half, size)
+    quarters: dict[int, dict[str, int]] = {
+        index: {"tl": value} for index, value in enumerate(_layer(base_quarter, size)) if value
     }
+    three_quarters: dict[int, tuple[str, int]] = {}
     for fill in fills:
         x0 = max(0, min(fill["x0"], fill["x1"]))
         x1 = min(columns - 1, max(fill["x0"], fill["x1"]))
         y0 = max(0, min(fill["y0"], fill["y1"]))
         y1 = min(rows - 1, max(fill["y0"], fill["y1"]))
-        palette_index = fill["palette_index"]
+        value = fill["palette_index"]
         stitch = fill.get("stitch") or "full"
-        for name, cells in layers.items():
-            value = palette_index if name == stitch else 0
-            for y in range(y0, y1 + 1):
-                row_offset = y * columns
-                cells[row_offset + x0 : row_offset + x1 + 1] = [value] * (x1 - x0 + 1)
-    return PaintedLayers(full=layers["full"], half=layers["half"], quarter=layers["quarter"])
+        corner = fill.get("corner") or "tl"
+        partial = value != 0 and stitch in ("quarter", "three_quarter")
+        for y in range(y0, y1 + 1):
+            for x in range(x0, x1 + 1):
+                index = y * columns + x
+                full[index] = value if stitch == "full" else 0
+                half[index] = value if stitch == "half" else 0
+                if partial:
+                    cell_quarters, cell_three = _paint_partial(
+                        quarters.get(index, {}), three_quarters.get(index), stitch, corner, value
+                    )
+                else:
+                    cell_quarters, cell_three = {}, None
+                if cell_quarters:
+                    quarters[index] = cell_quarters
+                else:
+                    quarters.pop(index, None)
+                if cell_three is not None:
+                    three_quarters[index] = cell_three
+                else:
+                    three_quarters.pop(index, None)
+
+    def item(index: int, corner: str, palette_index: int) -> dict[str, Any]:
+        return {
+            "x": index % columns,
+            "y": index // columns,
+            "corner": corner,
+            "palette_index": palette_index,
+        }
+
+    return PaintedLayers(
+        full=full,
+        half=half,
+        quarter=[
+            item(index, corner, cell[corner])
+            for index, cell in sorted(quarters.items())
+            for corner in _CORNERS
+            if corner in cell
+        ],
+        three_quarter=[
+            item(index, corner, palette_index)
+            for index, (corner, palette_index) in sorted(three_quarters.items())
+        ],
+    )
 
 
 def _same_point(ax: float, ay: float, bx: float, by: float) -> bool:
