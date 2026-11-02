@@ -32,6 +32,7 @@ export const en: Record<TranslationKey, string> = {
 
   "import.title": "Import a pattern",
   "import.cancel": "Cancel",
+  "import.resuming": "Resuming the import in progress…",
   "import.step.file": "File",
   "import.step.crop": "Crop",
   "import.step.palette": "Palette",

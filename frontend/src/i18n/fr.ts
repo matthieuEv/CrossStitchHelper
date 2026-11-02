@@ -36,6 +36,7 @@ export const fr = {
 
   "import.title": "Importer un motif",
   "import.cancel": "Annuler",
+  "import.resuming": "Reprise de l'import en cours…",
   "import.step.file": "Fichier",
   "import.step.crop": "Cadrage",
   "import.step.palette": "Palette",
