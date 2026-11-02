@@ -31,6 +31,7 @@ export const en: Record<TranslationKey, string> = {
   "library.sort.recent": "Recent activity",
   "library.sort.name": "Name (A → Z)",
   "library.sort.progress": "Progress",
+  "library.sort.label": "Label (A → Z)",
   "library.actions": "Actions for “{name}”",
   "library.duplicate": "Duplicate",
   "library.delete": "Delete",

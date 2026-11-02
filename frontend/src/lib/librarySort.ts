@@ -6,7 +6,7 @@
  * means going back to the default order.
  */
 
-export const LIBRARY_SORTS = ["recent", "name", "progress"] as const;
+export const LIBRARY_SORTS = ["recent", "name", "progress", "label"] as const;
 export type LibrarySort = (typeof LIBRARY_SORTS)[number];
 
 const STORAGE_KEY = "csh.librarySort";
